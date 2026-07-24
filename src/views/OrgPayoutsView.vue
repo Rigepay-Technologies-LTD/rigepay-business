@@ -1,11 +1,14 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import {
-  requestOrgPayoutAsMember, fetchPendingPayoutApprovals, approvePayoutRequest, rejectPayoutRequest,
+  requestOrgPayoutAsMember, confirmOrgPayoutAsMember, fetchPendingPayoutApprovals, approvePayoutRequest, rejectPayoutRequest,
   fetchOrgBranches, validateOrgBankAccount, validateOrgMobileMoney, validateOrgScreenName, fetchOrgBankCodes,
   fetchOrgProfile, fetchOrgBeneficiaries, createOrgBeneficiary, deleteOrgBeneficiary, fetchRecentSettlements,
+  fetchApprovalThreshold, setApprovalThreshold, fetchPayoutFeeEstimate,
+  fetchRoleApprovalThresholds, setRoleApprovalThreshold,
   type PayoutApproval, type BranchSummary, type ProfileResponse, type Beneficiary, type RecentSettlement,
+  type ApprovalThreshold, type PayoutFeeEstimate, type RoleApprovalThreshold,
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
 import { formatMoney, formatDate } from '@/lib/format'
@@ -52,6 +55,9 @@ const requesting = ref(false)
 const requestError = ref<string | null>(null)
 const requestResult = ref<string | null>(null)
 const amountKes = ref('')
+const feeEstimate = ref<PayoutFeeEstimate | null>(null)
+const feeEstimateLoading = ref(false)
+let feeEstimateTimer: ReturnType<typeof setTimeout> | null = null
 const phoneNumber = ref('')
 const bankCode = ref('')
 const bankAccountNumber = ref('')
@@ -228,6 +234,30 @@ async function screenRecipientName() {
   }
 }
 
+const otpStep = ref(false)
+const otp = ref('')
+const otpError = ref<string | null>(null)
+const otpConfirming = ref(false)
+const pendingFeeCents = ref<number | undefined>(undefined)
+
+function resetPayoutForm() {
+  amountKes.value = ''
+  feeEstimate.value = null
+  phoneNumber.value = ''
+  bankCode.value = ''
+  bankAccountNumber.value = ''
+  recipientName.value = ''
+  remarks.value = ''
+  branchId.value = ''
+  confirmPassword.value = ''
+  confirmPin.value = ''
+  validationResult.value = null
+  screening.value = null
+  selectedBeneficiaryId.value = ''
+  saveAsBeneficiary.value = false
+  beneficiaryNickname.value = ''
+}
+
 async function submitPayout() {
   requestError.value = null
   requestResult.value = null
@@ -267,9 +297,6 @@ async function submitPayout() {
       password: isOwner ? undefined : confirmPassword.value,
       pin: isOwner ? confirmPin.value : undefined,
     })
-    requestResult.value = result.status === 'approval_required'
-      ? `This payout requires the owner's approval before it executes.`
-      : 'Payout queued for execution.'
 
     if (saveAsBeneficiary.value && beneficiaryNickname.value.trim() && !isBranchSession) {
       savingBeneficiary.value = true
@@ -290,20 +317,19 @@ async function submitPayout() {
       }
     }
 
-    amountKes.value = ''
-    phoneNumber.value = ''
-    bankCode.value = ''
-    bankAccountNumber.value = ''
-    recipientName.value = ''
-    remarks.value = ''
-    branchId.value = ''
-    confirmPassword.value = ''
-    confirmPin.value = ''
-    validationResult.value = null
-    screening.value = null
-    selectedBeneficiaryId.value = ''
-    saveAsBeneficiary.value = false
-    beneficiaryNickname.value = ''
+    if (result.status === 'otp_required') {
+      pendingFeeCents.value = result.fee_cents
+      otp.value = ''
+      otpError.value = null
+      otpStep.value = true
+      return
+    }
+
+    requestResult.value = result.status === 'approval_required'
+      ? `This payout requires the owner's approval before it executes.`
+      : 'Payout queued for execution.'
+
+    resetPayoutForm()
     if (isOwner) await loadApprovals()
     await loadRecentSettlements()
   } catch (err) {
@@ -311,6 +337,33 @@ async function submitPayout() {
   } finally {
     requesting.value = false
   }
+}
+
+async function submitOtp() {
+  otpError.value = null
+  if (!/^\d{6}$/.test(otp.value)) {
+    otpError.value = 'Enter the 6-digit code sent to your phone.'
+    return
+  }
+  otpConfirming.value = true
+  try {
+    const result = await confirmOrgPayoutAsMember(otp.value)
+    requestResult.value = result.message || 'Payout queued for execution.'
+    otpStep.value = false
+    resetPayoutForm()
+    if (isOwner) await loadApprovals()
+    await loadRecentSettlements()
+  } catch (err) {
+    otpError.value = extractErrorMessage(err)
+  } finally {
+    otpConfirming.value = false
+  }
+}
+
+function cancelOtp() {
+  otpStep.value = false
+  otp.value = ''
+  otpError.value = null
 }
 
 const approvals = ref<PayoutApproval[]>([])
@@ -356,6 +409,95 @@ async function reject(id: string) {
   }
 }
 
+const threshold = ref<ApprovalThreshold | null>(null)
+const thresholdLoading = ref(false)
+const thresholdSaving = ref(false)
+const thresholdError = ref<string | null>(null)
+const thresholdSuccess = ref<string | null>(null)
+const thresholdAmountKes = ref('')
+const thresholdActive = ref(false)
+
+async function loadThreshold() {
+  if (!isOwner || isBranchSession) return
+  thresholdLoading.value = true
+  try {
+    threshold.value = await fetchApprovalThreshold()
+    thresholdAmountKes.value = threshold.value.amount_cents ? String(threshold.value.amount_cents / 100) : ''
+    thresholdActive.value = threshold.value.active
+  } catch (err) {
+    thresholdError.value = extractErrorMessage(err)
+  } finally {
+    thresholdLoading.value = false
+  }
+}
+
+async function saveThreshold() {
+  thresholdError.value = null
+  thresholdSuccess.value = null
+  const amountCents = Math.round(Number(thresholdAmountKes.value) * 100)
+  if (thresholdActive.value && (!amountCents || amountCents < 100)) {
+    thresholdError.value = 'Enter a valid ceiling amount (min KES 1) to activate dual control.'
+    return
+  }
+  thresholdSaving.value = true
+  try {
+    const result = await setApprovalThreshold({ amount_cents: amountCents, active: thresholdActive.value })
+    thresholdSuccess.value = result.warning || 'Approval ceiling updated.'
+    await loadThreshold()
+  } catch (err) {
+    thresholdError.value = extractErrorMessage(err)
+  } finally {
+    thresholdSaving.value = false
+  }
+}
+
+const roleCeilingRoles = ['manager', 'member'] as const
+const roleCeilings = ref<Record<string, RoleApprovalThreshold | null>>({ manager: null, member: null })
+const roleCeilingAmountKes = ref<Record<string, string>>({ manager: '', member: '' })
+const roleCeilingActive = ref<Record<string, boolean>>({ manager: false, member: false })
+const roleCeilingLoading = ref(false)
+const roleCeilingSaving = ref<string | null>(null)
+const roleCeilingError = ref<string | null>(null)
+const roleCeilingSuccess = ref<string | null>(null)
+
+async function loadRoleCeilings() {
+  if (!isOwner || isBranchSession) return
+  roleCeilingLoading.value = true
+  try {
+    const rows = await fetchRoleApprovalThresholds()
+    for (const role of roleCeilingRoles) {
+      const row = rows.find((r) => r.role === role) ?? null
+      roleCeilings.value[role] = row
+      roleCeilingAmountKes.value[role] = row ? String(row.amount_cents / 100) : ''
+      roleCeilingActive.value[role] = row?.active ?? false
+    }
+  } catch (err) {
+    roleCeilingError.value = extractErrorMessage(err)
+  } finally {
+    roleCeilingLoading.value = false
+  }
+}
+
+async function saveRoleCeiling(role: string) {
+  roleCeilingError.value = null
+  roleCeilingSuccess.value = null
+  const amountCents = Math.round(Number(roleCeilingAmountKes.value[role]) * 100)
+  if (roleCeilingActive.value[role] && (!amountCents || amountCents < 100)) {
+    roleCeilingError.value = 'Enter a valid ceiling amount (min KES 1) to activate self-execution for this role.'
+    return
+  }
+  roleCeilingSaving.value = role
+  try {
+    await setRoleApprovalThreshold(role, { amount_cents: amountCents, active: roleCeilingActive.value[role] })
+    roleCeilingSuccess.value = `${role[0].toUpperCase()}${role.slice(1)} ceiling updated.`
+    await loadRoleCeilings()
+  } catch (err) {
+    roleCeilingError.value = extractErrorMessage(err)
+  } finally {
+    roleCeilingSaving.value = null
+  }
+}
+
 onMounted(() => {
   loadBranches()
   loadProfile()
@@ -363,6 +505,25 @@ onMounted(() => {
   loadBankCodes()
   loadBeneficiaries()
   loadRecentSettlements()
+  loadThreshold()
+  loadRoleCeilings()
+})
+
+watch([amountKes, destinationType], () => {
+  feeEstimate.value = null
+  if (feeEstimateTimer) clearTimeout(feeEstimateTimer)
+  const amountCents = Math.round(Number(amountKes.value) * 100)
+  if (!amountCents || amountCents < 100) return
+  feeEstimateTimer = setTimeout(async () => {
+    feeEstimateLoading.value = true
+    try {
+      feeEstimate.value = await fetchPayoutFeeEstimate(amountCents, destinationType.value)
+    } catch {
+      feeEstimate.value = null
+    } finally {
+      feeEstimateLoading.value = false
+    }
+  }, 400)
 })
 </script>
 
@@ -417,7 +578,23 @@ onMounted(() => {
         </div>
       </AppCard>
 
-      <AppCard>
+      <AppCard v-if="otpStep">
+        <h2 class="text-sm font-bold text-text-primary mb-1">Enter confirmation code</h2>
+        <p class="text-xs text-text-muted mb-4">
+          We sent a 6-digit code by SMS to confirm this payout<span v-if="pendingFeeCents !== undefined">
+            (fee: KES {{ formatMoney(pendingFeeCents) }})</span>. Enter it below to release the payout for execution.
+        </p>
+        <div v-if="otpError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ otpError }}</div>
+        <form class="flex flex-col gap-4 max-w-xs" @submit.prevent="submitOtp">
+          <AppInput v-model="otp" label="6-digit code" placeholder="000000" maxlength="6" required autofocus />
+          <div class="flex gap-2">
+            <AppButton type="submit" :loading="otpConfirming" class="self-start">Confirm payout</AppButton>
+            <AppButton type="button" variant="secondary" :disabled="otpConfirming" class="self-start" @click="cancelOtp">Cancel</AppButton>
+          </div>
+        </form>
+      </AppCard>
+
+      <AppCard v-else>
         <h2 class="text-sm font-bold text-text-primary mb-1">Request a payout</h2>
         <p v-if="isOwner" class="text-xs text-text-muted mb-4">
           As the owner, confirm with your 4-digit transaction PIN — your payouts execute immediately, no second approval needed.
@@ -466,6 +643,11 @@ onMounted(() => {
             <AppInput v-model="amountKes" type="number" label="Amount (KES)" placeholder="Min 1" required />
             <AppInput v-model="recipientName" label="Recipient name" required @blur="screenRecipientName" />
           </div>
+          <p v-if="feeEstimateLoading" class="text-xs text-text-muted">Estimating fee…</p>
+          <div v-else-if="feeEstimate" class="text-xs text-text-secondary bg-surface-2 rounded-lg px-3 py-2 flex items-center justify-between">
+            <span>Estimated fee: <span class="font-semibold text-text-primary">KES {{ formatMoney(feeEstimate.fee_cents) }}</span></span>
+            <span>Total to be debited: <span class="font-semibold text-text-primary">KES {{ formatMoney(feeEstimate.total_cents) }}</span></span>
+          </div>
           <div v-if="screening?.isMatch" class="text-xs bg-warning-light text-warning-text rounded-lg px-3 py-2 flex items-center gap-2">
             <AlertTriangleIcon class="w-3.5 h-3.5 shrink-0" />
             {{ screening.message }}
@@ -512,6 +694,66 @@ onMounted(() => {
               <AppButton size="sm" variant="secondary" :loading="decidingId === a.id" @click="reject(a.id)">Reject</AppButton>
             </div>
           </div>
+        </div>
+      </AppCard>
+
+      <AppCard v-if="isOwner && !isBranchSession">
+        <h2 class="text-sm font-bold text-text-primary mb-1">High-value approval ceiling (dual control)</h2>
+        <p class="text-xs text-text-muted mb-4">
+          When active, any payout at or above this amount — dashboard or API — needs a second owner's approval
+          before it executes, even if the initiating owner could otherwise self-approve.
+        </p>
+        <div v-if="thresholdError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ thresholdError }}</div>
+        <div v-if="thresholdSuccess" class="text-xs text-success-text bg-success-light rounded-lg px-3 py-2 mb-3">{{ thresholdSuccess }}</div>
+        <p v-if="thresholdLoading" class="text-sm text-text-muted">Loading…</p>
+        <template v-else>
+          <p v-if="threshold" class="text-xs text-text-muted mb-3">
+            Active owners: {{ threshold.active_owner_count }} —
+            <span v-if="threshold.active_owner_count < 2" class="text-warning">
+              enforcement needs a second owner to approve owner-initiated payouts; machine/API payouts are still gated.
+            </span>
+            <span v-else class="text-success">ceiling is enforceable.</span>
+          </p>
+          <form class="flex flex-col gap-4 max-w-sm" @submit.prevent="saveThreshold">
+            <label class="flex items-center gap-2 text-sm font-medium text-text-primary">
+              <input type="checkbox" v-model="thresholdActive" class="w-4 h-4 rounded" />
+              Require a second owner's approval above a threshold
+            </label>
+            <AppInput
+              v-model="thresholdAmountKes" type="number" label="Ceiling amount (KES)"
+              placeholder="e.g. 250000" :disabled="!thresholdActive" required
+            />
+            <AppButton type="submit" size="sm" :loading="thresholdSaving" class="self-start">Save</AppButton>
+          </form>
+        </template>
+      </AppCard>
+
+      <AppCard v-if="isOwner && !isBranchSession">
+        <h2 class="text-sm font-bold text-text-primary mb-1">Per-role self-execution ceilings</h2>
+        <p class="text-xs text-text-muted mb-4">
+          By default, every non-owner payout requires your approval, regardless of amount. Setting an active
+          ceiling here lets that role's payouts execute immediately — still confirmed by password and a one-time
+          code — as long as they stay below the amount. Anything at or above it still comes to you for approval.
+        </p>
+        <div v-if="roleCeilingError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ roleCeilingError }}</div>
+        <div v-if="roleCeilingSuccess" class="text-xs text-success-text bg-success-light rounded-lg px-3 py-2 mb-3">{{ roleCeilingSuccess }}</div>
+        <p v-if="roleCeilingLoading" class="text-sm text-text-muted">Loading…</p>
+        <div v-else class="flex flex-col gap-6">
+          <form
+            v-for="role in roleCeilingRoles" :key="role"
+            class="flex flex-col gap-3 max-w-sm rounded-xl bg-surface-2 px-4 py-3"
+            @submit.prevent="saveRoleCeiling(role)"
+          >
+            <label class="flex items-center gap-2 text-sm font-medium text-text-primary capitalize">
+              <input type="checkbox" v-model="roleCeilingActive[role]" class="w-4 h-4 rounded" />
+              Allow {{ role }}s to self-execute below a ceiling
+            </label>
+            <AppInput
+              v-model="roleCeilingAmountKes[role]" type="number" label="Ceiling amount (KES)"
+              placeholder="e.g. 50000" :disabled="!roleCeilingActive[role]" required
+            />
+            <AppButton type="submit" size="sm" :loading="roleCeilingSaving === role" class="self-start">Save</AppButton>
+          </form>
         </div>
       </AppCard>
     </div>

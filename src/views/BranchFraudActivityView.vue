@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { fetchOrgFraudActivity, fetchFraudBranchBreakdown, type OrgFraudDecision, type OrgFraudBranchBreakdownRow } from '@/lib/orgApi'
+import { fetchBranchFraudActivity, type OrgFraudDecision } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
 import { formatMoney, formatDate } from '@/lib/format'
 import DashboardLayout from '@/layouts/DashboardLayout.vue'
@@ -9,7 +9,7 @@ import AppStat from '@/components/ui/AppStat.vue'
 import AppBadge from '@/components/ui/AppBadge.vue'
 import { ShieldAlertIcon, ShieldOffIcon, ShieldIcon } from 'lucide-vue-next'
 
-const props = defineProps<{ orgId: string }>()
+const props = defineProps<{ orgId: string; branchId: string }>()
 
 const loading = ref(true)
 const error = ref<string | null>(null)
@@ -17,14 +17,11 @@ const openBlocks = ref(0)
 const openHolds = ref(0)
 const decisions = ref<OrgFraudDecision[]>([])
 
-const breakdown = ref<OrgFraudBranchBreakdownRow[]>([])
-const breakdownLoading = ref(true)
-
 async function load() {
   loading.value = true
   error.value = null
   try {
-    const data = await fetchOrgFraudActivity()
+    const data = await fetchBranchFraudActivity()
     openBlocks.value = data.open_blocks
     openHolds.value = data.open_holds
     decisions.value = data.decisions
@@ -34,22 +31,7 @@ async function load() {
     loading.value = false
   }
 }
-
-async function loadBreakdown() {
-  breakdownLoading.value = true
-  try {
-    breakdown.value = await fetchFraudBranchBreakdown()
-  } catch (err) {
-    error.value = extractErrorMessage(err)
-  } finally {
-    breakdownLoading.value = false
-  }
-}
-
-onMounted(() => {
-  load()
-  loadBreakdown()
-})
+onMounted(load)
 
 function actionVariant(action: string): 'error' | 'warning' | 'success' {
   if (action === 'BLOCK') return 'error'
@@ -59,12 +41,12 @@ function actionVariant(action: string): 'error' | 'warning' | 'success' {
 </script>
 
 <template>
-  <DashboardLayout :org-id="props.orgId" title="Fraud activity">
+  <DashboardLayout :org-id="props.orgId" :branch-id="props.branchId" title="Fraud activity">
     <div class="flex flex-col gap-6">
       <div v-if="error" class="text-sm text-error-text bg-error-light rounded-xl px-4 py-3">{{ error }}</div>
 
       <p class="text-xs text-text-muted -mt-2">
-        Fraud gate decisions across your organization's own wallet and all branch payouts/collections.
+        Fraud gate decisions on this branch's own payouts and collections.
       </p>
 
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -76,37 +58,15 @@ function actionVariant(action: string): 'error' | 'warning' | 'success' {
         </AppStat>
       </div>
 
-      <AppCard v-if="breakdownLoading || breakdown.length">
-        <h2 class="text-sm font-bold text-text-primary mb-1">By branch</h2>
-        <p class="text-xs text-text-muted mb-4">
-          Where fraud activity is concentrated — the organization's own wallet plus every branch, ranked by open
-          blocks first.
-        </p>
-        <p v-if="breakdownLoading" class="text-sm text-text-muted">Loading…</p>
-        <div v-else class="flex flex-col gap-2">
-          <div
-            v-for="row in breakdown" :key="row.branch_id"
-            class="flex items-center justify-between gap-3 rounded-xl bg-surface-2 px-4 py-2.5"
-          >
-            <span class="text-sm font-semibold text-text-primary truncate">{{ row.branch_name }}</span>
-            <div class="flex items-center gap-2 shrink-0">
-              <AppBadge v-if="row.open_blocks" variant="error" size="sm">{{ row.open_blocks }} blocked</AppBadge>
-              <AppBadge v-if="row.open_holds" variant="warning" size="sm">{{ row.open_holds }} held</AppBadge>
-              <span class="text-xs text-text-muted">{{ row.total_decisions }} total</span>
-            </div>
-          </div>
-        </div>
-      </AppCard>
-
       <AppCard>
         <h2 class="text-sm font-bold text-text-primary mb-1">Recent decisions</h2>
-        <p class="text-xs text-text-muted mb-4">Last 50 fraud gate evaluations, most recent first.</p>
+        <p class="text-xs text-text-muted mb-4">Last 50 fraud gate evaluations for this branch, most recent first.</p>
 
         <p v-if="loading" class="text-sm text-text-muted">Loading…</p>
         <div v-else-if="!decisions.length" class="flex flex-col items-center text-center gap-2 py-10">
           <ShieldIcon class="w-8 h-8 text-text-muted" />
           <p class="text-sm font-semibold text-text-primary">No fraud gate activity yet</p>
-          <p class="text-xs text-text-muted">Blocks, holds, and sanctions hits on your payments will show up here.</p>
+          <p class="text-xs text-text-muted">Blocks, holds, and sanctions hits on this branch's payments will show up here.</p>
         </div>
         <div v-else class="flex flex-col gap-2">
           <div v-for="d in decisions" :key="d.id" class="flex flex-col sm:flex-row sm:items-center gap-2 rounded-xl bg-surface-2 px-4 py-3">

@@ -1,0 +1,126 @@
+<script setup lang="ts">
+import { ref, onMounted } from 'vue'
+import { fetchBranchAnalytics, type BranchAnalytics } from '@/lib/orgApi'
+import { extractErrorMessage } from '@/lib/errors'
+import { formatMoney } from '@/lib/format'
+import DashboardLayout from '@/layouts/DashboardLayout.vue'
+import AppCard from '@/components/ui/AppCard.vue'
+import { TrendingUpIcon, TrendingDownIcon } from 'lucide-vue-next'
+
+const props = defineProps<{ orgId: string }>()
+
+function currentPeriod() {
+  const now = new Date()
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+}
+
+const period = ref(currentPeriod())
+const data = ref<BranchAnalytics | null>(null)
+const loading = ref(true)
+const error = ref<string | null>(null)
+
+async function load() {
+  loading.value = true
+  error.value = null
+  try {
+    data.value = await fetchBranchAnalytics(period.value)
+  } catch (err) {
+    error.value = extractErrorMessage(err)
+  } finally {
+    loading.value = false
+  }
+}
+onMounted(load)
+</script>
+
+<template>
+  <DashboardLayout :org-id="props.orgId" title="Branch analytics">
+    <div class="flex flex-col gap-6">
+      <div v-if="error" class="text-sm text-error-text bg-error-light rounded-xl px-4 py-3">{{ error }}</div>
+
+      <AppCard padding="sm">
+        <div class="flex items-end gap-3">
+          <div class="flex flex-col gap-1.5">
+            <label class="text-xs font-semibold text-text-secondary uppercase tracking-wide">Period</label>
+            <input
+              v-model="period" type="month"
+              class="h-10 rounded-xl border border-input-border bg-input-bg px-3.5 text-sm font-medium text-text-primary outline-none focus:border-input-border-focused focus:ring-2 focus:ring-primary/20"
+              @change="load"
+            />
+          </div>
+        </div>
+      </AppCard>
+
+      <p v-if="loading" class="text-sm text-text-muted">Loading analytics…</p>
+
+      <template v-else-if="data">
+        <div v-if="data.highlights.length" class="flex flex-col gap-2">
+          <div v-for="(h, i) in data.highlights" :key="i" class="text-xs text-text-secondary bg-surface-2 rounded-xl px-4 py-2.5">
+            {{ h }}
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <AppCard padding="sm">
+            <p class="text-[10px] font-bold uppercase tracking-widest text-text-muted mb-1">Total collections</p>
+            <p class="text-lg font-bold text-success">KES {{ formatMoney(data.org_totals.collections_cents) }}</p>
+          </AppCard>
+          <AppCard padding="sm">
+            <p class="text-[10px] font-bold uppercase tracking-widest text-text-muted mb-1">Total payouts</p>
+            <p class="text-lg font-bold text-error">KES {{ formatMoney(data.org_totals.payouts_cents) }}</p>
+          </AppCard>
+          <AppCard padding="sm">
+            <p class="text-[10px] font-bold uppercase tracking-widest text-text-muted mb-1">Net</p>
+            <p class="text-lg font-bold" :class="data.org_totals.net_cents >= 0 ? 'text-success' : 'text-error'">
+              KES {{ formatMoney(data.org_totals.net_cents) }}
+            </p>
+          </AppCard>
+          <AppCard padding="sm">
+            <p class="text-[10px] font-bold uppercase tracking-widest text-text-muted mb-1">Current balance (all)</p>
+            <p class="text-lg font-bold text-text-primary">KES {{ formatMoney(data.org_totals.current_balance_cents) }}</p>
+          </AppCard>
+        </div>
+
+        <AppCard padding="none">
+          <h2 class="text-sm font-bold text-text-primary px-5 pt-5 mb-3">Per-branch leaderboard (ranked by collections)</h2>
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="text-left text-[10px] font-bold uppercase tracking-widest text-text-muted border-b border-border">
+                <th class="px-5 py-2">Branch</th>
+                <th class="px-5 py-2 text-right">Collections</th>
+                <th class="px-5 py-2 text-right">Payouts</th>
+                <th class="px-5 py-2 text-right">Net</th>
+                <th class="px-5 py-2 text-right">Balance</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="border-b border-border bg-surface-2/50">
+                <td class="px-5 py-2.5 font-semibold text-text-primary">{{ data.org_wallet.branch_name }}</td>
+                <td class="px-5 py-2.5 text-right text-text-primary">{{ formatMoney(data.org_wallet.collections_cents) }}</td>
+                <td class="px-5 py-2.5 text-right text-text-primary">{{ formatMoney(data.org_wallet.payouts_cents) }}</td>
+                <td class="px-5 py-2.5 text-right font-semibold" :class="data.org_wallet.net_cents >= 0 ? 'text-success' : 'text-error'">
+                  {{ formatMoney(data.org_wallet.net_cents) }}
+                </td>
+                <td class="px-5 py-2.5 text-right text-text-primary">{{ formatMoney(data.org_wallet.current_balance_cents) }}</td>
+              </tr>
+              <tr v-for="(b, i) in data.branches" :key="b.branch_id ?? i" class="border-b border-border last:border-0">
+                <td class="px-5 py-2.5 font-medium text-text-primary flex items-center gap-1.5">
+                  <span v-if="i === 0" class="text-[10px] font-bold text-primary">#1</span>
+                  {{ b.branch_name }}
+                </td>
+                <td class="px-5 py-2.5 text-right text-text-primary">{{ formatMoney(b.collections_cents) }}</td>
+                <td class="px-5 py-2.5 text-right text-text-primary">{{ formatMoney(b.payouts_cents) }}</td>
+                <td class="px-5 py-2.5 text-right font-semibold flex items-center justify-end gap-1" :class="b.net_cents >= 0 ? 'text-success' : 'text-error'">
+                  <TrendingUpIcon v-if="b.net_cents >= 0" class="w-3.5 h-3.5" />
+                  <TrendingDownIcon v-else class="w-3.5 h-3.5" />
+                  {{ formatMoney(b.net_cents) }}
+                </td>
+                <td class="px-5 py-2.5 text-right text-text-primary">{{ formatMoney(b.current_balance_cents) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </AppCard>
+      </template>
+    </div>
+  </DashboardLayout>
+</template>

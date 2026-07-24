@@ -87,7 +87,84 @@ const router = createRouter({
       meta: { requiresAuth: true },
       props: true,
     },
-   
+    {
+      path: '/org/:orgId/branch/:branchId/collect',
+      name: 'branch-collect',
+      component: () => import('@/views/BranchCollectView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/branch/:branchId/profile',
+      name: 'branch-profile',
+      component: () => import('@/views/BranchProfileView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/branch/:branchId/security',
+      name: 'branch-security',
+      component: () => import('@/views/BranchSecurityView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/branch/:branchId/transactions',
+      name: 'branch-transactions',
+      component: () => import('@/views/BranchTransactionsView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/branch/:branchId/payouts',
+      name: 'branch-payouts',
+      component: () => import('@/views/BranchPayoutsView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/branch/:branchId/fraud',
+      name: 'branch-fraud',
+      component: () => import('@/views/BranchFraudActivityView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/branch/:branchId/payment-links',
+      name: 'branch-payment-links',
+      component: () => import('@/views/BranchPaymentLinksView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/branch/:branchId/invoices',
+      name: 'branch-invoices',
+      component: () => import('@/views/BranchInvoicesView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/branch/:branchId/expenses',
+      name: 'branch-expenses',
+      component: () => import('@/views/BranchExpensesView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/branch/:branchId/tags',
+      name: 'branch-tags',
+      component: () => import('@/views/BranchTagsView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/branch/:branchId/petty-cash',
+      name: 'branch-petty-cash',
+      component: () => import('@/views/BranchPettyCashView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+
     {
       path: '/org/:orgId/documents',
       name: 'org-documents',
@@ -205,6 +282,69 @@ const router = createRouter({
       meta: { requiresAuth: true },
       props: true,
     },
+    {
+      path: '/org/:orgId/transfers',
+      name: 'org-transfers',
+      component: () => import('@/views/OrgTransfersView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/statements',
+      name: 'org-statements',
+      component: () => import('@/views/OrgStatementsView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/analytics',
+      name: 'org-analytics',
+      component: () => import('@/views/OrgAnalyticsView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/bulk-payouts',
+      name: 'org-bulk-payouts',
+      component: () => import('@/views/OrgBulkPayoutsView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/payment-links',
+      name: 'org-payment-links',
+      component: () => import('@/views/OrgPaymentLinksView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/invoices',
+      name: 'org-invoices',
+      component: () => import('@/views/OrgInvoicesView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/expenses',
+      name: 'org-expenses',
+      component: () => import('@/views/OrgExpensesView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/tags',
+      name: 'org-tags',
+      component: () => import('@/views/OrgTagsView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/petty-cash',
+      name: 'org-petty-cash',
+      component: () => import('@/views/OrgPettyCashView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
 
     { path: '/:pathMatch(.*)*', redirect: '/login' },
   ],
@@ -239,12 +379,25 @@ router.beforeEach((to) => {
     }
   }
 
+  // Branch-operator screens: branch members only, and only their own branch.
+  if (to.name === 'branch-collect' || to.name === 'branch-profile' || to.name === 'branch-security' || to.name === 'branch-transactions' || to.name === 'branch-payouts' || to.name === 'branch-fraud') {
+    if (
+      to.params.orgId !== auth.meta.organizationId ||
+      auth.meta.memberType !== 'branch_member' ||
+      to.params.branchId !== auth.meta.branchId
+    ) {
+      return resolveLandingRoute(auth.meta)
+    }
+  }
+
   if (
     to.name === 'org-documents' || to.name === 'org-profile' || to.name === 'org-directors' ||
     to.name === 'org-members' || to.name === 'org-credentials' || to.name === 'org-payouts' ||
     to.name === 'org-branches' || to.name === 'org-collect' || to.name === 'org-audit-log' ||
     to.name === 'org-security' || to.name === 'org-transactions' || to.name === 'org-limits' ||
-    to.name === 'org-vaults' || to.name === 'org-scheduled-payouts' || to.name === 'org-fraud'
+    to.name === 'org-vaults' || to.name === 'org-scheduled-payouts' || to.name === 'org-fraud' ||
+    to.name === 'org-transfers' || to.name === 'org-statements' || to.name === 'org-analytics' ||
+    to.name === 'org-bulk-payouts'
   ) {
     if (to.params.orgId !== auth.meta.organizationId || auth.meta.memberType !== 'org_member') {
       return resolveLandingRoute(auth.meta)

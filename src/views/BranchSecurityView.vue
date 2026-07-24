@@ -1,0 +1,241 @@
+<script setup lang="ts">
+import { ref, onMounted } from 'vue'
+import QRCode from 'qrcode'
+import {
+  fetchEnrolled2FAMethods, addTotpSetup, addTotpVerify, regenerateBackupCodes,
+  addPasskeyBegin, addPasskeyFinish, disableTotp, deletePasskey, type Enrolled2FAMethods,
+} from '@/lib/orgApi'
+import { extractErrorMessage } from '@/lib/errors'
+import { decodeCreationOptions, encodeAttestationResponse, isWebAuthnSupported } from '@/lib/webauthn'
+import DashboardLayout from '@/layouts/DashboardLayout.vue'
+import AppCard from '@/components/ui/AppCard.vue'
+import AppButton from '@/components/ui/AppButton.vue'
+import AppInput from '@/components/ui/AppInput.vue'
+import AppBadge from '@/components/ui/AppBadge.vue'
+
+const props = defineProps<{ orgId: string; branchId: string }>()
+const isBranchSession = true
+
+const methods = ref<Enrolled2FAMethods | null>(null)
+const methodsLoading = ref(true)
+const methodsError = ref<string | null>(null)
+
+async function loadMethods() {
+  methodsLoading.value = true
+  try {
+    methods.value = await fetchEnrolled2FAMethods(isBranchSession)
+  } catch (err) {
+    methodsError.value = extractErrorMessage(err)
+  } finally {
+    methodsLoading.value = false
+  }
+}
+onMounted(loadMethods)
+
+const showAddTotp = ref(false)
+const totpSecret = ref('')
+const totpUri = ref('')
+const totpQrDataUrl = ref('')
+const totpCode = ref('')
+const addingTotp = ref(false)
+const totpError = ref<string | null>(null)
+const revealedBackupCodes = ref<string[] | null>(null)
+
+async function beginAddTotp() {
+  totpError.value = null
+  addingTotp.value = true
+  try {
+    const result = await addTotpSetup(isBranchSession)
+    totpSecret.value = result.secret
+    totpUri.value = result.otpauth_uri
+    totpQrDataUrl.value = await QRCode.toDataURL(result.otpauth_uri)
+    showAddTotp.value = true
+  } catch (err) {
+    totpError.value = extractErrorMessage(err)
+  } finally {
+    addingTotp.value = false
+  }
+}
+
+async function verifyAddTotp() {
+  totpError.value = null
+  if (!/^\d{6}$/.test(totpCode.value)) {
+    totpError.value = 'Enter the 6-digit code from your authenticator app.'
+    return
+  }
+  addingTotp.value = true
+  try {
+    revealedBackupCodes.value = await addTotpVerify(isBranchSession, totpCode.value)
+    showAddTotp.value = false
+    totpCode.value = ''
+    await loadMethods()
+  } catch (err) {
+    totpError.value = extractErrorMessage(err)
+  } finally {
+    addingTotp.value = false
+  }
+}
+
+const regenerating = ref(false)
+const regenerateError = ref<string | null>(null)
+
+async function handleRegenerateBackupCodes() {
+  regenerateError.value = null
+  regenerating.value = true
+  try {
+    revealedBackupCodes.value = await regenerateBackupCodes(isBranchSession)
+  } catch (err) {
+    regenerateError.value = extractErrorMessage(err)
+  } finally {
+    regenerating.value = false
+  }
+}
+
+const addingPasskey = ref(false)
+const passkeyError = ref<string | null>(null)
+const passkeyName = ref('')
+
+async function handleAddPasskey() {
+  passkeyError.value = null
+  if (!isWebAuthnSupported()) {
+    passkeyError.value = 'Passkeys are not supported in this browser.'
+    return
+  }
+  addingPasskey.value = true
+  try {
+    const begin = await addPasskeyBegin(isBranchSession)
+    const publicKey = decodeCreationOptions((begin.creation_options as { publicKey: unknown }).publicKey)
+    const credential = await navigator.credentials.create({ publicKey }) as PublicKeyCredential
+    const attestation = encodeAttestationResponse(credential)
+    await addPasskeyFinish(isBranchSession, begin.session_id, passkeyName.value.trim() || 'Passkey', attestation)
+    passkeyName.value = ''
+    await loadMethods()
+  } catch (err: any) {
+    if (err?.name === 'NotAllowedError') {
+      passkeyError.value = 'Passkey setup was cancelled or timed out. Please try again.'
+    } else if (err?.name === 'InvalidStateError') {
+      passkeyError.value = 'This passkey is already registered on this device.'
+    } else {
+      passkeyError.value = extractErrorMessage(err)
+    }
+  } finally {
+    addingPasskey.value = false
+  }
+}
+
+const removingTotp = ref(false)
+const removingPasskeyId = ref<string | null>(null)
+const removeError = ref<string | null>(null)
+
+async function handleDisableTotp() {
+  removeError.value = null
+  if (!confirm('Remove your authenticator app? You will need to use another 2FA method to log in.')) return
+  removingTotp.value = true
+  try {
+    await disableTotp(isBranchSession)
+    await loadMethods()
+  } catch (err) {
+    removeError.value = extractErrorMessage(err)
+  } finally {
+    removingTotp.value = false
+  }
+}
+
+async function handleDeletePasskey(id: string) {
+  removeError.value = null
+  if (!confirm('Remove this passkey? It will no longer work for signing in.')) return
+  removingPasskeyId.value = id
+  try {
+    await deletePasskey(isBranchSession, id)
+    await loadMethods()
+  } catch (err) {
+    removeError.value = extractErrorMessage(err)
+  } finally {
+    removingPasskeyId.value = null
+  }
+}
+</script>
+
+<template>
+  <DashboardLayout :org-id="props.orgId" :branch-id="props.branchId" title="Security">
+    <div class="flex flex-col gap-6">
+      <div v-if="revealedBackupCodes" class="text-sm bg-warning-light text-warning-text rounded-xl px-4 py-3 flex flex-col gap-2">
+        <p class="font-semibold">Save these backup codes now — they will not be shown again.</p>
+        <div class="grid grid-cols-2 sm:grid-cols-5 gap-2 font-mono text-xs">
+          <span v-for="code in revealedBackupCodes" :key="code" class="bg-surface rounded-lg px-2 py-1 text-center">{{ code }}</span>
+        </div>
+        <button type="button" class="text-xs font-semibold self-start hover:underline" @click="revealedBackupCodes = null">Dismiss</button>
+      </div>
+
+      <AppCard>
+        <h2 class="text-sm font-bold text-text-primary mb-1">Two-factor authentication</h2>
+        <p class="text-xs text-text-muted mb-5">You must have at least one method enrolled to access the dashboard — add a second one here so you're never locked out.</p>
+        <div v-if="methodsError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-4">{{ methodsError }}</div>
+        <p v-if="methodsLoading" class="text-sm text-text-muted">Loading…</p>
+        <div v-else-if="methods" class="flex flex-col gap-4">
+          <div v-if="removeError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2">{{ removeError }}</div>
+
+          <div class="flex items-center justify-between rounded-xl bg-surface-2 px-4 py-3">
+            <div>
+              <p class="text-sm font-semibold text-text-primary">Authenticator app (TOTP)</p>
+              <p class="text-xs text-text-muted">Google Authenticator, Authy, or similar</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <AppBadge :variant="methods.totp_enabled ? 'success' : 'neutral'" size="sm">{{ methods.totp_enabled ? 'Enabled' : 'Not set up' }}</AppBadge>
+              <AppButton v-if="methods.totp_enabled" size="sm" variant="ghost" :loading="removingTotp" @click="handleDisableTotp">Remove</AppButton>
+            </div>
+          </div>
+
+          <div v-if="methods.passkeys.length > 0" class="flex flex-col gap-2">
+            <div v-for="pk in methods.passkeys" :key="pk.id" class="flex items-center justify-between rounded-xl bg-surface-2 px-4 py-3">
+              <div>
+                <p class="text-sm font-semibold text-text-primary">{{ pk.name }}</p>
+                <p class="text-xs text-text-muted">{{ pk.last_used_at ? `Last used ${pk.last_used_at}` : 'Never used' }}</p>
+              </div>
+              <AppButton size="sm" variant="ghost" :loading="removingPasskeyId === pk.id" @click="handleDeletePasskey(pk.id)">Remove</AppButton>
+            </div>
+          </div>
+          <div v-else class="flex items-center justify-between rounded-xl bg-surface-2 px-4 py-3">
+            <div>
+              <p class="text-sm font-semibold text-text-primary">Passkeys</p>
+              <p class="text-xs text-text-muted">Face ID, Touch ID, or a security key</p>
+            </div>
+            <AppBadge variant="neutral" size="sm">0 registered</AppBadge>
+          </div>
+
+          <div class="border-t border-border pt-4 flex flex-col gap-3">
+            <div v-if="!showAddTotp" class="flex flex-wrap gap-2">
+              <AppButton size="sm" variant="secondary" :loading="addingTotp" @click="beginAddTotp">
+                {{ methods.totp_enabled ? 'Replace authenticator app' : 'Add authenticator app' }}
+              </AppButton>
+              <AppButton v-if="methods.totp_enabled" size="sm" variant="secondary" :loading="regenerating" @click="handleRegenerateBackupCodes">
+                Regenerate backup codes
+              </AppButton>
+            </div>
+            <div v-if="regenerateError" class="text-xs text-error-text">{{ regenerateError }}</div>
+
+            <div v-if="showAddTotp" class="flex flex-col gap-3 max-w-sm">
+              <p class="text-xs text-text-muted">Scan this into your authenticator app, or enter the secret manually.</p>
+              <div class="flex justify-center">
+                <img v-if="totpQrDataUrl" :src="totpQrDataUrl" alt="TOTP QR code" class="w-40 h-40 rounded-lg border border-border" />
+              </div>
+              <p class="font-mono text-xs bg-surface-2 rounded-lg px-3 py-2 break-all">{{ totpSecret }}</p>
+              <div v-if="totpError" class="text-xs text-error-text">{{ totpError }}</div>
+              <AppInput v-model="totpCode" label="6-digit code from the app" placeholder="000000" />
+              <div class="flex gap-2">
+                <AppButton size="sm" :loading="addingTotp" @click="verifyAddTotp">Confirm</AppButton>
+                <AppButton size="sm" variant="ghost" @click="showAddTotp = false">Cancel</AppButton>
+              </div>
+            </div>
+
+            <div class="flex items-end gap-2 flex-wrap">
+              <AppInput v-model="passkeyName" label="Passkey name (optional)" placeholder="e.g. My laptop" class="max-w-xs" />
+              <AppButton size="sm" variant="secondary" :loading="addingPasskey" @click="handleAddPasskey">Add a passkey</AppButton>
+            </div>
+            <div v-if="passkeyError" class="text-xs text-error-text">{{ passkeyError }}</div>
+          </div>
+        </div>
+      </AppCard>
+    </div>
+  </DashboardLayout>
+</template>
