@@ -103,6 +103,7 @@ export interface Transaction {
   feeCents: number
   rail: string
   reference: string
+  ledgerTxnId: string
   description: string
   created_at: string
 }
@@ -127,6 +128,20 @@ export interface TransactionSearchParams {
 
 export async function fetchOrgBranches(params?: { page?: number; page_size?: number }): Promise<BranchesResponse> {
   const res = await http.get<{ status: string; data: BranchesResponse }>('/org/v1/org-branches', { params })
+  return res.data.data
+}
+
+export interface SiblingBranch {
+  id: string
+  name: string
+  collection_code: string
+}
+
+// Branch-safe: reachable by a real branch_member token, unlike fetchOrgBranches
+// (org-member-only). Returns only the minimal fields needed to pick a transfer
+// destination, never balances/KYC/contact details.
+export async function fetchSiblingBranches(): Promise<SiblingBranch[]> {
+  const res = await http.get<{ status: string; data: SiblingBranch[] }>('/org/v1/branch/sibling-branches')
   return res.data.data
 }
 
@@ -236,6 +251,11 @@ export async function fetchOrgCashFlow(days = 14): Promise<CashFlowDayPoint[]> {
   return res.data.data
 }
 
+export async function fetchBranchCashFlow(days = 14): Promise<CashFlowDayPoint[]> {
+  const res = await http.get<{ status: string; data: CashFlowDayPoint[] }>('/org/v1/branch/analytics/cashflow', { params: { days } })
+  return res.data.data
+}
+
 export interface CollectionInstructions {
   collection_code: string
   mpesa_paybill: string
@@ -331,6 +351,31 @@ export async function uploadOrgDocument(file: File, docType: string): Promise<Or
     headers: { 'Content-Type': 'multipart/form-data' },
   })
   return res.data.data
+}
+
+export async function fetchOwnBranchMemberDocuments(): Promise<OrgDocument[]> {
+  const res = await http.get<{ status: string; data: OrgDocument[] }>('/org/v1/branch/documents')
+  return res.data.data
+}
+
+export async function uploadOwnBranchMemberDocument(file: File, docType: string): Promise<OrgDocument> {
+  const form = new FormData()
+  form.append('document', file)
+  form.append('doc_type', docType)
+  const res = await http.post<{ status: string; data: OrgDocument }>('/org/v1/branch/documents', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+  return res.data.data
+}
+
+export async function fetchOwnBranchMemberDocumentUrl(docId: string): Promise<string> {
+  const res = await http.get<{ status: string; data: { url: string } }>(`/org/v1/branch/documents/${docId}`)
+  return res.data.data.url
+}
+
+export async function fetchOrgScopedDocumentUrl(docId: string): Promise<string> {
+  const res = await http.get<{ status: string; data: { url: string } }>(`/org/v1/documents/${docId}`)
+  return res.data.data.url
 }
 
 export interface OrgProfile {
@@ -758,6 +803,7 @@ export interface AuditLogListItem {
   actor_role: string
   actor_id: string | null
   actor_name?: string
+  actor_email?: string
   actor_tenant_id: string | null
   tenant_name?: string
   action: string
@@ -770,7 +816,13 @@ export interface AuditLogListItem {
   duration_ms: number
   ip_address: string
   country?: string
+  country_code?: string
   city?: string
+  isp?: string
+  asn?: number
+  device_name?: string
+  device_platform?: string
+  app_version?: string
   occurred_at: string
 }
 
@@ -803,7 +855,23 @@ export interface AuditLogDetail extends AuditLogListItem {
   body?: string
   error_msg?: string
   user_agent?: string
-  actor: { id: string | null; type: string; role: string; tenant_id: string | null }
+  town?: string
+  network?: string
+  actor: {
+    id: string | null
+    type: string
+    role: string
+    tenant_id: string | null
+    first_name?: string
+    last_name?: string
+    full_name?: string
+    email?: string
+    phone?: string
+    is_active?: boolean
+    business_name?: string
+    collection_code?: string
+    merchant_status?: string
+  }
 }
 
 export async function fetchOrgAuditLogDetail(id: string): Promise<AuditLogDetail> {
@@ -1003,6 +1071,7 @@ export async function withdrawOrgVault(vaultId: string, input: VaultTransferInpu
 export interface ScheduledPayout {
   id: string
   organization_id: string
+  branch_id?: string | null
   funding_source: 'MAIN' | 'VAULT'
   vault_id: string | null
   amount_cents: number
@@ -1036,12 +1105,14 @@ export interface CreateScheduledPayoutInput {
   vault_id?: string
   schedule_type?: 'ONE_TIME' | 'RECURRING'
   recurrence_interval?: 'DAILY' | 'WEEKLY' | 'MONTHLY'
-  start_at: string 
-  end_date?: string 
+  start_at: string
+  end_date?: string
+  password?: string
 }
 
-export async function fetchScheduledPayouts(): Promise<ScheduledPayout[]> {
-  const res = await http.get<{ status: string; data: ScheduledPayout[] }>('/org/v1/scheduled-payouts')
+export async function fetchScheduledPayouts(isBranch = false): Promise<ScheduledPayout[]> {
+  const base = isBranch ? '/org/v1/branch/scheduled-payouts' : '/org/v1/scheduled-payouts'
+  const res = await http.get<{ status: string; data: ScheduledPayout[] }>(base)
   return res.data.data
 }
 
@@ -1052,33 +1123,40 @@ export interface ScheduledPayoutCreateResult {
   data?: { id: string; next_run_at: string }
 }
 
-export async function createScheduledPayout(input: CreateScheduledPayoutInput): Promise<ScheduledPayoutCreateResult> {
-  const res = await http.post<ScheduledPayoutCreateResult>('/org/v1/scheduled-payouts', input)
+export async function createScheduledPayout(input: CreateScheduledPayoutInput, isBranch = false): Promise<ScheduledPayoutCreateResult> {
+  const base = isBranch ? '/org/v1/branch/scheduled-payouts' : '/org/v1/scheduled-payouts'
+  const res = await http.post<ScheduledPayoutCreateResult>(base, input)
   return res.data
 }
 
-export async function confirmScheduledPayout(otp: string): Promise<ScheduledPayoutCreateResult> {
-  const res = await http.post<ScheduledPayoutCreateResult>('/org/v1/scheduled-payouts/confirm', { otp })
+export async function confirmScheduledPayout(otp: string, isBranch = false): Promise<ScheduledPayoutCreateResult> {
+  const base = isBranch ? '/org/v1/branch/scheduled-payouts' : '/org/v1/scheduled-payouts'
+  const res = await http.post<ScheduledPayoutCreateResult>(`${base}/confirm`, { otp })
   return res.data
 }
 
-export async function pauseScheduledPayout(id: string): Promise<void> {
-  await http.post(`/org/v1/scheduled-payouts/${id}/pause`)
+export async function pauseScheduledPayout(id: string, isBranch = false): Promise<void> {
+  const base = isBranch ? '/org/v1/branch/scheduled-payouts' : '/org/v1/scheduled-payouts'
+  await http.post(`${base}/${id}/pause`)
 }
 
-export async function resumeScheduledPayout(id: string): Promise<void> {
-  await http.post(`/org/v1/scheduled-payouts/${id}/resume`)
+export async function resumeScheduledPayout(id: string, isBranch = false): Promise<void> {
+  const base = isBranch ? '/org/v1/branch/scheduled-payouts' : '/org/v1/scheduled-payouts'
+  await http.post(`${base}/${id}/resume`)
 }
 
-export async function cancelScheduledPayout(id: string): Promise<void> {
-  await http.post(`/org/v1/scheduled-payouts/${id}/cancel`)
+export async function cancelScheduledPayout(id: string, isBranch = false): Promise<void> {
+  const base = isBranch ? '/org/v1/branch/scheduled-payouts' : '/org/v1/scheduled-payouts'
+  await http.post(`${base}/${id}/cancel`)
 }
 
 
 export interface Beneficiary {
   id: string
   organization_id: string
-  created_by_org_member_id: string
+  branch_id?: string | null
+  created_by_org_member_id?: string | null
+  created_by_branch_member_id?: string | null
   nickname: string
   recipient_name: string
   destination_type: 'PHONE_NUMBER' | 'BANK_ACCOUNT'
@@ -1098,20 +1176,23 @@ export interface CreateBeneficiaryInput {
   bank_account_number?: string
 }
 
-export async function fetchOrgBeneficiaries(): Promise<Beneficiary[]> {
-  const res = await http.get<{ status: string; data: Beneficiary[] }>('/org/v1/beneficiaries')
+export async function fetchOrgBeneficiaries(isBranch = false): Promise<Beneficiary[]> {
+  const base = isBranch ? '/org/v1/branch/beneficiaries' : '/org/v1/beneficiaries'
+  const res = await http.get<{ status: string; data: Beneficiary[] }>(base)
   return res.data.data
 }
 
 
-export async function createOrgBeneficiary(input: CreateBeneficiaryInput): Promise<Beneficiary> {
-  const res = await http.post<{ status: string; data: Beneficiary }>('/org/v1/beneficiaries', input)
+export async function createOrgBeneficiary(input: CreateBeneficiaryInput, isBranch = false): Promise<Beneficiary> {
+  const base = isBranch ? '/org/v1/branch/beneficiaries' : '/org/v1/beneficiaries'
+  const res = await http.post<{ status: string; data: Beneficiary }>(base, input)
   return res.data.data
 }
 
 
-export async function deleteOrgBeneficiary(id: string): Promise<void> {
-  await http.delete(`/org/v1/beneficiaries/${id}`)
+export async function deleteOrgBeneficiary(id: string, isBranch = false): Promise<void> {
+  const base = isBranch ? '/org/v1/branch/beneficiaries' : '/org/v1/beneficiaries'
+  await http.delete(`${base}/${id}`)
 }
 
 
@@ -1128,8 +1209,9 @@ export interface RecentSettlement {
 }
 
 
-export async function fetchRecentSettlements(): Promise<RecentSettlement[]> {
-  const res = await http.get<{ status: string; data: RecentSettlement[] }>('/org/v1/payouts/recent')
+export async function fetchRecentSettlements(isBranch = false): Promise<RecentSettlement[]> {
+  const base = isBranch ? '/org/v1/branch/payouts/recent' : '/org/v1/payouts/recent'
+  const res = await http.get<{ status: string; data: RecentSettlement[] }>(base)
   return res.data.data
 }
 
@@ -1209,7 +1291,6 @@ export async function fetchFraudBranchBreakdown(): Promise<OrgFraudBranchBreakdo
 }
 
 
-// ---- Internal transfers (org <-> branch, branch <-> branch) ----
 
 export interface TransferInput {
   from: string
@@ -1232,8 +1313,79 @@ export async function createOrgTransfer(input: TransferInput): Promise<TransferR
   return res.data.data
 }
 
+// A branch member moves funds from their own branch to the org or a
+// sibling branch — same shape as createOrgTransfer but "from" is implicit
+// (always the caller's own branch) and confirmation is password-only.
+export async function createBranchTransfer(input: Omit<TransferInput, 'from' | 'pin'>): Promise<TransferResult> {
+  const res = await http.post<{ status: string; data: TransferResult }>('/org/v1/branch/transfers', input)
+  return res.data.data
+}
 
-// ---- Statements ----
+
+export interface TransferRecipientLookup {
+  name: string
+  type: 'organization' | 'branch'
+  collection_code: string
+}
+
+// Verifies a collection code resolves to a real organization/branch BEFORE
+// filling in amount/PIN — no money moves. Same endpoint shape for org and
+// branch sessions, just a different base path.
+export async function lookupTransferRecipient(code: string, isBranch = false): Promise<TransferRecipientLookup> {
+  const base = isBranch ? '/org/v1/branch/transfers/lookup' : '/org/v1/transfers/lookup'
+  const res = await http.get<{ status: string; data: TransferRecipientLookup }>(base, { params: { code } })
+  return res.data.data
+}
+
+export interface ExternalTransferInput {
+  from?: string
+  recipient_collection_code: string
+  amount: number
+  remarks: string
+  password?: string
+  pin?: string
+}
+
+export interface ExternalTransferOtpRequired {
+  status: 'otp_required'
+  message: string
+  transfer_id: string
+}
+
+export interface ExternalTransferComplete {
+  status: 'success'
+  message: string
+  data: { transfer_id: string; amount_cents: number; from: string; to: string }
+}
+
+export async function requestExternalTransfer(
+  input: ExternalTransferInput,
+): Promise<ExternalTransferOtpRequired | ExternalTransferComplete> {
+  const res = await http.post<ExternalTransferOtpRequired | ExternalTransferComplete>('/org/v1/transfers/external', input)
+  return res.data
+}
+
+export async function confirmExternalTransfer(otp: string): Promise<ExternalTransferComplete['data']> {
+  const res = await http.post<{ status: string; data: ExternalTransferComplete['data'] }>('/org/v1/transfers/external/confirm', { otp })
+  return res.data.data
+}
+
+// Branch-initiated cross-org transfer — genuine branch members only
+// (password confirmation, no PIN tier). Same request/response shape as the
+// org version, different base path.
+export async function requestBranchExternalTransfer(
+  input: Omit<ExternalTransferInput, 'from' | 'pin'>,
+): Promise<ExternalTransferOtpRequired | ExternalTransferComplete> {
+  const res = await http.post<ExternalTransferOtpRequired | ExternalTransferComplete>('/org/v1/branch/transfers/external', input)
+  return res.data
+}
+
+export async function confirmBranchExternalTransfer(otp: string): Promise<ExternalTransferComplete['data']> {
+  const res = await http.post<{ status: string; data: ExternalTransferComplete['data'] }>('/org/v1/branch/transfers/external/confirm', { otp })
+  return res.data.data
+}
+
+
 
 export interface StatementTypeRow {
   type: string
@@ -1265,7 +1417,6 @@ export async function downloadStatementCsv(params: { period?: string; scope?: 'c
 }
 
 
-// ---- Branch comparative analytics ----
 
 export interface BranchAnalyticsRow {
   branch_id?: string
@@ -1292,8 +1443,65 @@ export async function fetchBranchAnalytics(period?: string): Promise<BranchAnaly
   return res.data.data
 }
 
+export interface AnalyticsTotals {
+  collections_cents: number
+  collections_count: number
+  payouts_cents: number
+  payouts_count: number
+  net_cents: number
+  avg_collection_cents: number
+  avg_payout_cents: number
+  fees_cents: number
+}
 
-// ---- High-value payout approval ceiling (dual control) ----
+export interface AnalyticsStatusRow {
+  direction: 'collection' | 'payout'
+  status: string
+  count: number
+  amount_cents: number
+}
+
+export interface AnalyticsRailRow {
+  rail: string
+  count: number
+  amount_cents: number
+}
+
+export interface AnalyticsTagRow {
+  tag_id: string
+  tag_name: string
+  tag_color?: string
+  total_cents: number
+  count: number
+}
+
+export interface AnalyticsDetail {
+  period_start: string
+  period_end: string
+  totals: AnalyticsTotals
+  prior_period: { start: string; end: string; totals: AnalyticsTotals }
+  comparison: {
+    collections_change_pct: number | null
+    payouts_change_pct: number | null
+    net_change_pct: number | null
+  }
+  status_breakdown: AnalyticsStatusRow[]
+  rail_breakdown: AnalyticsRailRow[]
+  tag_breakdown: AnalyticsTagRow[] | null
+  untagged_spend: { total_cents: number; count: number }
+}
+
+export async function fetchOrgAnalyticsDetail(period?: string): Promise<AnalyticsDetail> {
+  const res = await http.get<{ status: string; data: AnalyticsDetail }>('/org/v1/analytics/detail', { params: { period } })
+  return res.data.data
+}
+
+export async function fetchBranchAnalyticsDetail(period?: string): Promise<AnalyticsDetail> {
+  const res = await http.get<{ status: string; data: AnalyticsDetail }>('/org/v1/branch/analytics/detail', { params: { period } })
+  return res.data.data
+}
+
+
 
 export interface ApprovalThreshold {
   configured: boolean
@@ -1330,7 +1538,6 @@ export async function setRoleApprovalThreshold(role: string, input: { amount_cen
 }
 
 
-// ---- Bulk / batch payouts ----
 
 export interface BulkPayoutBatchItemInput {
   amount_cents: number
@@ -1413,7 +1620,6 @@ export async function fetchBulkPayoutBatch(id: string): Promise<{ batch: BulkPay
   return res.data.data
 }
 
-// ---- Payment links (org + branch) ----
 
 export interface OrgPaymentLink {
   id: string
@@ -1512,7 +1718,6 @@ export async function fetchPayoutFeeEstimate(amountCents: number, destinationTyp
   return res.data.data
 }
 
-// ---- Invoices (org + branch) ----
 
 export interface OrgInvoiceItem {
   id: string
@@ -1606,7 +1811,6 @@ export async function downloadOrgInvoicePdf(id: string, isBranch = false): Promi
   return res.data
 }
 
-// ---- Expenses (org + branch) ----
 
 export interface OrgExpense {
   id: string
@@ -1688,9 +1892,7 @@ export async function presignExpenseReceiptUpload(contentType: string, isBranch 
   return res.data.data
 }
 
-// Uploads directly to the R2 presigned URL — a different host than the API,
-// so this deliberately bypasses the `http` axios instance (no auth header,
-// no JSON content-type, no baseURL prefix).
+
 export async function uploadExpenseReceipt(file: File, isBranch = false): Promise<string> {
   const presign = await presignExpenseReceiptUpload(file.type, isBranch)
   const res = await fetch(presign.upload_url, {
@@ -1704,7 +1906,6 @@ export async function uploadExpenseReceipt(file: File, isBranch = false): Promis
   return presign.public_url
 }
 
-// ---- Tags + spend breakdown (org + branch) ----
 
 export interface OrgTag {
   id: string
@@ -1768,12 +1969,6 @@ export async function fetchTagsForSubject(subjectType: 'payout' | 'expense', sub
   return res.data.data ?? []
 }
 
-// ---- Petty cash (org + branch) ----
-// Money movement (create/fund/draw) is org-member-only, matching the
-// Vault/Transfer convention — the owner or a member with
-// CanInitiatePayments confirms every movement, even for a branch's own
-// float (via branch_id). Branch sessions get read-only list + history.
-
 export interface PettyCashFloat {
   id: string
   name: string
@@ -1791,7 +1986,8 @@ export interface PettyCashDraw {
   category?: string
   receipt_url?: string
   notes?: string
-  drawn_by_org_member_id: string
+  drawn_by_org_member_id?: string | null
+  drawn_by_branch_member_id?: string | null
   drawn_at: string
 }
 
@@ -1815,8 +2011,10 @@ export async function fundPettyCashFloat(floatId: string, amount: number, confir
 export async function recordPettyCashDraw(
   floatId: string,
   input: { amount: number; payee: string; category?: string; receipt_url?: string; notes?: string },
+  isBranch = false,
 ): Promise<PettyCashDraw> {
-  const res = await http.post<{ status: string; data: PettyCashDraw }>(`/org/v1/petty-cash/${floatId}/draw`, input)
+  const base = isBranch ? '/org/v1/branch/petty-cash' : '/org/v1/petty-cash'
+  const res = await http.post<{ status: string; data: PettyCashDraw }>(`${base}/${floatId}/draw`, input)
   return res.data.data
 }
 
@@ -1824,4 +2022,39 @@ export async function fetchPettyCashHistory(floatId: string, isBranch = false): 
   const base = isBranch ? '/org/v1/branch/petty-cash' : '/org/v1/petty-cash'
   const res = await http.get<{ status: string; data: PettyCashDraw[] }>(`${base}/${floatId}/history`)
   return res.data.data ?? []
+}
+
+export interface PettyCashPayoutInput {
+  amount: number
+  recipient_name: string
+  remarks: string
+  destination_type: 'PHONE_NUMBER' | 'BANK_ACCOUNT'
+  phone_number?: string
+  bank_code?: string
+  bank_account_number?: string
+  password?: string
+  pin?: string
+  // What this payout was actually used for — shows up in the float's
+  // draw history instead of the generic "PAYOUT" label.
+  category?: string
+}
+
+export interface PettyCashPayoutResult {
+  status: 'success' | 'otp_required'
+  message: string
+  payout_id?: string
+  fee_cents?: number
+}
+
+
+export async function requestPettyCashPayout(floatId: string, input: PettyCashPayoutInput, isBranch = false): Promise<PettyCashPayoutResult> {
+  const base = isBranch ? '/org/v1/branch/petty-cash' : '/org/v1/petty-cash'
+  const res = await http.post<PettyCashPayoutResult>(`${base}/${floatId}/payout`, input)
+  return res.data
+}
+
+export async function confirmPettyCashPayout(floatId: string, otp: string, isBranch = false): Promise<PettyCashPayoutResult> {
+  const base = isBranch ? '/org/v1/branch/petty-cash' : '/org/v1/petty-cash'
+  const res = await http.post<PettyCashPayoutResult>(`${base}/${floatId}/payout/confirm`, { otp })
+  return res.data
 }

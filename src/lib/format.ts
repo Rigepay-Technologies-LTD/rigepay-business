@@ -7,9 +7,31 @@ export function formatDate(iso: string): string {
 }
 
 
-export function riskTier(score: number): { label: string; variant: 'error' | 'warning' | 'success' | 'neutral' } {
-  if (score >= 70) return { label: 'High risk', variant: 'error' }
-  if (score >= 50) return { label: 'Medium risk', variant: 'warning' }
-  if (score > 0) return { label: 'Low risk', variant: 'success' }
-  return { label: 'Not yet scored', variant: 'neutral' }
+
+export function txnReference(t: { reference?: string | null; ledgerTxnId?: string | null }): string {
+  if (t.reference) return t.reference
+  if (t.ledgerTxnId) return t.ledgerTxnId.slice(0, 8).toUpperCase()
+  return '—'
+}
+
+export function riskTier(score: number): {
+  label: string;
+  variant: 'error' | 'warning' | 'success' | 'neutral'
+} {
+  if (score >= 70) return {
+    label: 'High risk',
+    variant: 'error'
+  }
+  if (score >= 50) return {
+    label: 'Medium risk',
+    variant: 'warning'
+  }
+  if (score > 0) return {
+    label: 'Low risk',
+    variant: 'success'
+  }
+  return {
+    label: 'Not yet scored',
+    variant: 'neutral'
+  }
 }

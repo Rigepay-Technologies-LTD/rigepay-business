@@ -5,8 +5,7 @@ import { useAuthStore } from '@/stores/auth'
 import { refreshSession } from '@/lib/sessionRefresh'
 import AppButton from '@/components/ui/AppButton.vue'
 
-// Warn this long before the access token actually expires, and give the
-// user this long to respond before auto-logout.
+
 const WARNING_WINDOW_SECONDS = 90
 
 const auth = useAuthStore()
@@ -73,7 +72,7 @@ onUnmounted(() => {
   <Teleport to="body">
     <div
       v-if="showWarning"
-      class="fixed inset-0 z-[9900] flex items-center justify-center p-4"
+      class="fixed inset-0 z-9900 flex items-center justify-center p-4"
       style="background: var(--color-overlay); backdrop-filter: blur(4px);"
       role="alertdialog"
       aria-modal="true"

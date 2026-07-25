@@ -46,11 +46,14 @@ async function submit() {
       password: password.value,
     })
 
+    const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : null
     if (res.data.status === '2fa_setup_required') {
       twoFactor.setEnrollment(res.data.setup_token)
+      twoFactor.setRedirect(redirect)
       router.push({ name: '2fa-enroll' })
     } else {
       twoFactor.setChallenge(res.data.setup_token, res.data.methods ?? [])
+      twoFactor.setRedirect(redirect)
       router.push({ name: '2fa-challenge' })
     }
   } catch (err) {

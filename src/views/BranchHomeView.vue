@@ -7,20 +7,23 @@ import {
   fetchOrgBranches,
   fetchOrgTransactions,
   fetchBranchProfile,
+  fetchBranchCashFlow,
   type WalletBalances,
   type PaginatedTransactions,
   type BranchSummary,
   type BranchProfileDetail,
+  type Transaction,
+  type CashFlowDayPoint,
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
-import { formatMoney, formatDate, riskTier } from '@/lib/format'
+import { formatMoney, formatDate, txnReference, riskTier } from '@/lib/format'
 import DashboardLayout from '@/layouts/DashboardLayout.vue'
 import AppCard from '@/components/ui/AppCard.vue'
-import AppButton from '@/components/ui/AppButton.vue'
-import AppInput from '@/components/ui/AppInput.vue'
-import AppStat from '@/components/ui/AppStat.vue'
 import AppTable from '@/components/ui/AppTable.vue'
 import AppBadge from '@/components/ui/AppBadge.vue'
+import CashFlowChart from '@/components/CashFlowChart.vue'
+import QuickActions, { type QuickAction } from '@/components/QuickActions.vue'
+import { WalletIcon, BanknoteIcon, LinkIcon, ReceiptIcon, CoinsIcon, ArrowLeftRightIcon, ShieldCheckIcon, AlertOctagonIcon } from 'lucide-vue-next'
 
 const props = defineProps<{ orgId: string; branchId: string }>()
 
@@ -36,12 +39,11 @@ const branchInfo = ref<BranchSummary | null>(null)
 const branchProfile = ref<BranchProfileDetail | null>(null)
 const siblingBranches = ref<BranchSummary[]>([])
 
-const searchText = ref('')
-const startDate = ref('')
-const endDate = ref('')
 const txnLoading = ref(false)
 const txns = ref<PaginatedTransactions | null>(null)
-const page = ref(1)
+
+const cashFlow = ref<CashFlowDayPoint[]>([])
+const cashFlowLoading = ref(true)
 
 async function loadWallets() {
   loading.value = true
@@ -72,13 +74,7 @@ async function loadWallets() {
 async function loadTransactions() {
   txnLoading.value = true
   try {
-    const params = {
-      page: page.value,
-      page_size: 10,
-      search: searchText.value || undefined,
-      start_date: startDate.value || undefined,
-      end_date: endDate.value || undefined,
-    }
+    const params = { page: 1, page_size: 5 }
     txns.value = isOrgMemberView.value
       ? await fetchOrgTransactions({ ...params, branch_id: props.branchId })
       : await fetchBranchTransactions(params)
@@ -89,14 +85,43 @@ async function loadTransactions() {
   }
 }
 
-function search() {
-  page.value = 1
-  loadTransactions()
+async function loadCashFlow() {
+  cashFlowLoading.value = true
+  try {
+    cashFlow.value = await fetchBranchCashFlow(14)
+  } catch {
+    cashFlow.value = []
+  } finally {
+    cashFlowLoading.value = false
+  }
 }
+
+const quickActions = computed<QuickAction[]>(() => {
+  const base = { orgId: props.orgId, branchId: props.branchId }
+  return [
+    { label: 'Collect', icon: WalletIcon, to: { name: 'branch-collect', params: base } },
+    {
+      label: 'Send payout', icon: BanknoteIcon,
+      to: isOrgMemberView.value
+        ? { name: 'org-payouts', params: { orgId: props.orgId }, query: { branch: props.branchId } }
+        : { name: 'branch-payouts', params: base },
+    },
+    { label: 'Payment link', icon: LinkIcon, to: { name: 'branch-payment-links', params: base } },
+    { label: 'Expenses', icon: ReceiptIcon, to: { name: 'branch-expenses', params: base } },
+    { label: 'Petty cash', icon: CoinsIcon, to: { name: 'branch-petty-cash', params: base } },
+    {
+      label: 'Transfers', icon: ArrowLeftRightIcon,
+      to: isOrgMemberView.value
+        ? { name: 'org-transfers', params: { orgId: props.orgId } }
+        : { name: 'branch-transfers', params: base },
+    },
+  ]
+})
 
 onMounted(() => {
   loadWallets()
   loadTransactions()
+  loadCashFlow()
 })
 
 const txnColumns = [
@@ -120,65 +145,69 @@ function statusVariant(status: string) {
     :org-id="props.orgId"
     :branch-id="props.branchId"
     :branches="isOrgMemberView ? siblingBranches : undefined"
-    :title="branchInfo?.name ?? 'Branch dashboard'"
+    :title="branchInfo?.name ?? branchProfile?.name ?? 'Branch dashboard'"
   >
     <div class="flex flex-col gap-6">
       <div v-if="error" class="text-sm text-error-text bg-error-light rounded-xl px-4 py-3">{{ error }}</div>
 
-      <section class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <AppStat label="Main balance" :value="`KES ${formatMoney(wallets?.main_cents)}`" icon-color="primary" />
-        <AppStat label="Escrow balance" :value="`KES ${formatMoney(wallets?.escrow_cents)}`" icon-color="info" />
-        <AppStat label="Chargeback balance" :value="`KES ${formatMoney(wallets?.chargeback_cents)}`" icon-color="warning" />
+      <QuickActions :actions="quickActions" />
+
+      <section class="grid grid-cols-1 sm:grid-cols-4 gap-4">
+        <div class="rounded-2xl bg-linear-to-br from-primary to-primary/80 text-white p-5 flex flex-col gap-3 shadow-sm sm:col-span-2">
+          <div class="flex items-center justify-between">
+            <span class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-white/80">
+              <WalletIcon class="w-4 h-4" />Branch main balance
+            </span>
+            <span v-if="branchProfile?.collection_code" class="text-[10px] font-bold uppercase tracking-wide bg-white/15 rounded-full px-2 py-1">
+              Code {{ branchProfile.collection_code }}
+            </span>
+          </div>
+          <p class="text-3xl font-bold tracking-tight">KES {{ formatMoney(wallets?.main_cents) }}</p>
+          <AppBadge v-if="branchProfile" :variant="riskTier(branchProfile.risk_score).variant" size="sm" class="self-start">
+            {{ riskTier(branchProfile.risk_score).label }}{{ branchProfile.risk_score > 0 ? ` (${branchProfile.risk_score}/100)` : '' }}
+          </AppBadge>
+        </div>
+        <div class="rounded-2xl bg-surface border border-border p-5 flex flex-col gap-3 shadow-sm">
+          <span class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-text-muted">
+            <ShieldCheckIcon class="w-4 h-4 text-info" />Escrow balance
+          </span>
+          <p class="text-2xl font-bold text-text-primary tracking-tight">KES {{ formatMoney(wallets?.escrow_cents) }}</p>
+        </div>
+        <div class="rounded-2xl bg-surface border border-border p-5 flex flex-col gap-3 shadow-sm">
+          <span class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-text-muted">
+            <AlertOctagonIcon class="w-4 h-4 text-warning" />Chargeback holding
+          </span>
+          <p class="text-2xl font-bold text-text-primary tracking-tight">KES {{ formatMoney(wallets?.chargeback_cents) }}</p>
+        </div>
       </section>
 
-      <AppCard v-if="branchProfile">
-        <h2 class="text-sm font-bold text-text-primary mb-3">Details</h2>
-        <dl class="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-3 text-xs">
-          <div>
-            <dt class="text-text-muted mb-0.5">Risk score</dt>
-            <dd>
-              <AppBadge :variant="riskTier(branchProfile.risk_score).variant" size="sm">
-                {{ riskTier(branchProfile.risk_score).label }}{{ branchProfile.risk_score > 0 ? ` (${branchProfile.risk_score}/100)` : '' }}
-              </AppBadge>
-            </dd>
-          </div>
-          <div><dt class="text-text-muted mb-0.5">Parent org identifier</dt><dd class="font-semibold text-text-primary">{{ branchProfile.parent_organization_identifier ?? '—' }}</dd></div>
-          <div><dt class="text-text-muted mb-0.5">Branch type</dt><dd class="font-semibold text-text-primary">{{ branchProfile.branch_type ?? '—' }}</dd></div>
-          <div><dt class="text-text-muted mb-0.5">Settlement mode</dt><dd class="font-semibold text-text-primary">{{ branchProfile.settlement_mode }}</dd></div>
-          <div class="sm:col-span-3"><dt class="text-text-muted mb-0.5">Operating address</dt><dd class="font-semibold text-text-primary">{{ branchProfile.operating_address ?? '—' }}</dd></div>
-          <div><dt class="text-text-muted mb-0.5">Contact person</dt><dd class="font-semibold text-text-primary">{{ branchProfile.contact_person_name ?? '—' }}</dd></div>
-          <div><dt class="text-text-muted mb-0.5">Contact email</dt><dd class="font-semibold text-text-primary">{{ branchProfile.contact_person_email ?? '—' }}</dd></div>
-          <div><dt class="text-text-muted mb-0.5">Contact phone</dt><dd class="font-semibold text-text-primary">{{ branchProfile.contact_person_phone ?? '—' }}</dd></div>
-          <div v-if="branchProfile.settlement_mode === 'CONSOLIDATED'"><dt class="text-text-muted mb-0.5">Settlement bank</dt><dd class="font-semibold text-text-primary">{{ branchProfile.settlement_bank_name ?? '—' }} ({{ branchProfile.settlement_bank_code ?? '—' }})</dd></div>
-          <div v-if="branchProfile.settlement_mode === 'CONSOLIDATED'"><dt class="text-text-muted mb-0.5">Settlement account</dt><dd class="font-semibold text-text-primary">{{ branchProfile.settlement_bank_account_number ?? '—' }}</dd></div>
-          <div><dt class="text-text-muted mb-0.5">Tax / license number</dt><dd class="font-semibold text-text-primary">{{ branchProfile.branch_tax_license_number ?? '—' }}</dd></div>
-        </dl>
+      <AppCard>
+        <h2 class="text-sm font-bold text-text-primary mb-1">Cash flow — last 14 days</h2>
+        <p class="text-xs text-text-muted mb-4">Collections and payouts through this branch's own wallet.</p>
+        <p v-if="cashFlowLoading" class="text-sm text-text-muted">Loading chart…</p>
+        <p v-else-if="!cashFlow.length" class="text-sm text-text-muted">No activity in the last 14 days.</p>
+        <CashFlowChart v-else :points="cashFlow" />
       </AppCard>
 
       <AppCard>
-        <h2 class="text-sm font-bold text-text-primary mb-4">Transactions</h2>
-        <form class="flex flex-col sm:flex-row gap-3 mb-4" @submit.prevent="search">
-          <AppInput v-model="searchText" placeholder="Reference, description..." class="flex-1" />
-          <AppInput v-model="startDate" type="date" />
-          <AppInput v-model="endDate" type="date" />
-          <AppButton type="submit" :loading="txnLoading">Search</AppButton>
-        </form>
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-sm font-bold text-text-primary">Recent transactions</h2>
+          <router-link
+            :to="{ name: 'branch-transactions', params: { orgId: props.orgId, branchId: props.branchId } }"
+            class="text-xs font-semibold text-primary hover:underline"
+          >
+            View all
+          </router-link>
+        </div>
 
         <AppTable :columns="txnColumns" :rows="txns?.transactions ?? []" :loading="txnLoading" empty-message="No transactions found.">
           <template #cell-created_at="{ value }">{{ formatDate(value as string) }}</template>
+          <template #cell-reference="{ row }">{{ txnReference(row as unknown as Transaction) }}</template>
           <template #cell-status="{ value }">
             <AppBadge :variant="statusVariant(value as string)" size="sm">{{ value }}</AppBadge>
           </template>
           <template #cell-amountCents="{ value }">KES {{ formatMoney(value as number) }}</template>
         </AppTable>
-
-        <div v-if="txns && txns.total_pages > 1" class="flex items-center justify-between mt-4 text-xs text-text-muted">
-          <span>Page {{ txns.page }} of {{ txns.total_pages }}</span>
-          <div class="flex gap-2">
-            <AppButton variant="secondary" size="sm" :disabled="page <= 1" @click="page--; loadTransactions()">Previous</AppButton>
-            <AppButton variant="secondary" size="sm" :disabled="page >= txns.total_pages" @click="page++; loadTransactions()">Next</AppButton>
-          </div>
-        </div>
       </AppCard>
     </div>
   </DashboardLayout>

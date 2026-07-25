@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import {
-  createPettyCashFloat, fetchPettyCashFloats, fundPettyCashFloat, recordPettyCashDraw, fetchPettyCashHistory,
-  fetchOrgBranches,
-  type PettyCashFloat, type PettyCashDraw, type BranchSummary,
+  createPettyCashFloat, fetchPettyCashFloats, fundPettyCashFloat, fetchPettyCashHistory,
+  fetchOrgBranches, requestPettyCashPayout, confirmPettyCashPayout, fetchOrgBankCodes,
+  type PettyCashFloat, type PettyCashDraw, type BranchSummary, type BankCode,
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
 import { formatMoney, formatDate } from '@/lib/format'
@@ -14,6 +14,8 @@ import AppButton from '@/components/ui/AppButton.vue'
 import AppInput from '@/components/ui/AppInput.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import AppModal from '@/components/ui/AppModal.vue'
+import OtpConfirmCard from '@/components/OtpConfirmCard.vue'
+import ConfirmSecretInput from '@/components/ConfirmSecretInput.vue'
 import { PlusIcon, WalletIcon, HistoryIcon } from 'lucide-vue-next'
 
 const props = defineProps<{ orgId: string }>()
@@ -25,13 +27,16 @@ const error = ref<string | null>(null)
 const floats = ref<PettyCashFloat[]>([])
 const branches = ref<BranchSummary[]>([])
 
+const bankOptions = ref<{ value: string; label: string }[]>([])
+
 async function load() {
   loading.value = true
   error.value = null
   try {
-    const [f, b] = await Promise.all([fetchPettyCashFloats(), fetchOrgBranches()])
+    const [f, b, codes] = await Promise.all([fetchPettyCashFloats(), fetchOrgBranches(), fetchOrgBankCodes(false).catch(() => [] as BankCode[])])
     floats.value = f
     branches.value = b.branches
+    bankOptions.value = codes.map((c) => ({ value: c.code, label: c.name }))
   } catch (err) {
     error.value = extractErrorMessage(err)
   } finally {
@@ -77,16 +82,14 @@ async function submitCreate() {
 
 const fundingFloat = ref<PettyCashFloat | null>(null)
 const fundAmountKes = ref('')
-const fundPassword = ref('')
-const fundPin = ref('')
+const fundConfirmSecret = ref('')
 const funding = ref(false)
 const fundError = ref<string | null>(null)
 
 function openFund(float: PettyCashFloat) {
   fundingFloat.value = float
   fundAmountKes.value = ''
-  fundPassword.value = ''
-  fundPin.value = ''
+  fundConfirmSecret.value = ''
   fundError.value = null
 }
 
@@ -97,17 +100,13 @@ async function submitFund() {
     fundError.value = 'Enter a valid amount (min KES 1).'
     return
   }
-  if (isOwner && !/^\d{4}$/.test(fundPin.value)) {
-    fundError.value = 'Enter your 4-digit transaction PIN.'
-    return
-  }
-  if (!isOwner && !fundPassword.value) {
-    fundError.value = 'Re-enter your account password.'
+  if (isOwner ? !/^\d{4}$/.test(fundConfirmSecret.value) : !fundConfirmSecret.value) {
+    fundError.value = isOwner ? 'Enter your 4-digit transaction PIN.' : 'Re-enter your account password.'
     return
   }
   funding.value = true
   try {
-    await fundPettyCashFloat(fundingFloat.value.id, amountCents, isOwner ? { pin: fundPin.value } : { password: fundPassword.value })
+    await fundPettyCashFloat(fundingFloat.value.id, amountCents, isOwner ? { pin: fundConfirmSecret.value } : { password: fundConfirmSecret.value })
     fundingFloat.value = null
     await load()
   } catch (err) {
@@ -121,17 +120,8 @@ const historyFloat = ref<PettyCashFloat | null>(null)
 const history = ref<PettyCashDraw[]>([])
 const historyLoading = ref(false)
 
-const showDrawForm = ref(false)
-const drawing = ref(false)
-const drawError = ref<string | null>(null)
-const drawAmountKes = ref('')
-const drawPayee = ref('')
-const drawCategory = ref('')
-const drawNotes = ref('')
-
 async function openHistory(float: PettyCashFloat) {
   historyFloat.value = float
-  showDrawForm.value = false
   historyLoading.value = true
   try {
     history.value = await fetchPettyCashHistory(float.id)
@@ -142,33 +132,118 @@ async function openHistory(float: PettyCashFloat) {
   }
 }
 
-async function submitDraw() {
-  drawError.value = null
-  const amountCents = Math.round(Number(drawAmountKes.value) * 100)
-  if (!amountCents || amountCents < 1 || !drawPayee.value.trim() || !historyFloat.value) {
-    drawError.value = 'Amount and payee are required.'
+const showPayoutForm = ref(false)
+const paying = ref(false)
+const payoutError = ref<string | null>(null)
+const payoutSuccess = ref<string | null>(null)
+const payoutAmountKes = ref('')
+const payoutRecipientName = ref('')
+const payoutRemarks = ref('')
+const payoutCategory = ref('')
+const payoutDestinationType = ref<'PHONE_NUMBER' | 'BANK_ACCOUNT'>('PHONE_NUMBER')
+const payoutPhoneNumber = ref('')
+const payoutBankCode = ref('')
+const payoutBankAccountNumber = ref('')
+const payoutConfirmSecret = ref('')
+
+const payoutOtpStep = ref(false)
+const payoutOtp = ref('')
+const payoutOtpError = ref<string | null>(null)
+const payoutOtpConfirming = ref(false)
+const pendingPayoutFeeCents = ref<number | undefined>(undefined)
+
+function resetPayoutForm() {
+  payoutAmountKes.value = ''
+  payoutRecipientName.value = ''
+  payoutRemarks.value = ''
+  payoutCategory.value = ''
+  payoutPhoneNumber.value = ''
+  payoutBankAccountNumber.value = ''
+  payoutConfirmSecret.value = ''
+}
+
+async function submitPayout() {
+  payoutError.value = null
+  payoutSuccess.value = null
+  if (!historyFloat.value) return
+  const amountCents = Math.round(Number(payoutAmountKes.value) * 100)
+  if (!amountCents || amountCents < 100 || !payoutRecipientName.value.trim() || !payoutRemarks.value.trim()) {
+    payoutError.value = 'Amount (min KES 1), recipient name, and remarks are required.'
     return
   }
-  drawing.value = true
+  if (payoutDestinationType.value === 'BANK_ACCOUNT') {
+    if (!payoutBankCode.value || !payoutBankAccountNumber.value.trim()) {
+      payoutError.value = 'Select a bank and enter the account number.'
+      return
+    }
+  } else if (!payoutPhoneNumber.value.trim()) {
+    payoutError.value = 'Recipient phone number is required.'
+    return
+  }
+  if (isOwner ? !/^\d{4}$/.test(payoutConfirmSecret.value) : !payoutConfirmSecret.value) {
+    payoutError.value = isOwner ? 'Enter your 4-digit transaction PIN.' : 'Re-enter your account password.'
+    return
+  }
+
+  paying.value = true
   try {
-    await recordPettyCashDraw(historyFloat.value.id, {
+    const result = await requestPettyCashPayout(historyFloat.value.id, {
       amount: amountCents,
-      payee: drawPayee.value.trim(),
-      category: drawCategory.value.trim() || undefined,
-      notes: drawNotes.value.trim() || undefined,
+      recipient_name: payoutRecipientName.value.trim(),
+      remarks: payoutRemarks.value.trim(),
+      category: payoutCategory.value.trim() || undefined,
+      destination_type: payoutDestinationType.value,
+      phone_number: payoutDestinationType.value === 'PHONE_NUMBER' ? payoutPhoneNumber.value.trim() : undefined,
+      bank_code: payoutDestinationType.value === 'BANK_ACCOUNT' ? payoutBankCode.value : undefined,
+      bank_account_number: payoutDestinationType.value === 'BANK_ACCOUNT' ? payoutBankAccountNumber.value.trim() : undefined,
+      ...(isOwner ? { pin: payoutConfirmSecret.value } : { password: payoutConfirmSecret.value }),
     })
-    drawAmountKes.value = ''
-    drawPayee.value = ''
-    drawCategory.value = ''
-    drawNotes.value = ''
-    showDrawForm.value = false
+    if (result.status === 'otp_required') {
+      pendingPayoutFeeCents.value = result.fee_cents
+      payoutOtp.value = ''
+      payoutOtpError.value = null
+      payoutOtpStep.value = true
+    } else {
+      payoutSuccess.value = result.message || 'Payout queued for execution.'
+      resetPayoutForm()
+      showPayoutForm.value = false
+      history.value = await fetchPettyCashHistory(historyFloat.value.id)
+      await load()
+    }
+  } catch (err) {
+    payoutError.value = extractErrorMessage(err)
+  } finally {
+    paying.value = false
+  }
+}
+
+async function submitPayoutOtp() {
+  payoutOtpError.value = null
+  if (!historyFloat.value) return
+  if (!/^\d{6}$/.test(payoutOtp.value)) {
+    payoutOtpError.value = 'Enter the 6-digit code sent to your phone.'
+    return
+  }
+  payoutOtpConfirming.value = true
+  try {
+    const result = await confirmPettyCashPayout(historyFloat.value.id, payoutOtp.value)
+    payoutSuccess.value = result.message || 'Payout queued for execution.'
+    payoutOtpStep.value = false
+    resetPayoutForm()
+    showPayoutForm.value = false
     history.value = await fetchPettyCashHistory(historyFloat.value.id)
     await load()
   } catch (err) {
-    drawError.value = extractErrorMessage(err)
+    payoutOtpError.value = extractErrorMessage(err)
   } finally {
-    drawing.value = false
+    payoutOtpConfirming.value = false
   }
+}
+
+function cancelPayoutOtp() {
+  payoutOtpStep.value = false
+  payoutOtp.value = ''
+  payoutOtpError.value = null
 }
 </script>
 
@@ -238,8 +313,7 @@ async function submitDraw() {
         <div v-if="fundError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2">{{ fundError }}</div>
         <form class="flex flex-col gap-4" @submit.prevent="submitFund">
           <AppInput v-model="fundAmountKes" type="number" label="Amount (KES)" placeholder="Min 1" required />
-          <AppInput v-if="!isOwner" v-model="fundPassword" type="password" label="Confirm your password" required />
-          <AppInput v-else v-model="fundPin" type="password" label="Transaction PIN" placeholder="0000" required />
+          <ConfirmSecretInput v-model="fundConfirmSecret" :is-pin="isOwner" />
           <AppButton type="submit" :loading="funding" class="self-start">Fund float</AppButton>
         </form>
       </div>
@@ -249,24 +323,47 @@ async function submitDraw() {
       <div v-if="historyFloat" class="flex flex-col gap-4 p-6">
         <div class="flex items-center justify-between">
           <p class="text-sm font-semibold text-text-primary">Balance: KES {{ formatMoney(historyFloat.balance_cents) }}</p>
-          <AppButton size="sm" @click="showDrawForm = !showDrawForm">
-            <template #icon><PlusIcon class="w-3.5 h-3.5" /></template>
-            Record draw
-          </AppButton>
+          <div class="flex gap-2">
+            <AppButton size="sm" @click="showPayoutForm = !showPayoutForm">
+              <template #icon><PlusIcon class="w-3.5 h-3.5" /></template>
+              Send payout
+            </AppButton>
+          </div>
         </div>
 
-        <AppCard v-if="showDrawForm">
-          <div v-if="drawError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ drawError }}</div>
-          <form class="flex flex-col gap-3" @submit.prevent="submitDraw">
-            <div class="grid grid-cols-2 gap-3">
-              <AppInput v-model="drawAmountKes" type="number" label="Amount (KES)" required />
-              <AppInput v-model="drawPayee" label="Payee" placeholder="Who was paid" required />
+        <OtpConfirmCard
+          v-if="showPayoutForm && payoutOtpStep"
+          v-model="payoutOtp"
+          subject="payout"
+          :fee-cents="pendingPayoutFeeCents"
+          :confirming="payoutOtpConfirming"
+          :error="payoutOtpError"
+          @confirm="submitPayoutOtp"
+          @cancel="cancelPayoutOtp"
+        />
+
+        <AppCard v-else-if="showPayoutForm">
+          <p class="text-xs text-text-muted mb-3">Sends real money out of this float via M-Pesa or bank transfer.</p>
+          <div v-if="payoutError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ payoutError }}</div>
+          <form class="flex flex-col gap-3" @submit.prevent="submitPayout">
+            <AppSelect v-model="payoutDestinationType" label="Pay out via" :options="[{ value: 'PHONE_NUMBER', label: 'Mobile money (M-Pesa)' }, { value: 'BANK_ACCOUNT', label: 'Bank account' }]" />
+            <AppInput v-if="payoutDestinationType === 'PHONE_NUMBER'" v-model="payoutPhoneNumber" label="Recipient phone" placeholder="+254712345678" required />
+            <div v-else class="grid grid-cols-2 gap-3">
+              <AppSelect v-model="payoutBankCode" label="Bank" placeholder="— Select bank —" :options="bankOptions" required />
+              <AppInput v-model="payoutBankAccountNumber" label="Account number" required />
             </div>
-            <AppInput v-model="drawCategory" label="Category (optional)" placeholder="e.g. Supplies" />
-            <AppInput v-model="drawNotes" label="Notes (optional)" />
-            <AppButton type="submit" size="sm" :loading="drawing" class="self-start">Save draw</AppButton>
+            <div class="grid grid-cols-2 gap-3">
+              <AppInput v-model="payoutAmountKes" type="number" label="Amount (KES)" placeholder="Min 1" required />
+              <AppInput v-model="payoutRecipientName" label="Recipient name" required />
+            </div>
+            <AppInput v-model="payoutRemarks" label="Remarks" placeholder="Reason for this payout" required />
+            <AppInput v-model="payoutCategory" label="Category (optional)" placeholder="e.g. Supplies, Transport, Fuel" />
+            <ConfirmSecretInput v-model="payoutConfirmSecret" :is-pin="isOwner" />
+            <AppButton type="submit" size="sm" :loading="paying" class="self-start">Send payout</AppButton>
           </form>
         </AppCard>
+
+        <p v-if="payoutSuccess" class="text-xs text-success-text bg-success-light rounded-lg px-3 py-2">{{ payoutSuccess }}</p>
 
         <p v-if="historyLoading" class="text-sm text-text-muted">Loading…</p>
         <p v-else-if="!history.length" class="text-sm text-text-muted">No draws recorded yet.</p>
@@ -275,6 +372,7 @@ async function submitDraw() {
             <div class="min-w-0 flex-1">
               <p class="text-sm font-medium text-text-primary truncate">{{ d.payee }} — KES {{ formatMoney(d.amount_cents) }}</p>
               <p class="text-xs text-text-muted">{{ d.category || 'Uncategorized' }} · {{ formatDate(d.drawn_at) }}</p>
+              <p v-if="d.notes" class="text-xs text-text-muted mt-0.5 truncate" :title="d.notes">{{ d.notes }}</p>
             </div>
           </div>
         </div>

@@ -224,7 +224,6 @@ async function saveEditBranch(branchId: string) {
   }
 }
 
-// --- Per-branch expand: details + document upload ---
 const expandedBranchId = ref<string | null>(null)
 const docsByBranch = ref<Record<string, BranchDocument[]>>({})
 const docsLoading = ref<string | null>(null)

@@ -10,7 +10,6 @@ defineProps<{
 
 <template>
   <div class="bg-surface rounded-2xl shadow-sm p-5 flex flex-col gap-3">
-    <!-- Icon slot + label -->
     <div class="flex items-start justify-between gap-2">
       <p class="text-xs font-bold text-text-muted uppercase tracking-wider leading-none">{{ label }}</p>
       <div
@@ -28,13 +27,11 @@ defineProps<{
       </div>
     </div>
 
-    <!-- Value -->
     <div class="space-y-1">
       <p class="text-2xl font-bold text-text-primary leading-none tracking-tight">{{ value }}</p>
       <p v-if="sub" class="text-xs text-text-muted">{{ sub }}</p>
     </div>
 
-    <!-- Trend -->
     <div v-if="trend" class="flex items-center gap-1.5">
       <span
         :class="[

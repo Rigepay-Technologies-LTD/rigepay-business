@@ -1,19 +1,24 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import {
-  fetchOrgBranches, fetchOrgTransactions, fetchOrgProfile, fetchOrgTransaction, fetchOrgCashFlow,
+  fetchOrgBranches, fetchOrgTransactions, fetchOrgProfile, fetchOrgTransaction, fetchOrgCashFlow, fetchBranchAnalytics,
   type BranchesResponse, type PaginatedTransactions, type ProfileResponse,
-  type Transaction, type TransactionDetail, type CashFlowDayPoint,
+  type Transaction, type TransactionDetail, type CashFlowDayPoint, type BranchAnalytics,
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
-import { formatMoney, formatDate, riskTier } from '@/lib/format'
+import { formatMoney, formatDate, riskTier, txnReference } from '@/lib/format'
 import DashboardLayout from '@/layouts/DashboardLayout.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppTable from '@/components/ui/AppTable.vue'
 import AppBadge from '@/components/ui/AppBadge.vue'
 import AppModal from '@/components/ui/AppModal.vue'
 import CashFlowChart from '@/components/CashFlowChart.vue'
-import { WalletIcon, ShieldCheckIcon, AlertOctagonIcon } from 'lucide-vue-next'
+import BranchLeaderboardChart from '@/components/BranchLeaderboardChart.vue'
+import QuickActions, { type QuickAction } from '@/components/QuickActions.vue'
+import {
+  WalletIcon, ShieldCheckIcon, AlertOctagonIcon,
+  BanknoteIcon, LinkIcon, UsersIcon, VaultIcon, ArrowLeftRightIcon,
+} from 'lucide-vue-next'
 
 const props = defineProps<{ orgId: string }>()
 
@@ -27,6 +32,18 @@ const txns = ref<PaginatedTransactions | null>(null)
 
 const cashFlow = ref<CashFlowDayPoint[]>([])
 const cashFlowLoading = ref(true)
+
+const branchAnalytics = ref<BranchAnalytics | null>(null)
+const branchAnalyticsLoading = ref(true)
+
+const quickActions = computed<QuickAction[]>(() => [
+  { label: 'Collect', icon: WalletIcon, to: { name: 'org-collect', params: { orgId: props.orgId } } },
+  { label: 'Send payout', icon: BanknoteIcon, to: { name: 'org-payouts', params: { orgId: props.orgId } } },
+  { label: 'Payment link', icon: LinkIcon, to: { name: 'org-payment-links', params: { orgId: props.orgId } } },
+  { label: 'Transfer funds', icon: ArrowLeftRightIcon, to: { name: 'org-transfers', params: { orgId: props.orgId } } },
+  { label: 'Invite member', icon: UsersIcon, to: { name: 'org-members', params: { orgId: props.orgId } } },
+  { label: 'Vaults', icon: VaultIcon, to: { name: 'org-vaults', params: { orgId: props.orgId } } },
+])
 
 const greeting = computed(() => {
   const hour = new Date().getHours()
@@ -78,11 +95,23 @@ async function loadTransactions() {
   }
 }
 
+async function loadBranchAnalytics() {
+  branchAnalyticsLoading.value = true
+  try {
+    branchAnalytics.value = await fetchBranchAnalytics()
+  } catch {
+    branchAnalytics.value = null
+  } finally {
+    branchAnalyticsLoading.value = false
+  }
+}
+
 onMounted(() => {
   loadOverview()
   loadProfile()
   loadCashFlow()
   loadTransactions()
+  loadBranchAnalytics()
 })
 
 const txnColumns = [
@@ -133,7 +162,8 @@ async function openTxnDetail(row: Record<string, unknown>) {
         </p>
       </div>
 
-   
+      <QuickActions :actions="quickActions" />
+
       <section class="grid grid-cols-1 sm:grid-cols-4 gap-4">
         <div class="rounded-2xl bg-linear-to-br from-primary to-primary/80 text-white p-5 flex flex-col gap-3 shadow-sm sm:col-span-2">
           <div class="flex items-center justify-between">
@@ -163,16 +193,33 @@ async function openTxnDetail(row: Record<string, unknown>) {
         </div>
       </section>
 
-      <AppCard>
-        <div class="flex items-center justify-between mb-1">
-          <h2 class="text-sm font-bold text-text-primary">Cash flow — last 14 days</h2>
-          <span class="text-xs text-text-muted">{{ overview?.branch_count ?? 0 }} branch{{ overview?.branch_count === 1 ? '' : 'es' }}</span>
-        </div>
-        <p class="text-xs text-text-muted mb-4">Collections and payouts across the organization's own wallet and every branch.</p>
-        <p v-if="cashFlowLoading" class="text-sm text-text-muted">Loading chart…</p>
-        <p v-else-if="!cashFlow.length" class="text-sm text-text-muted">No activity in the last 14 days.</p>
-        <CashFlowChart v-else :points="cashFlow" />
-      </AppCard>
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <AppCard class="lg:col-span-2">
+          <div class="flex items-center justify-between mb-1">
+            <h2 class="text-sm font-bold text-text-primary">Cash flow — last 14 days</h2>
+            <span class="text-xs text-text-muted">{{ overview?.branch_count ?? 0 }} branch{{ overview?.branch_count === 1 ? '' : 'es' }}</span>
+          </div>
+          <p class="text-xs text-text-muted mb-4">Collections and payouts across the organization's own wallet and every branch.</p>
+          <p v-if="cashFlowLoading" class="text-sm text-text-muted">Loading chart…</p>
+          <p v-else-if="!cashFlow.length" class="text-sm text-text-muted">No activity in the last 14 days.</p>
+          <CashFlowChart v-else :points="cashFlow" />
+        </AppCard>
+
+        <AppCard v-if="branchAnalyticsLoading || branchAnalytics?.branches.length">
+          <div class="flex items-center justify-between mb-1">
+            <h2 class="text-sm font-bold text-text-primary">Top branches</h2>
+            <router-link
+              :to="{ name: 'org-analytics', params: { orgId: props.orgId } }"
+              class="text-xs font-semibold text-primary hover:underline"
+            >
+              View all
+            </router-link>
+          </div>
+          <p class="text-xs text-text-muted mb-4">By collections this {{ branchAnalytics?.period ?? 'month' }}.</p>
+          <p v-if="branchAnalyticsLoading" class="text-sm text-text-muted">Loading…</p>
+          <BranchLeaderboardChart v-else :rows="branchAnalytics?.branches ?? []" />
+        </AppCard>
+      </div>
 
       <AppCard>
         <div class="flex items-center justify-between mb-5">
@@ -194,6 +241,7 @@ async function openTxnDetail(row: Record<string, unknown>) {
           @row-click="openTxnDetail"
         >
           <template #cell-created_at="{ value }">{{ formatDate(value as string) }}</template>
+          <template #cell-reference="{ row }">{{ txnReference(row as unknown as Transaction) }}</template>
           <template #cell-status="{ value }">
             <AppBadge :variant="statusVariant(value as string)" size="sm">{{ value }}</AppBadge>
           </template>
@@ -206,7 +254,7 @@ async function openTxnDetail(row: Record<string, unknown>) {
       <p v-if="txnDetailLoading" class="text-sm text-text-muted">Loading…</p>
       <p v-else-if="txnDetailError" class="text-sm text-error-text">{{ txnDetailError }}</p>
       <dl v-else-if="selectedTxnDetail" class="flex flex-col gap-3 text-sm">
-        <div class="flex justify-between"><dt class="text-text-muted">Reference</dt><dd class="font-semibold text-text-primary">{{ selectedTxnDetail.reference }}</dd></div>
+        <div class="flex justify-between"><dt class="text-text-muted">Reference</dt><dd class="font-semibold text-text-primary">{{ txnReference(selectedTxnDetail) }}</dd></div>
         <div class="flex justify-between"><dt class="text-text-muted">Type</dt><dd class="font-semibold text-text-primary">{{ selectedTxnDetail.type }}</dd></div>
         <div class="flex justify-between"><dt class="text-text-muted">Status</dt><dd><AppBadge :variant="statusVariant(selectedTxnDetail.status)" size="sm">{{ selectedTxnDetail.status }}</AppBadge></dd></div>
         <div class="flex justify-between"><dt class="text-text-muted">Rail</dt><dd class="font-semibold text-text-primary">{{ selectedTxnDetail.rail }}</dd></div>

@@ -28,7 +28,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKey))
     >
       <div
         v-if="modelValue"
-        class="fixed inset-0 z-[9800] flex items-end sm:items-center justify-center sm:p-4"
+        class="fixed inset-0 z-9800 flex items-end sm:items-center justify-center sm:p-4"
         style="background: var(--color-overlay); backdrop-filter: blur(4px);"
         @click.self="close"
         role="dialog"
@@ -53,7 +53,6 @@ onUnmounted(() => window.removeEventListener('keydown', handleKey))
               'max-h-[90vh] sm:max-h-[85vh]',
             ]"
           >
-            <!-- Header -->
             <div v-if="title || $slots.header" class="shrink-0 flex items-center justify-between px-6 py-4 border-b border-border">
               <slot name="header">
                 <h2 class="text-base font-bold text-text-primary">{{ title }}</h2>
@@ -69,12 +68,10 @@ onUnmounted(() => window.removeEventListener('keydown', handleKey))
               </button>
             </div>
 
-            <!-- Body -->
             <div class="flex-1 overflow-y-auto px-6 py-5">
               <slot />
             </div>
 
-            <!-- Footer -->
             <div v-if="$slots.footer" class="shrink-0 px-6 py-4 border-t border-border bg-surface">
               <slot name="footer" />
             </div>

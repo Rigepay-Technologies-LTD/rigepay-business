@@ -3,9 +3,10 @@ import { ref, onMounted } from 'vue'
 import {
   fetchBranchTransactions,
   type PaginatedTransactions,
+  type Transaction,
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
-import { formatMoney, formatDate } from '@/lib/format'
+import { formatMoney, formatDate, txnReference } from '@/lib/format'
 import DashboardLayout from '@/layouts/DashboardLayout.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppButton from '@/components/ui/AppButton.vue'
@@ -86,6 +87,7 @@ function statusVariant(status: string) {
           empty-message="No transactions found."
         >
           <template #cell-created_at="{ value }">{{ formatDate(value as string) }}</template>
+          <template #cell-reference="{ row }">{{ txnReference(row as unknown as Transaction) }}</template>
           <template #cell-status="{ value }">
             <AppBadge :variant="statusVariant(value as string)" size="sm">{{ value }}</AppBadge>
           </template>

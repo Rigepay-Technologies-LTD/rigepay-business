@@ -11,9 +11,6 @@ defineProps<{
   disabled?: boolean
   readonly?: boolean
   required?: boolean
-  // Optional contextual help ("where do I find this?") rendered as a small
-  // hover/focus tooltip next to the label — see AppTooltip.vue. Only used
-  // by forms with fields whose source isn't obvious (KYC/KYB onboarding).
   tooltip?: string
 }>()
 
@@ -28,7 +25,6 @@ defineEmits<{ (e: 'update:modelValue', v: string): void }>()
     </label>
 
     <div class="relative">
-      <!-- Leading icon slot -->
       <div v-if="$slots.icon" class="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none">
         <slot name="icon" />
       </div>
@@ -53,7 +49,6 @@ defineEmits<{ (e: 'update:modelValue', v: string): void }>()
         @input="$emit('update:modelValue', ($event.target as HTMLInputElement).value)"
       />
 
-      <!-- Trailing icon slot -->
       <div v-if="$slots.trailing" class="absolute right-3 top-1/2 -translate-y-1/2">
         <slot name="trailing" />
       </div>

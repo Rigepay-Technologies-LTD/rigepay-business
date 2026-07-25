@@ -9,6 +9,15 @@ function attachDashboardToken(config: InternalAxiosRequestConfig) {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }
+
+  const meta = session.getMeta()
+  if (meta?.memberType === 'org_member' && config.url?.includes('/org/v1/branch/')) {
+    const branchId = window.location.pathname.match(/\/org\/[^/]+\/branch\/([^/]+)/)?.[1]
+    if (branchId) {
+      config.headers['X-Branch-Id'] = branchId
+    }
+  }
+
   return config
 }
 

@@ -17,11 +17,9 @@ defineProps<{
       'inline-flex items-center justify-center gap-2 font-semibold rounded-xl transition-all duration-200 select-none',
       'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
       'disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none',
-      // size
       size === 'sm' ? 'h-8 px-3 text-xs'
         : size === 'lg' ? 'h-12 px-6 text-base'
         : 'h-10 px-4 text-sm',
-      // variant
       variant === 'secondary'
         ? 'bg-surface-2 text-text-primary hover:bg-border'
         : variant === 'ghost'
@@ -29,20 +27,16 @@ defineProps<{
         : variant === 'danger'
         ? 'bg-error text-white hover:bg-error/90 shadow-sm hover:-translate-y-px'
         : 'bg-primary text-white hover:bg-primary-dark shadow-sm hover:-translate-y-px',
-      // block
       block ? 'w-full' : '',
     ]"
   >
-    <!-- Loading spinner -->
     <svg v-if="loading" class="animate-spin w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none">
       <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
       <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z"/>
     </svg>
 
-    <!-- Leading icon slot -->
     <slot name="icon" />
 
-    <!-- Label -->
     <slot />
   </button>
 </template>

@@ -1,38 +1,31 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import {
-  fetchOrgBranches, fetchOrgProfile, createOrgTransfer,
-  lookupTransferRecipient, requestExternalTransfer, confirmExternalTransfer,
-  type BranchSummary, type ProfileResponse, type TransferRecipientLookup,
+  createBranchTransfer, lookupTransferRecipient, requestBranchExternalTransfer, confirmBranchExternalTransfer,
+  fetchSiblingBranches, type SiblingBranch, type TransferRecipientLookup,
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
 import { formatMoney } from '@/lib/format'
-import { useAuthStore } from '@/stores/auth'
 import DashboardLayout from '@/layouts/DashboardLayout.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppInput from '@/components/ui/AppInput.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import OtpConfirmCard from '@/components/OtpConfirmCard.vue'
-import ConfirmSecretInput from '@/components/ConfirmSecretInput.vue'
 import { ArrowRightIcon, CheckIcon, AlertTriangleIcon } from 'lucide-vue-next'
 
-const props = defineProps<{ orgId: string }>()
-const auth = useAuthStore()
-const isOwner = auth.meta?.role === 'owner'
+
+const props = defineProps<{ orgId: string; branchId: string }>()
 
 const error = ref<string | null>(null)
 const loading = ref(true)
-const branches = ref<BranchSummary[]>([])
-const profile = ref<ProfileResponse | null>(null)
+const siblingBranches = ref<SiblingBranch[]>([])
 
 async function load() {
   loading.value = true
   error.value = null
   try {
-    const [b, p] = await Promise.all([fetchOrgBranches(), fetchOrgProfile()])
-    branches.value = b.branches
-    profile.value = p
+    siblingBranches.value = await fetchSiblingBranches()
   } catch (err) {
     error.value = extractErrorMessage(err)
   } finally {
@@ -41,21 +34,15 @@ async function load() {
 }
 onMounted(load)
 
-const endpointOptions = computed(() => {
-  const options = [
-    { value: 'org', label: `Organization wallet (KES ${formatMoney(profile.value?.organization.wallet.main_cents)})` },
-  ]
-  for (const b of branches.value) {
-    options.push({ value: b.id, label: `${b.name} (KES ${formatMoney(b.main_cents)})` })
-  }
-  return options
-})
+const toOptions = () => [
+  { value: 'org', label: 'Organization wallet' },
+  ...siblingBranches.value.map((b) => ({ value: b.id, label: b.name })),
+]
 
-const fromEndpoint = ref('org')
 const toEndpoint = ref('')
 const amountKes = ref('')
 const remarks = ref('')
-const confirmSecret = ref('')
+const confirmPassword = ref('')
 const submitting = ref(false)
 const submitError = ref<string | null>(null)
 const submitSuccess = ref<string | null>(null)
@@ -64,36 +51,26 @@ async function submitTransfer() {
   submitError.value = null
   submitSuccess.value = null
   const amountCents = Math.round(Number(amountKes.value) * 100)
-  if (!amountCents || amountCents < 100) {
-    submitError.value = 'Enter a valid amount (min KES 1).'
+  if (!amountCents || amountCents < 100 || !toEndpoint.value) {
+    submitError.value = 'Enter a valid amount (min KES 1) and select a destination.'
     return
   }
-  if (!toEndpoint.value) {
-    submitError.value = 'Select a destination.'
-    return
-  }
-  if (fromEndpoint.value === toEndpoint.value) {
-    submitError.value = 'Source and destination must be different.'
-    return
-  }
-  if (isOwner ? !/^\d{4}$/.test(confirmSecret.value) : !confirmSecret.value) {
-    submitError.value = isOwner ? 'Enter your 4-digit transaction PIN to confirm this transfer.' : 'Re-enter your account password to confirm this transfer.'
+  if (!confirmPassword.value) {
+    submitError.value = 'Re-enter your account password to confirm this transfer.'
     return
   }
   submitting.value = true
   try {
-    const result = await createOrgTransfer({
-      from: fromEndpoint.value,
+    const result = await createBranchTransfer({
       to: toEndpoint.value,
       amount: amountCents,
       remarks: remarks.value.trim() || undefined,
-      password: isOwner ? undefined : confirmSecret.value,
-      pin: isOwner ? confirmSecret.value : undefined,
+      password: confirmPassword.value,
     })
     submitSuccess.value = `Moved KES ${formatMoney(result.amount_cents)} from ${result.from} to ${result.to}.`
     amountKes.value = ''
     remarks.value = ''
-    confirmSecret.value = ''
+    confirmPassword.value = ''
     await load()
   } catch (err) {
     submitError.value = extractErrorMessage(err)
@@ -102,12 +79,10 @@ async function submitTransfer() {
   }
 }
 
-
-const extFromEndpoint = ref('org')
 const extRecipientCode = ref('')
 const extAmountKes = ref('')
 const extRemarks = ref('')
-const extConfirmSecret = ref('')
+const extPassword = ref('')
 const extSubmitting = ref(false)
 const extError = ref<string | null>(null)
 const extSuccess = ref<string | null>(null)
@@ -116,7 +91,6 @@ const extOtpStep = ref(false)
 const extOtp = ref('')
 const extOtpError = ref<string | null>(null)
 const extOtpConfirming = ref(false)
-
 
 const lookupLoading = ref(false)
 const lookupResult = ref<TransferRecipientLookup | null>(null)
@@ -132,7 +106,7 @@ async function verifyRecipient() {
   }
   lookupLoading.value = true
   try {
-    lookupResult.value = await lookupTransferRecipient(code)
+    lookupResult.value = await lookupTransferRecipient(code, true)
   } catch (err) {
     lookupError.value = extractErrorMessage(err)
   } finally {
@@ -144,7 +118,7 @@ function resetExternalForm() {
   extRecipientCode.value = ''
   extAmountKes.value = ''
   extRemarks.value = ''
-  extConfirmSecret.value = ''
+  extPassword.value = ''
   lookupResult.value = null
   lookupError.value = null
 }
@@ -161,19 +135,17 @@ async function submitExternalTransfer() {
     extError.value = 'Verify the recipient before sending — click "Verify recipient" above.'
     return
   }
-  if (isOwner ? !/^\d{4}$/.test(extConfirmSecret.value) : !extConfirmSecret.value) {
-    extError.value = isOwner ? 'Enter your 4-digit transaction PIN to confirm this transfer.' : 'Re-enter your account password to confirm this transfer.'
+  if (!extPassword.value) {
+    extError.value = 'Re-enter your account password to confirm this transfer.'
     return
   }
   extSubmitting.value = true
   try {
-    const result = await requestExternalTransfer({
-      from: extFromEndpoint.value,
+    const result = await requestBranchExternalTransfer({
       recipient_collection_code: extRecipientCode.value.trim(),
       amount: amountCents,
       remarks: extRemarks.value.trim(),
-      password: isOwner ? undefined : extConfirmSecret.value,
-      pin: isOwner ? extConfirmSecret.value : undefined,
+      password: extPassword.value,
     })
     if (result.status === 'otp_required') {
       extOtp.value = ''
@@ -182,7 +154,6 @@ async function submitExternalTransfer() {
     } else {
       extSuccess.value = `Sent KES ${formatMoney(result.data.amount_cents)} from ${result.data.from} to ${result.data.to}.`
       resetExternalForm()
-      await load()
     }
   } catch (err) {
     extError.value = extractErrorMessage(err)
@@ -195,11 +166,10 @@ async function submitExternalOtp() {
   extOtpError.value = null
   extOtpConfirming.value = true
   try {
-    const result = await confirmExternalTransfer(extOtp.value)
+    const result = await confirmBranchExternalTransfer(extOtp.value)
     extSuccess.value = `Sent KES ${formatMoney(result.amount_cents)} from ${result.from} to ${result.to}.`
     extOtpStep.value = false
     resetExternalForm()
-    await load()
   } catch (err) {
     extOtpError.value = extractErrorMessage(err)
   } finally {
@@ -215,31 +185,33 @@ function cancelExternalOtp() {
 </script>
 
 <template>
-  <DashboardLayout :org-id="props.orgId" title="Transfers">
+  <DashboardLayout :org-id="props.orgId" :branch-id="props.branchId" title="Transfers">
     <div class="flex flex-col gap-6">
       <div v-if="error" class="text-sm text-error-text bg-error-light rounded-xl px-4 py-3">{{ error }}</div>
 
       <AppCard>
         <h2 class="text-sm font-bold text-text-primary mb-1">Move funds internally</h2>
         <p class="text-xs text-text-muted mb-5">
-          Immediate, no external rail — between your organization's own wallet and any branch, or between two
-          branches. Reversible only by transferring back.
+          Immediate, no external rail — from this branch's own wallet to the organization or a sibling branch.
         </p>
 
-        <p v-if="loading" class="text-sm text-text-muted">Loading wallets…</p>
+        <p v-if="loading" class="text-sm text-text-muted">Loading…</p>
         <template v-else>
           <div v-if="submitError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ submitError }}</div>
           <div v-if="submitSuccess" class="text-xs text-success-text bg-success-light rounded-lg px-3 py-2 mb-3">{{ submitSuccess }}</div>
 
           <form class="flex flex-col gap-4 max-w-md" @submit.prevent="submitTransfer">
             <div class="flex items-end gap-3">
-              <AppSelect v-model="fromEndpoint" label="From" :options="endpointOptions" class="flex-1" />
+              <div class="flex-1 text-xs text-text-muted">
+                <span class="block font-semibold text-text-primary mb-1">From</span>
+                This branch's own wallet
+              </div>
               <ArrowRightIcon class="w-4 h-4 text-text-muted mb-2.5 shrink-0" />
-              <AppSelect v-model="toEndpoint" label="To" :options="endpointOptions" placeholder="Select destination" class="flex-1" />
+              <AppSelect v-model="toEndpoint" label="To" :options="toOptions()" placeholder="Select destination" class="flex-1" />
             </div>
             <AppInput v-model="amountKes" type="number" label="Amount (KES)" placeholder="Min 1" required />
             <AppInput v-model="remarks" label="Remarks (optional)" placeholder="What this transfer is for" />
-            <ConfirmSecretInput v-model="confirmSecret" :is-pin="isOwner" />
+            <AppInput v-model="confirmPassword" type="password" label="Confirm your password" required />
             <AppButton type="submit" :loading="submitting" class="self-start">Move funds</AppButton>
           </form>
         </template>
@@ -258,16 +230,14 @@ function cancelExternalOtp() {
       <AppCard v-else>
         <h2 class="text-sm font-bold text-text-primary mb-1">Transfer to another business</h2>
         <p class="text-xs text-text-muted mb-5">
-          Send funds to a different organization or one of its branches, by their collection code. Real money
-          leaving your custody — screened and confirmed like any other payout.
+          Send funds from this branch to a different organization or one of its branches, by their collection
+          code. Real money leaving your custody — screened and confirmed like any other payout.
         </p>
 
         <div v-if="extError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ extError }}</div>
         <div v-if="extSuccess" class="text-xs text-success-text bg-success-light rounded-lg px-3 py-2 mb-3">{{ extSuccess }}</div>
 
         <form class="flex flex-col gap-4 max-w-md" @submit.prevent="submitExternalTransfer">
-          <AppSelect v-model="extFromEndpoint" label="From" :options="endpointOptions" />
-
           <div class="flex items-end gap-3">
             <AppInput
               v-model="extRecipientCode"
@@ -290,7 +260,7 @@ function cancelExternalOtp() {
 
           <AppInput v-model="extAmountKes" type="number" label="Amount (KES)" placeholder="Min 1" required />
           <AppInput v-model="extRemarks" label="Remarks" placeholder="What this transfer is for" required />
-          <ConfirmSecretInput v-model="extConfirmSecret" :is-pin="isOwner" />
+          <AppInput v-model="extPassword" type="password" label="Confirm your password" required />
           <AppButton type="submit" :loading="extSubmitting" class="self-start">Send transfer</AppButton>
         </form>
       </AppCard>

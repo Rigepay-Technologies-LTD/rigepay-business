@@ -1,13 +1,7 @@
 <script setup lang="ts">
 import { InfoIcon } from 'lucide-vue-next'
 
-// Contextual help for form fields — "where do I find my Registration
-// Number?", "what counts as a valid Proof of Address?" etc. A small (i) icon
-// next to the field label; hover/focus reveals the explanation. Deliberately
-// not a permanent AppInput `hint` line — with this many KYC/KYB fields on
-// one screen, always-visible hint text under every field would double the
-// form's height. Pure CSS (Tailwind group-hover/group-focus-within), no
-// extra JS state, no new dependency.
+
 defineProps<{
   text: string
 }>()

@@ -1,31 +1,132 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import {
-  requestBranchPayout, confirmBranchPayout, fetchBranchPayoutFeeEstimate, fetchOrgBankCodes,
-  type BankCode, type PayoutFeeEstimate,
+  requestBranchPayout, confirmBranchPayout, fetchBranchPayoutFeeEstimate,
+  requestOrgPayoutAsMember, confirmOrgPayoutAsMember, fetchPayoutFeeEstimate,
+  fetchOrgBankCodes, fetchOrgBeneficiaries, createOrgBeneficiary, deleteOrgBeneficiary, fetchRecentSettlements,
+  type BankCode, type PayoutFeeEstimate, type Beneficiary, type RecentSettlement,
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
-import { formatMoney } from '@/lib/format'
+import { formatMoney, formatDate } from '@/lib/format'
+import { useAuthStore } from '@/stores/auth'
 import DashboardLayout from '@/layouts/DashboardLayout.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppInput from '@/components/ui/AppInput.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
+import OtpConfirmCard from '@/components/OtpConfirmCard.vue'
+import ConfirmSecretInput from '@/components/ConfirmSecretInput.vue'
+import { RepeatIcon, XIcon } from 'lucide-vue-next'
 
 const props = defineProps<{ orgId: string; branchId: string }>()
+const auth = useAuthStore()
+
+
+const isOrgMemberView = computed(() => auth.meta?.memberType === 'org_member')
+const isOwner = computed(() => auth.meta?.role === 'owner')
 
 const error = ref<string | null>(null)
 const bankOptions = ref<{ value: string; label: string }[]>([])
 
 async function loadBankCodes() {
   try {
-    const codes: BankCode[] = await fetchOrgBankCodes(true)
+    const codes: BankCode[] = await fetchOrgBankCodes(!isOrgMemberView.value)
     bankOptions.value = codes.map((c) => ({ value: c.code, label: c.name }))
   } catch (err) {
     error.value = extractErrorMessage(err)
   }
 }
-onMounted(loadBankCodes)
+
+const beneficiaries = ref<Beneficiary[]>([])
+const beneficiariesLoading = ref(false)
+const beneficiaryError = ref<string | null>(null)
+const selectedBeneficiaryId = ref('')
+const saveAsBeneficiary = ref(false)
+const beneficiaryNickname = ref('')
+const removingBeneficiaryId = ref<string | null>(null)
+
+const beneficiaryOptions = computed(() => [
+  { value: '', label: '— Pick a saved payee (optional) —' },
+  ...beneficiaries.value.map((b) => ({
+    value: b.id,
+    label: `${b.nickname} — ${b.recipient_name} (${b.destination_type === 'BANK_ACCOUNT' ? b.bank_account_number : b.phone_number})`,
+  })),
+])
+
+async function loadBeneficiaries() {
+  beneficiariesLoading.value = true
+  try {
+    beneficiaries.value = await fetchOrgBeneficiaries(true)
+  } catch (err) {
+    beneficiaryError.value = extractErrorMessage(err)
+  } finally {
+    beneficiariesLoading.value = false
+  }
+}
+
+function applyBeneficiary(id: string) {
+  const b = beneficiaries.value.find((x) => x.id === id)
+  if (!b) return
+  destinationType.value = b.destination_type
+  recipientName.value = b.recipient_name
+  if (b.destination_type === 'BANK_ACCOUNT') {
+    bankCode.value = b.bank_code ?? ''
+    bankAccountNumber.value = b.bank_account_number ?? ''
+    phoneNumber.value = ''
+  } else {
+    phoneNumber.value = b.phone_number ?? ''
+    bankCode.value = ''
+    bankAccountNumber.value = ''
+  }
+}
+
+async function removeBeneficiary(id: string) {
+  removingBeneficiaryId.value = id
+  try {
+    await deleteOrgBeneficiary(id, true)
+    beneficiaries.value = beneficiaries.value.filter((b) => b.id !== id)
+    if (selectedBeneficiaryId.value === id) selectedBeneficiaryId.value = ''
+  } catch (err) {
+    beneficiaryError.value = extractErrorMessage(err)
+  } finally {
+    removingBeneficiaryId.value = null
+  }
+}
+
+const recentSettlements = ref<RecentSettlement[]>([])
+const recentSettlementsLoading = ref(false)
+
+async function loadRecentSettlements() {
+  recentSettlementsLoading.value = true
+  try {
+    recentSettlements.value = await fetchRecentSettlements(true)
+  } catch (err) {
+    error.value = extractErrorMessage(err)
+  } finally {
+    recentSettlementsLoading.value = false
+  }
+}
+
+function repeatSettlement(s: RecentSettlement) {
+  destinationType.value = s.destination_type
+  recipientName.value = s.recipient_name
+  amountKes.value = String(s.amount_cents / 100)
+  if (s.destination_type === 'BANK_ACCOUNT') {
+    bankCode.value = s.bank_code ?? ''
+    bankAccountNumber.value = s.bank_account_number ?? ''
+    phoneNumber.value = ''
+  } else {
+    phoneNumber.value = s.phone_number ?? ''
+    bankCode.value = ''
+    bankAccountNumber.value = ''
+  }
+}
+
+onMounted(() => {
+  loadBankCodes()
+  loadBeneficiaries()
+  loadRecentSettlements()
+})
 
 const amountKes = ref('')
 const recipientName = ref('')
@@ -34,7 +135,7 @@ const destinationType = ref<'PHONE_NUMBER' | 'BANK_ACCOUNT'>('PHONE_NUMBER')
 const phoneNumber = ref('')
 const bankCode = ref('')
 const bankAccountNumber = ref('')
-const confirmPassword = ref('')
+const confirmSecret = ref('')
 const destinationOptions = [
   { value: 'PHONE_NUMBER', label: 'Mobile money (M-Pesa)' },
   { value: 'BANK_ACCOUNT', label: 'Bank account' },
@@ -52,7 +153,9 @@ watch([amountKes, destinationType], () => {
   feeEstimateTimer = setTimeout(async () => {
     feeEstimateLoading.value = true
     try {
-      feeEstimate.value = await fetchBranchPayoutFeeEstimate(amountCents, destinationType.value)
+      feeEstimate.value = isOrgMemberView.value
+        ? await fetchPayoutFeeEstimate(amountCents, destinationType.value)
+        : await fetchBranchPayoutFeeEstimate(amountCents, destinationType.value)
     } catch {
       feeEstimate.value = null
     } finally {
@@ -78,8 +181,11 @@ function resetForm() {
   remarks.value = ''
   phoneNumber.value = ''
   bankAccountNumber.value = ''
-  confirmPassword.value = ''
+  confirmSecret.value = ''
   feeEstimate.value = null
+  selectedBeneficiaryId.value = ''
+  saveAsBeneficiary.value = false
+  beneficiaryNickname.value = ''
 }
 
 async function submitPayout() {
@@ -99,14 +205,15 @@ async function submitPayout() {
     requestError.value = 'Recipient phone number is required.'
     return
   }
-  if (!confirmPassword.value) {
-    requestError.value = 'Re-enter your account password to confirm this payout.'
+  const isPin = isOrgMemberView.value && isOwner.value
+  if (isPin ? !/^\d{4}$/.test(confirmSecret.value) : !confirmSecret.value) {
+    requestError.value = isPin ? 'Enter your 4-digit transaction PIN.' : 'Re-enter your account password to confirm this payout.'
     return
   }
 
   requesting.value = true
   try {
-    const result = await requestBranchPayout({
+    const basePayload = {
       amount: amountCents,
       recipient_name: recipientName.value.trim(),
       remarks: remarks.value.trim(),
@@ -114,17 +221,45 @@ async function submitPayout() {
       phone_number: destinationType.value === 'PHONE_NUMBER' ? phoneNumber.value.trim() : undefined,
       bank_code: destinationType.value === 'BANK_ACCOUNT' ? bankCode.value : undefined,
       bank_account_number: destinationType.value === 'BANK_ACCOUNT' ? bankAccountNumber.value.trim() : undefined,
-      password: confirmPassword.value,
-    })
+    }
+    const result = isOrgMemberView.value
+      ? await requestOrgPayoutAsMember({
+          ...basePayload,
+          branch_id: props.branchId,
+          ...(isOwner.value ? { pin: confirmSecret.value } : { password: confirmSecret.value }),
+        })
+      : await requestBranchPayout({ ...basePayload, password: confirmSecret.value })
+
+    if (saveAsBeneficiary.value && beneficiaryNickname.value.trim()) {
+      try {
+        const b = await createOrgBeneficiary({
+          nickname: beneficiaryNickname.value.trim(),
+          recipient_name: recipientName.value.trim(),
+          destination_type: destinationType.value,
+          phone_number: destinationType.value === 'PHONE_NUMBER' ? phoneNumber.value.trim() : undefined,
+          bank_code: destinationType.value === 'BANK_ACCOUNT' ? bankCode.value : undefined,
+          bank_account_number: destinationType.value === 'BANK_ACCOUNT' ? bankAccountNumber.value.trim() : undefined,
+        }, true)
+        beneficiaries.value.unshift(b)
+      } catch (err) {
+        beneficiaryError.value = extractErrorMessage(err)
+      }
+    }
+
     if (result.status === 'otp_required') {
       pendingPayoutId.value = result.payout_id ?? null
       pendingFeeCents.value = result.fee_cents
       otp.value = ''
       otpError.value = null
       otpStep.value = true
+    } else if (result.status === 'approval_required') {
+      requestSuccess.value = result.message || 'This payout requires an owner\'s approval before it executes.'
+      resetForm()
+      await loadRecentSettlements()
     } else {
       requestSuccess.value = result.message || 'Payout queued for execution.'
       resetForm()
+      await loadRecentSettlements()
     }
   } catch (err) {
     requestError.value = extractErrorMessage(err)
@@ -141,10 +276,13 @@ async function submitOtp() {
   }
   otpConfirming.value = true
   try {
-    const result = await confirmBranchPayout(otp.value)
+    const result = isOrgMemberView.value
+      ? await confirmOrgPayoutAsMember(otp.value)
+      : await confirmBranchPayout(otp.value)
     requestSuccess.value = result.message || 'Payout queued for execution.'
     otpStep.value = false
     resetForm()
+    await loadRecentSettlements()
   } catch (err) {
     otpError.value = extractErrorMessage(err)
   } finally {
@@ -164,21 +302,62 @@ function cancelOtp() {
     <div class="flex flex-col gap-6">
       <div v-if="error" class="text-sm text-error-text bg-error-light rounded-xl px-4 py-3">{{ error }}</div>
 
-      <AppCard v-if="otpStep">
-        <h2 class="text-sm font-bold text-text-primary mb-1">Enter confirmation code</h2>
-        <p class="text-xs text-text-muted mb-4">
-          We sent a 6-digit code by SMS to confirm this payout<span v-if="pendingFeeCents !== undefined">
-            (fee: KES {{ formatMoney(pendingFeeCents) }})</span>. Enter it below to release the payout for execution.
-        </p>
-        <div v-if="otpError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ otpError }}</div>
-        <form class="flex flex-col gap-4 max-w-xs" @submit.prevent="submitOtp">
-          <AppInput v-model="otp" label="6-digit code" placeholder="000000" maxlength="6" required autofocus />
-          <div class="flex gap-2">
-            <AppButton type="submit" :loading="otpConfirming" class="self-start">Confirm payout</AppButton>
-            <AppButton type="button" variant="secondary" :disabled="otpConfirming" class="self-start" @click="cancelOtp">Cancel</AppButton>
-          </div>
-        </form>
+      <AppCard v-if="recentSettlements.length">
+        <h2 class="text-sm font-bold text-text-primary mb-1">Recent settlements</h2>
+        <p class="text-xs text-text-muted mb-4">Click one to repeat it — prefills the form below.</p>
+        <p v-if="recentSettlementsLoading" class="text-sm text-text-muted">Loading…</p>
+        <div v-else class="flex flex-wrap gap-2">
+          <button
+            v-for="(s, i) in recentSettlements"
+            :key="i"
+            type="button"
+            class="flex items-center gap-2 rounded-xl bg-surface-2 hover:bg-surface-3 px-3 py-2 text-left transition-colors"
+            @click="repeatSettlement(s)"
+          >
+            <RepeatIcon class="w-3.5 h-3.5 text-text-muted shrink-0" />
+            <span>
+              <span class="text-sm font-semibold text-text-primary block">{{ s.recipient_name || s.recipient_info }}</span>
+              <span class="text-xs text-text-muted">KES {{ formatMoney(s.amount_cents) }} · {{ formatDate(s.last_paid_at) }}</span>
+            </span>
+          </button>
+        </div>
       </AppCard>
+
+      <AppCard v-if="beneficiaries.length">
+        <h2 class="text-sm font-bold text-text-primary mb-1">Saved payees</h2>
+        <p class="text-xs text-text-muted mb-4">Manage your saved beneficiaries — pick one below to autofill the payout form.</p>
+        <div v-if="beneficiaryError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ beneficiaryError }}</div>
+        <p v-if="beneficiariesLoading" class="text-sm text-text-muted">Loading…</p>
+        <div v-else class="flex flex-col gap-2">
+          <div v-for="b in beneficiaries" :key="b.id" class="flex items-center justify-between gap-2 rounded-xl bg-surface-2 px-4 py-2.5">
+            <div class="min-w-0">
+              <span class="text-sm font-semibold text-text-primary">{{ b.nickname }}</span>
+              <span class="text-xs text-text-muted ml-2">
+                {{ b.recipient_name }} — {{ b.destination_type === 'BANK_ACCOUNT' ? b.bank_account_number : b.phone_number }}
+              </span>
+            </div>
+            <button
+              type="button"
+              class="text-text-muted hover:text-error-text shrink-0"
+              :disabled="removingBeneficiaryId === b.id"
+              @click="removeBeneficiary(b.id)"
+            >
+              <XIcon class="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      </AppCard>
+
+      <OtpConfirmCard
+        v-if="otpStep"
+        v-model="otp"
+        subject="payout"
+        :fee-cents="pendingFeeCents"
+        :confirming="otpConfirming"
+        :error="otpError"
+        @confirm="submitOtp"
+        @cancel="cancelOtp"
+      />
 
       <AppCard v-else>
         <h2 class="text-sm font-bold text-text-primary mb-1">Request a payout</h2>
@@ -189,6 +368,14 @@ function cancelOtp() {
         <div v-if="requestSuccess" class="text-xs text-success-text bg-success-light rounded-lg px-3 py-2 mb-3">{{ requestSuccess }}</div>
 
         <form class="flex flex-col gap-4 max-w-md" @submit.prevent="submitPayout">
+          <AppSelect
+            v-if="beneficiaries.length"
+            v-model="selectedBeneficiaryId"
+            label="Pay a saved payee"
+            :options="beneficiaryOptions"
+            @update:modelValue="(v: string) => v && applyBeneficiary(v)"
+          />
+
           <AppSelect v-model="destinationType" label="Pay out via" :options="destinationOptions" />
           <div v-if="destinationType === 'PHONE_NUMBER'">
             <AppInput v-model="phoneNumber" label="Recipient phone" placeholder="+254712345678" required />
@@ -209,7 +396,16 @@ function cancelOtp() {
           </div>
 
           <AppInput v-model="remarks" label="Remarks" placeholder="Reason for this payout" required />
-          <AppInput v-model="confirmPassword" type="password" label="Confirm your password" required />
+
+          <div class="flex flex-col gap-2">
+            <label class="flex items-center gap-2 text-xs font-medium text-text-secondary cursor-pointer">
+              <input v-model="saveAsBeneficiary" type="checkbox" class="rounded border-input-border" />
+              Save this recipient as a beneficiary for next time
+            </label>
+            <AppInput v-if="saveAsBeneficiary" v-model="beneficiaryNickname" label="Beneficiary nickname" placeholder="e.g. Weekly supplier" required />
+          </div>
+
+          <ConfirmSecretInput v-model="confirmSecret" :is-pin="isOrgMemberView && isOwner" />
 
           <AppButton type="submit" :loading="requesting" class="self-start">Request payout</AppButton>
         </form>

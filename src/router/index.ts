@@ -109,6 +109,13 @@ const router = createRouter({
       props: true,
     },
     {
+      path: '/org/:orgId/branch/:branchId/documents',
+      name: 'branch-documents',
+      component: () => import('@/views/BranchDocumentsView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
       path: '/org/:orgId/branch/:branchId/transactions',
       name: 'branch-transactions',
       component: () => import('@/views/BranchTransactionsView.vue'),
@@ -126,6 +133,13 @@ const router = createRouter({
       path: '/org/:orgId/branch/:branchId/fraud',
       name: 'branch-fraud',
       component: () => import('@/views/BranchFraudActivityView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/branch/:branchId/analytics',
+      name: 'branch-analytics',
+      component: () => import('@/views/BranchAnalyticsView.vue'),
       meta: { requiresAuth: true },
       props: true,
     },
@@ -161,6 +175,13 @@ const router = createRouter({
       path: '/org/:orgId/branch/:branchId/petty-cash',
       name: 'branch-petty-cash',
       component: () => import('@/views/BranchPettyCashView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/branch/:branchId/transfers',
+      name: 'branch-transfers',
+      component: () => import('@/views/BranchTransfersView.vue'),
       meta: { requiresAuth: true },
       props: true,
     },
@@ -239,6 +260,13 @@ const router = createRouter({
       path: '/org/:orgId/scheduled-payouts',
       name: 'org-scheduled-payouts',
       component: () => import('@/views/OrgScheduledPayoutsView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/branch/:branchId/scheduled-payouts',
+      name: 'branch-scheduled-payouts',
+      component: () => import('@/views/BranchScheduledPayoutsView.vue'),
       meta: { requiresAuth: true },
       props: true,
     },
@@ -354,7 +382,7 @@ router.beforeEach((to) => {
   const auth = useAuthStore()
 
   if (to.meta.requiresAuth && !auth.isAuthenticated) {
-    return { name: 'login' }
+    return { name: 'login', query: { redirect: to.fullPath } }
   }
   if (to.meta.guestOnly && auth.isAuthenticated) {
     return resolveLandingRoute(auth.meta!)
@@ -379,13 +407,17 @@ router.beforeEach((to) => {
     }
   }
 
-  // Branch-operator screens: branch members only, and only their own branch.
-  if (to.name === 'branch-collect' || to.name === 'branch-profile' || to.name === 'branch-security' || to.name === 'branch-transactions' || to.name === 'branch-payouts' || to.name === 'branch-fraud') {
-    if (
-      to.params.orgId !== auth.meta.organizationId ||
-      auth.meta.memberType !== 'branch_member' ||
-      to.params.branchId !== auth.meta.branchId
-    ) {
+  const branchOperatorRoutes = [
+    'branch-collect', 'branch-profile', 'branch-security', 'branch-transactions', 'branch-documents',
+    'branch-payouts', 'branch-fraud', 'branch-payment-links', 'branch-invoices',
+    'branch-expenses', 'branch-tags', 'branch-petty-cash', 'branch-analytics',
+    'branch-scheduled-payouts',
+  ]
+  if (typeof to.name === 'string' && branchOperatorRoutes.includes(to.name)) {
+    if (to.params.orgId !== auth.meta.organizationId) {
+      return resolveLandingRoute(auth.meta)
+    }
+    if (auth.meta.memberType === 'branch_member' && to.params.branchId !== auth.meta.branchId) {
       return resolveLandingRoute(auth.meta)
     }
   }
@@ -397,7 +429,8 @@ router.beforeEach((to) => {
     to.name === 'org-security' || to.name === 'org-transactions' || to.name === 'org-limits' ||
     to.name === 'org-vaults' || to.name === 'org-scheduled-payouts' || to.name === 'org-fraud' ||
     to.name === 'org-transfers' || to.name === 'org-statements' || to.name === 'org-analytics' ||
-    to.name === 'org-bulk-payouts'
+    to.name === 'org-bulk-payouts' || to.name === 'org-petty-cash' || to.name === 'org-payment-links' ||
+    to.name === 'org-invoices' || to.name === 'org-expenses' || to.name === 'org-tags'
   ) {
     if (to.params.orgId !== auth.meta.organizationId || auth.meta.memberType !== 'org_member') {
       return resolveLandingRoute(auth.meta)

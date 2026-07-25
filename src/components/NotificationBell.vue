@@ -17,9 +17,8 @@ async function load() {
     const data = await fetchOrgNotifications()
     notifications.value = data.notifications
     unreadCount.value = data.unread_count
-  } catch {
-    // Notification center is a convenience surface, not a critical path —
-    // fail silently rather than blocking the dashboard chrome on it.
+  } catch (err) {
+    console.log("An expected error occured", err)
   } finally {
     loading.value = false
   }
@@ -38,7 +37,7 @@ async function openNotification(n: OrgNotification) {
       n.read_at = new Date().toISOString()
       unreadCount.value = Math.max(0, unreadCount.value - 1)
     } catch {
-      // non-critical
+      console.log("Something went wrong")
     }
   }
   open.value = false
@@ -51,7 +50,7 @@ async function markAllRead() {
     notifications.value = notifications.value.map((n) => ({ ...n, read_at: n.read_at ?? new Date().toISOString() }))
     unreadCount.value = 0
   } catch {
-    // non-critical
+    console.log("Something went wrong")
   }
 }
 </script>
@@ -67,7 +66,7 @@ async function markAllRead() {
       <BellIcon class="w-5 h-5" />
       <span
         v-if="unreadCount > 0"
-        class="absolute top-1 right-1 min-w-[16px] h-4 px-1 rounded-full bg-error text-white text-[10px] font-bold flex items-center justify-center"
+        class="absolute top-1 right-1 min-w-4 h-4 px-1 rounded-full bg-error text-white text-[10px] font-bold flex items-center justify-center"
       >
         {{ unreadCount > 9 ? '9+' : unreadCount }}
       </span>

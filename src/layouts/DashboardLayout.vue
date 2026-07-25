@@ -32,11 +32,7 @@ const isOrgWide = computed(() => auth.meta?.memberType === 'org_member')
 
 const isOwner = computed(() => auth.meta?.role === 'owner')
 
-// Branch mode: true whenever we're looking at a specific branch's data —
-// either a genuine branch-member session, or an org member who's used the
-// branch switcher to look at one branch. Drives the visual "you've switched
-// context" treatment (accent bar, badge) so it's unmistakable which lens
-// you're viewing the dashboard through.
+
 const isBranchMode = computed(() => !!props.branchId)
 
 const ownBranchName = ref<string | null>(null)
@@ -58,55 +54,91 @@ const branchName = computed(() => {
   return fromList ?? ownBranchName.value ?? 'Branch'
 })
 
+
+const orgOnly = computed(() => isOrgWide.value && !isBranchMode.value)
+
+
+const NAV_GROUPS = ['Overview', 'Money movement', 'Insights', 'Organization', 'Settings'] as const
+
 const navItems = computed(() => [
-  { name: 'Dashboard', icon: LayoutDashboardIcon, active: true, to: dashboardRoute() },
-  { name: 'Collect', icon: WalletIcon, active: isOrgWide.value || !!props.branchId, to: isOrgWide.value
+  { name: 'Dashboard', group: 'Overview', icon: LayoutDashboardIcon, active: true, to: dashboardRoute() },
+  { name: 'Collect', group: 'Overview', icon: WalletIcon, active: isOrgWide.value || !!props.branchId, to: isOrgWide.value && !isBranchMode.value
       ? { name: 'org-collect', params: { orgId: props.orgId } }
       : { name: 'branch-collect', params: { orgId: props.orgId, branchId: props.branchId } } },
-  { name: 'Branches', icon: Building2Icon, active: isOrgWide.value, to: { name: 'org-branches', params: { orgId: props.orgId } } },
-  { name: 'Transfers', icon: ArrowLeftRightIcon, active: isOrgWide.value, to: { name: 'org-transfers', params: { orgId: props.orgId } } },
-  { name: 'Transactions', icon: HistoryIcon, active: isOrgWide.value || !!props.branchId, to: isOrgWide.value
+  { name: 'Transactions', group: 'Overview', icon: HistoryIcon, active: isOrgWide.value || !!props.branchId, to: isOrgWide.value && !isBranchMode.value
       ? { name: 'org-transactions', params: { orgId: props.orgId } }
       : { name: 'branch-transactions', params: { orgId: props.orgId, branchId: props.branchId } } },
-  { name: 'Statements', icon: FileBarChart2Icon, active: isOrgWide.value, to: { name: 'org-statements', params: { orgId: props.orgId } } },
-  { name: 'Analytics', icon: BarChart3Icon, active: isOrgWide.value, to: { name: 'org-analytics', params: { orgId: props.orgId } } },
-  { name: 'Limits', icon: GaugeIcon, active: isOrgWide.value, to: { name: 'org-limits', params: { orgId: props.orgId } } },
-  { name: 'Vaults', icon: VaultIcon, active: isOrgWide.value, to: { name: 'org-vaults', params: { orgId: props.orgId } } },
-  { name: 'Scheduled payouts', icon: CalendarClockIcon, active: isOrgWide.value, to: { name: 'org-scheduled-payouts', params: { orgId: props.orgId } } },
-  { name: 'Members', icon: UsersIcon, active: isOrgWide.value, to: { name: 'org-members', params: { orgId: props.orgId } } },
-  { name: 'Payouts', icon: BanknoteIcon, active: isOrgWide.value || !!props.branchId, to: isOrgWide.value
+
+ 
+  { name: 'Payouts', group: 'Money movement', icon: BanknoteIcon, active: isOrgWide.value || !!props.branchId, to: isOrgWide.value && !isBranchMode.value
       ? { name: 'org-payouts', params: { orgId: props.orgId } }
       : { name: 'branch-payouts', params: { orgId: props.orgId, branchId: props.branchId } } },
-  { name: 'Bulk payouts', icon: LayersIcon, active: isOrgWide.value, to: { name: 'org-bulk-payouts', params: { orgId: props.orgId } } },
-  { name: 'Payment links', icon: LinkIcon, active: isOrgWide.value || !!props.branchId, to: isOrgWide.value
+  { name: 'Bulk payouts', group: 'Money movement', icon: LayersIcon, active: orgOnly.value, to: { name: 'org-bulk-payouts', params: { orgId: props.orgId } } },
+  { name: 'Payment links', group: 'Money movement', icon: LinkIcon, active: isOrgWide.value || !!props.branchId, to: isOrgWide.value && !isBranchMode.value
       ? { name: 'org-payment-links', params: { orgId: props.orgId } }
       : { name: 'branch-payment-links', params: { orgId: props.orgId, branchId: props.branchId } } },
-  { name: 'Invoices', icon: ClipboardListIcon, active: isOrgWide.value || !!props.branchId, to: isOrgWide.value
+  { name: 'Invoices', group: 'Money movement', icon: ClipboardListIcon, active: isOrgWide.value || !!props.branchId, to: isOrgWide.value && !isBranchMode.value
       ? { name: 'org-invoices', params: { orgId: props.orgId } }
       : { name: 'branch-invoices', params: { orgId: props.orgId, branchId: props.branchId } } },
-  { name: 'Expenses', icon: ReceiptIcon, active: isOrgWide.value || !!props.branchId, to: isOrgWide.value
+  { name: 'Expenses', group: 'Money movement', icon: ReceiptIcon, active: isOrgWide.value || !!props.branchId, to: isOrgWide.value && !isBranchMode.value
       ? { name: 'org-expenses', params: { orgId: props.orgId } }
       : { name: 'branch-expenses', params: { orgId: props.orgId, branchId: props.branchId } } },
-  { name: 'Tags', icon: TagIcon, active: isOrgWide.value || !!props.branchId, to: isOrgWide.value
-      ? { name: 'org-tags', params: { orgId: props.orgId } }
-      : { name: 'branch-tags', params: { orgId: props.orgId, branchId: props.branchId } } },
-  { name: 'Petty cash', icon: CoinsIcon, active: isOrgWide.value || !!props.branchId, to: isOrgWide.value
+  { name: 'Petty cash', group: 'Money movement', icon: CoinsIcon, active: isOrgWide.value || !!props.branchId, to: isOrgWide.value && !isBranchMode.value
       ? { name: 'org-petty-cash', params: { orgId: props.orgId } }
       : { name: 'branch-petty-cash', params: { orgId: props.orgId, branchId: props.branchId } } },
-  { name: 'Fraud activity', icon: ShieldAlertIcon, active: isOrgWide.value || !!props.branchId, to: isOrgWide.value
+  // Visible org-wide, and for a genuine branch member (their own branch to
+  // org/sibling branches) — but NOT for an org member viewing a branch via
+  // the switcher, since the branch-scoped transfer endpoints reject that
+  // impersonation (no branch_member row to confirm against). That case
+  // just uses the org-wide Transfers page directly instead.
+  { name: 'Transfers', group: 'Money movement', icon: ArrowLeftRightIcon, active: orgOnly.value || (!isOrgWide.value && !!props.branchId), to: isOrgWide.value
+      ? { name: 'org-transfers', params: { orgId: props.orgId } }
+      : { name: 'branch-transfers', params: { orgId: props.orgId, branchId: props.branchId } } },
+  { name: 'Vaults', group: 'Money movement', icon: VaultIcon, active: orgOnly.value, to: { name: 'org-vaults', params: { orgId: props.orgId } } },
+  // Visible org-wide and for a genuine branch member — same
+  // impersonation-rejection reasoning as Transfers: the branch-scoped
+  // create/confirm/pause endpoints reject org-member-as-branch sessions (no
+  // real branch identity to attribute the schedule to), so that case just
+  // uses the org-wide page instead.
+  { name: 'Scheduled payouts', group: 'Money movement', icon: CalendarClockIcon, active: orgOnly.value || (!isOrgWide.value && !!props.branchId), to: isOrgWide.value
+      ? { name: 'org-scheduled-payouts', params: { orgId: props.orgId } }
+      : { name: 'branch-scheduled-payouts', params: { orgId: props.orgId, branchId: props.branchId } } },
+
+  { name: 'Analytics', group: 'Insights', icon: BarChart3Icon, active: isOrgWide.value || !!props.branchId, to: isOrgWide.value && !isBranchMode.value
+      ? { name: 'org-analytics', params: { orgId: props.orgId } }
+      : { name: 'branch-analytics', params: { orgId: props.orgId, branchId: props.branchId } } },
+  { name: 'Statements', group: 'Insights', icon: FileBarChart2Icon, active: orgOnly.value, to: { name: 'org-statements', params: { orgId: props.orgId } } },
+  { name: 'Fraud activity', group: 'Insights', icon: ShieldAlertIcon, active: isOrgWide.value || !!props.branchId, to: isOrgWide.value && !isBranchMode.value
       ? { name: 'org-fraud', params: { orgId: props.orgId } }
       : { name: 'branch-fraud', params: { orgId: props.orgId, branchId: props.branchId } } },
-  { name: 'Documents', icon: FileTextIcon, active: isOrgWide.value, to: { name: 'org-documents', params: { orgId: props.orgId } } },
-  { name: 'Directors', icon: UserCheckIcon, active: isOrgWide.value && isOwner.value, to: { name: 'org-directors', params: { orgId: props.orgId } } },
-  { name: 'Credentials', icon: KeyIcon, active: isOrgWide.value, to: { name: 'org-credentials', params: { orgId: props.orgId } } },
-  { name: 'Security', icon: ShieldIcon, active: isOrgWide.value || !!props.branchId, to: isOrgWide.value
+  { name: 'Tags', group: 'Insights', icon: TagIcon, active: isOrgWide.value || !!props.branchId, to: isOrgWide.value && !isBranchMode.value
+      ? { name: 'org-tags', params: { orgId: props.orgId } }
+      : { name: 'branch-tags', params: { orgId: props.orgId, branchId: props.branchId } } },
+
+  { name: 'Branches', group: 'Organization', icon: Building2Icon, active: orgOnly.value, to: { name: 'org-branches', params: { orgId: props.orgId } } },
+  { name: 'Members', group: 'Organization', icon: UsersIcon, active: orgOnly.value, to: { name: 'org-members', params: { orgId: props.orgId } } },
+  { name: 'Documents', group: 'Organization', icon: FileTextIcon, active: orgOnly.value, to: { name: 'org-documents', params: { orgId: props.orgId } } },
+  { name: 'Directors', group: 'Organization', icon: UserCheckIcon, active: orgOnly.value && isOwner.value, to: { name: 'org-directors', params: { orgId: props.orgId } } },
+  { name: 'Credentials', group: 'Organization', icon: KeyIcon, active: orgOnly.value, to: { name: 'org-credentials', params: { orgId: props.orgId } } },
+  { name: 'Limits', group: 'Organization', icon: GaugeIcon, active: orgOnly.value, to: { name: 'org-limits', params: { orgId: props.orgId } } },
+  { name: 'Audit log', group: 'Organization', icon: ScrollTextIcon, active: orgOnly.value, to: { name: 'org-audit-log', params: { orgId: props.orgId } } },
+
+
+  { name: 'My KYC documents', group: 'Settings', icon: FileTextIcon, active: !isOrgWide.value && !!props.branchId,
+      to: { name: 'branch-documents', params: { orgId: props.orgId, branchId: props.branchId } } },
+  { name: 'Security', group: 'Settings', icon: ShieldIcon, active: isOrgWide.value || !!props.branchId, to: isOrgWide.value && !isBranchMode.value
       ? { name: 'org-security', params: { orgId: props.orgId } }
       : { name: 'branch-security', params: { orgId: props.orgId, branchId: props.branchId } } },
-  { name: 'Audit log', icon: ScrollTextIcon, active: isOrgWide.value, to: { name: 'org-audit-log', params: { orgId: props.orgId } } },
-  { name: 'Profile', icon: BuildingIcon, active: isOrgWide.value || !!props.branchId, to: isOrgWide.value
+  { name: 'Profile', group: 'Settings', icon: BuildingIcon, active: isOrgWide.value || !!props.branchId, to: isOrgWide.value && !isBranchMode.value
       ? { name: 'org-profile', params: { orgId: props.orgId } }
       : { name: 'branch-profile', params: { orgId: props.orgId, branchId: props.branchId } } },
-])
+].filter((item) => item.active))
+
+const groupedNavItems = computed(() =>
+  NAV_GROUPS
+    .map((group) => ({ group, items: navItems.value.filter((item) => item.group === group) }))
+    .filter((section) => section.items.length > 0),
+)
 
 function dashboardRoute() {
   return props.branchId
@@ -129,15 +161,16 @@ function isCurrent(itemName: string) {
   if (itemName === 'Petty cash') return route.name === 'org-petty-cash' || route.name === 'branch-petty-cash'
   if (itemName === 'Credentials') return route.name === 'org-credentials'
   if (itemName === 'Branches') return route.name === 'org-branches'
-  if (itemName === 'Transfers') return route.name === 'org-transfers'
+  if (itemName === 'Transfers') return route.name === 'org-transfers' || route.name === 'branch-transfers'
   if (itemName === 'Transactions') return route.name === 'org-transactions' || route.name === 'branch-transactions'
   if (itemName === 'Statements') return route.name === 'org-statements'
-  if (itemName === 'Analytics') return route.name === 'org-analytics'
+  if (itemName === 'Analytics') return route.name === 'org-analytics' || route.name === 'branch-analytics'
   if (itemName === 'Limits') return route.name === 'org-limits'
   if (itemName === 'Vaults') return route.name === 'org-vaults'
-  if (itemName === 'Scheduled payouts') return route.name === 'org-scheduled-payouts'
+  if (itemName === 'Scheduled payouts') return route.name === 'org-scheduled-payouts' || route.name === 'branch-scheduled-payouts'
   if (itemName === 'Collect') return route.name === 'org-collect' || route.name === 'branch-collect'
   if (itemName === 'Security') return route.name === 'org-security' || route.name === 'branch-security'
+  if (itemName === 'My KYC documents') return route.name === 'branch-documents'
   if (itemName === 'Audit log') return route.name === 'org-audit-log'
   if (itemName === 'Fraud activity') return route.name === 'org-fraud' || route.name === 'branch-fraud'
   return false
@@ -151,7 +184,6 @@ function logout() {
 
 <template>
   <div class="flex h-screen w-full overflow-hidden bg-bg text-text-primary">
-    <!-- Mobile backdrop -->
     <div
       v-if="isMobileMenuOpen"
       class="fixed inset-0 z-40 lg:hidden"
@@ -159,7 +191,6 @@ function logout() {
       @click="isMobileMenuOpen = false"
     />
 
-    <!-- Sidebar -->
     <aside
       :class="[
         'fixed inset-y-0 left-0 z-50 w-64 flex flex-col h-full',
@@ -196,27 +227,25 @@ function logout() {
         </RouterLink>
       </div>
 
-      <nav class="flex-1 overflow-y-auto py-4 px-3 space-y-1">
-        <p class="px-3 mb-1.5 text-[10px] font-bold uppercase tracking-widest text-text-muted">Menu</p>
-        <component
-          :is="item.active ? 'router-link' : 'div'"
-          v-for="item in navItems"
-          :key="item.name"
-          :to="item.active ? item.to : undefined"
-          :class="[
-            'flex items-center justify-between gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors',
-            item.active
-              ? (isCurrent(item.name) ? 'bg-primary-muted text-primary font-semibold' : 'text-text-secondary hover:bg-surface-2 hover:text-text-primary')
-              : 'text-text-disabled cursor-not-allowed',
-          ]"
-          @click="isMobileMenuOpen = false"
-        >
-          <span class="flex items-center gap-2.5">
-            <component :is="item.icon" class="w-4 h-4 shrink-0" />
-            {{ item.name }}
-          </span>
-          <span v-if="!item.active" class="text-[9px] font-bold uppercase tracking-wide bg-surface-2 text-text-muted rounded-full px-1.5 py-0.5">Soon</span>
-        </component>
+      <nav class="flex-1 overflow-y-auto py-4 px-3 space-y-4">
+        <div v-for="section in groupedNavItems" :key="section.group">
+          <p class="px-3 mb-1.5 text-[10px] font-bold uppercase tracking-widest text-text-muted">{{ section.group }}</p>
+          <div class="space-y-1">
+            <router-link
+              v-for="item in section.items"
+              :key="item.name"
+              :to="item.to"
+              :class="[
+                'flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors',
+                isCurrent(item.name) ? 'bg-primary-muted text-primary font-semibold' : 'text-text-secondary hover:bg-surface-2 hover:text-text-primary',
+              ]"
+              @click="isMobileMenuOpen = false"
+            >
+              <component :is="item.icon" class="w-4 h-4 shrink-0" />
+              {{ item.name }}
+            </router-link>
+          </div>
+        </div>
       </nav>
 
       <div class="shrink-0 p-3 border-t border-border space-y-2">
@@ -234,7 +263,6 @@ function logout() {
       </div>
     </aside>
 
-    <!-- Main -->
     <main class="flex-1 flex flex-col min-w-0 overflow-hidden">
       <header class="shrink-0 flex items-center justify-between h-16 px-4 sm:px-6 bg-surface border-b border-border z-30">
         <div class="flex items-center gap-3 min-w-0">

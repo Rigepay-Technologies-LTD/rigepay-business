@@ -30,7 +30,7 @@ function goToBranch(branchId: string) {
       class="flex items-center gap-2 px-3 py-2 rounded-xl bg-surface-2 hover:bg-border transition-colors text-sm font-semibold text-text-primary"
       @click="open = !open"
     >
-      <span class="truncate max-w-[160px]">
+      <span class="truncate max-w-40">
         {{ currentBranchId ? branches.find((b) => b.id === currentBranchId)?.name ?? 'Branch' : 'All branches' }}
       </span>
       <svg class="w-3.5 h-3.5 text-text-muted shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>

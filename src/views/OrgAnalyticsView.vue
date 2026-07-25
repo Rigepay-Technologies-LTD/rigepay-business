@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { fetchBranchAnalytics, type BranchAnalytics } from '@/lib/orgApi'
+import { fetchBranchAnalytics, fetchOrgAnalyticsDetail, type BranchAnalytics, type AnalyticsDetail } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
 import { formatMoney } from '@/lib/format'
 import DashboardLayout from '@/layouts/DashboardLayout.vue'
 import AppCard from '@/components/ui/AppCard.vue'
+import AnalyticsDetailPanel from '@/components/AnalyticsDetailPanel.vue'
 import { TrendingUpIcon, TrendingDownIcon } from 'lucide-vue-next'
 
 const props = defineProps<{ orgId: string }>()
@@ -19,6 +20,9 @@ const data = ref<BranchAnalytics | null>(null)
 const loading = ref(true)
 const error = ref<string | null>(null)
 
+const detail = ref<AnalyticsDetail | null>(null)
+const detailLoading = ref(true)
+
 async function load() {
   loading.value = true
   error.value = null
@@ -30,11 +34,27 @@ async function load() {
     loading.value = false
   }
 }
-onMounted(load)
+
+async function loadDetail() {
+  detailLoading.value = true
+  try {
+    detail.value = await fetchOrgAnalyticsDetail(period.value)
+  } catch (err) {
+    error.value = extractErrorMessage(err)
+  } finally {
+    detailLoading.value = false
+  }
+}
+
+function loadAll() {
+  load()
+  loadDetail()
+}
+onMounted(loadAll)
 </script>
 
 <template>
-  <DashboardLayout :org-id="props.orgId" title="Branch analytics">
+  <DashboardLayout :org-id="props.orgId" title="Analytics">
     <div class="flex flex-col gap-6">
       <div v-if="error" class="text-sm text-error-text bg-error-light rounded-xl px-4 py-3">{{ error }}</div>
 
@@ -45,15 +65,21 @@ onMounted(load)
             <input
               v-model="period" type="month"
               class="h-10 rounded-xl border border-input-border bg-input-bg px-3.5 text-sm font-medium text-text-primary outline-none focus:border-input-border-focused focus:ring-2 focus:ring-primary/20"
-              @change="load"
+              @change="loadAll"
             />
           </div>
         </div>
       </AppCard>
 
-      <p v-if="loading" class="text-sm text-text-muted">Loading analytics…</p>
+      <div>
+        <h2 class="text-sm font-bold text-text-primary mb-3">Organization-wide</h2>
+        <AnalyticsDetailPanel :data="detail" :loading="detailLoading" />
+      </div>
+
+      <p v-if="loading" class="text-sm text-text-muted">Loading branch breakdown…</p>
 
       <template v-else-if="data">
+        <h2 class="text-sm font-bold text-text-primary -mb-2">Per-branch breakdown</h2>
         <div v-if="data.highlights.length" class="flex flex-col gap-2">
           <div v-for="(h, i) in data.highlights" :key="i" class="text-xs text-text-secondary bg-surface-2 rounded-xl px-4 py-2.5">
             {{ h }}

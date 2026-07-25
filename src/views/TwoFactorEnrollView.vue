@@ -74,7 +74,6 @@ async function confirmTotp() {
     )
     backupCodes.value = res.data.data.backup_codes ?? []
     applyDashboardToken(res.data.data)
-    twoFactor.clear()
   } catch (err) {
     error.value = extractErrorMessage(err)
   } finally {
@@ -111,8 +110,8 @@ async function startPasskey() {
       },
     )
     applyDashboardToken(finishRes.data.data)
+    router.push(twoFactor.redirectPath ?? { name: 'home' })
     twoFactor.clear()
-    router.push({ name: 'home' })
   } catch (err: any) {
     if (err?.name === 'NotAllowedError' || err?.message === 'PASSKEY_CANCELLED') {
       error.value = 'Passkey setup was cancelled or timed out. You can try again or use an authenticator app instead.'
@@ -127,7 +126,9 @@ async function startPasskey() {
 }
 
 function finishEnrollment() {
-  router.push({ name: 'home' })
+  const redirectPath = twoFactor.redirectPath
+  twoFactor.clear()
+  router.push(redirectPath ?? { name: 'home' })
 }
 </script>
 

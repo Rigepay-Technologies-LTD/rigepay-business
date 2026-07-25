@@ -1,7 +1,5 @@
 <script setup lang="ts">
-// rowClick is optional and additive — every existing AppTable usage that
-// doesn't listen for it is unaffected. When provided, rows get a pointer
-// cursor and hover emphasis to signal they're clickable.
+
 defineProps<{
   columns: { key: string; label: string; width?: string; class?: string }[]
   rows: Record<string, unknown>[]
@@ -16,8 +14,7 @@ const emit = defineEmits<{ (e: 'row-click', row: Record<string, unknown>): void 
 
 <template>
   <div class="overflow-x-auto rounded-2xl shadow-sm bg-surface">
-    <table class="w-full min-w-[560px] text-sm">
-      <!-- Head -->
+    <table class="w-full min-w-140 text-sm">
       <thead>
         <tr class="bg-surface-2">
           <th
@@ -31,7 +28,6 @@ const emit = defineEmits<{ (e: 'row-click', row: Record<string, unknown>): void 
         </tr>
       </thead>
 
-      <!-- Loading skeleton -->
       <tbody v-if="loading">
         <tr v-for="n in 5" :key="n" class="border-b border-surface-2 last:border-0">
           <td v-for="col in columns" :key="col.key" class="px-4 py-3.5">
@@ -40,7 +36,6 @@ const emit = defineEmits<{ (e: 'row-click', row: Record<string, unknown>): void 
         </tr>
       </tbody>
 
-      <!-- Empty state -->
       <tbody v-else-if="!rows.length">
         <tr>
           <td :colspan="columns.length" class="px-4 py-16 text-center">
@@ -56,7 +51,6 @@ const emit = defineEmits<{ (e: 'row-click', row: Record<string, unknown>): void 
         </tr>
       </tbody>
 
-      <!-- Data rows -->
       <tbody v-else>
         <tr
           v-for="(row, i) in rows"

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import QRCode from 'qrcode'
 import {
   fetchEnrolled2FAMethods, addTotpSetup, addTotpVerify, regenerateBackupCodes,
@@ -7,6 +7,7 @@ import {
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
 import { decodeCreationOptions, encodeAttestationResponse, isWebAuthnSupported } from '@/lib/webauthn'
+import { useAuthStore } from '@/stores/auth'
 import DashboardLayout from '@/layouts/DashboardLayout.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppButton from '@/components/ui/AppButton.vue'
@@ -14,7 +15,8 @@ import AppInput from '@/components/ui/AppInput.vue'
 import AppBadge from '@/components/ui/AppBadge.vue'
 
 const props = defineProps<{ orgId: string; branchId: string }>()
-const isBranchSession = true
+const auth = useAuthStore()
+const isBranchSession = computed(() => auth.meta?.memberType === 'branch_member')
 
 const methods = ref<Enrolled2FAMethods | null>(null)
 const methodsLoading = ref(true)
@@ -23,7 +25,7 @@ const methodsError = ref<string | null>(null)
 async function loadMethods() {
   methodsLoading.value = true
   try {
-    methods.value = await fetchEnrolled2FAMethods(isBranchSession)
+    methods.value = await fetchEnrolled2FAMethods(isBranchSession.value)
   } catch (err) {
     methodsError.value = extractErrorMessage(err)
   } finally {
@@ -45,7 +47,7 @@ async function beginAddTotp() {
   totpError.value = null
   addingTotp.value = true
   try {
-    const result = await addTotpSetup(isBranchSession)
+    const result = await addTotpSetup(isBranchSession.value)
     totpSecret.value = result.secret
     totpUri.value = result.otpauth_uri
     totpQrDataUrl.value = await QRCode.toDataURL(result.otpauth_uri)
@@ -65,7 +67,7 @@ async function verifyAddTotp() {
   }
   addingTotp.value = true
   try {
-    revealedBackupCodes.value = await addTotpVerify(isBranchSession, totpCode.value)
+    revealedBackupCodes.value = await addTotpVerify(isBranchSession.value, totpCode.value)
     showAddTotp.value = false
     totpCode.value = ''
     await loadMethods()
@@ -83,7 +85,7 @@ async function handleRegenerateBackupCodes() {
   regenerateError.value = null
   regenerating.value = true
   try {
-    revealedBackupCodes.value = await regenerateBackupCodes(isBranchSession)
+    revealedBackupCodes.value = await regenerateBackupCodes(isBranchSession.value)
   } catch (err) {
     regenerateError.value = extractErrorMessage(err)
   } finally {
@@ -103,11 +105,11 @@ async function handleAddPasskey() {
   }
   addingPasskey.value = true
   try {
-    const begin = await addPasskeyBegin(isBranchSession)
+    const begin = await addPasskeyBegin(isBranchSession.value)
     const publicKey = decodeCreationOptions((begin.creation_options as { publicKey: unknown }).publicKey)
     const credential = await navigator.credentials.create({ publicKey }) as PublicKeyCredential
     const attestation = encodeAttestationResponse(credential)
-    await addPasskeyFinish(isBranchSession, begin.session_id, passkeyName.value.trim() || 'Passkey', attestation)
+    await addPasskeyFinish(isBranchSession.value, begin.session_id, passkeyName.value.trim() || 'Passkey', attestation)
     passkeyName.value = ''
     await loadMethods()
   } catch (err: any) {
@@ -132,7 +134,7 @@ async function handleDisableTotp() {
   if (!confirm('Remove your authenticator app? You will need to use another 2FA method to log in.')) return
   removingTotp.value = true
   try {
-    await disableTotp(isBranchSession)
+    await disableTotp(isBranchSession.value)
     await loadMethods()
   } catch (err) {
     removeError.value = extractErrorMessage(err)
@@ -146,7 +148,7 @@ async function handleDeletePasskey(id: string) {
   if (!confirm('Remove this passkey? It will no longer work for signing in.')) return
   removingPasskeyId.value = id
   try {
-    await deletePasskey(isBranchSession, id)
+    await deletePasskey(isBranchSession.value, id)
     await loadMethods()
   } catch (err) {
     removeError.value = extractErrorMessage(err)

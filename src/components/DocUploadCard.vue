@@ -1,12 +1,10 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { FileTextIcon, UploadCloudIcon, CheckCircle2Icon, XCircleIcon, ClockIcon, Loader2Icon } from 'lucide-vue-next'
+import { FileTextIcon, UploadCloudIcon, CheckCircle2Icon, XCircleIcon, ClockIcon, Loader2Icon, EyeIcon } from 'lucide-vue-next'
 import AppBadge from '@/components/ui/AppBadge.vue'
 import { formatDate } from '@/lib/format'
 
-// Extracted from OrgDocumentsView.vue (Round 15) so the same card-based
-// drag-drop upload UI can be reused for Director documents (Round 16 Piece
-// A) instead of rebuilding it — both call sites share this component now.
+
 const props = defineProps<{
   slotId: string
   label: string
@@ -15,16 +13,28 @@ const props = defineProps<{
   uploadedAt?: string
   uploading?: boolean
   error?: string
+  docId?: string
+  viewing?: boolean
 }>()
 
-const emit = defineEmits<{ (e: 'upload', file: File): void }>()
+const emit = defineEmits<{ (e: 'upload', file: File): void; (e: 'view', docId: string): void }>()
 
 const dragOver = ref(false)
 
+function onView() {
+  if (props.docId) emit('view', props.docId)
+}
+
 function statusMeta(status?: string) {
-  if (status === 'APPROVED') return { variant: 'success' as const, icon: CheckCircle2Icon }
-  if (status === 'REJECTED') return { variant: 'error' as const, icon: XCircleIcon }
-  if (status) return { variant: 'warning' as const, icon: ClockIcon }
+  if (status === 'APPROVED') return {
+    variant: 'success' as const, icon: CheckCircle2Icon
+  }
+  if (status === 'REJECTED') return {
+    variant: 'error' as const, icon: XCircleIcon
+  }
+  if (status) return {
+    variant: 'warning' as const, icon: ClockIcon
+  }
   return null
 }
 
@@ -86,6 +96,18 @@ function onDrop(e: DragEvent) {
         @change="onInputChange"
       />
     </label>
+
+    <button
+      v-if="props.docId"
+      type="button"
+      class="flex items-center justify-center gap-1.5 py-2 text-xs font-semibold bg-surface-2 hover:bg-border text-text-secondary rounded-xl transition-colors disabled:opacity-50"
+      :disabled="props.viewing"
+      @click="onView"
+    >
+      <Loader2Icon v-if="props.viewing" class="w-3.5 h-3.5 animate-spin" />
+      <EyeIcon v-else class="w-3.5 h-3.5" />
+      {{ props.viewing ? 'Loading…' : 'View document' }}
+    </button>
 
     <p v-if="props.error" class="text-[11px] text-error-text">{{ props.error }}</p>
   </div>

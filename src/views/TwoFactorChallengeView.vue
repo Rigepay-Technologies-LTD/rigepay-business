@@ -40,8 +40,9 @@ interface ChallengeResponse {
 
 function finish(data: DashboardTokenData) {
   applyDashboardToken(data)
+  const redirectPath = twoFactor.redirectPath
   twoFactor.clear()
-  router.push({ name: 'home' })
+  router.push(redirectPath ?? { name: 'home' })
 }
 
 async function submitTotp() {

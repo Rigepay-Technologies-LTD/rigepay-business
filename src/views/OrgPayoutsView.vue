@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import {
   requestOrgPayoutAsMember, confirmOrgPayoutAsMember, fetchPendingPayoutApprovals, approvePayoutRequest, rejectPayoutRequest,
@@ -18,9 +19,12 @@ import AppButton from '@/components/ui/AppButton.vue'
 import AppInput from '@/components/ui/AppInput.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import AppBadge from '@/components/ui/AppBadge.vue'
+import OtpConfirmCard from '@/components/OtpConfirmCard.vue'
+import ConfirmSecretInput from '@/components/ConfirmSecretInput.vue'
 import { CheckIcon, AlertTriangleIcon, XIcon, RepeatIcon } from 'lucide-vue-next'
 
 const props = defineProps<{ orgId: string }>()
+const route = useRoute()
 const auth = useAuthStore()
 const isOwner = auth.meta?.role === 'owner'
 const isBranchSession = auth.meta?.memberType === 'branch_member'
@@ -64,8 +68,7 @@ const bankAccountNumber = ref('')
 const recipientName = ref('')
 const remarks = ref('')
 const branchId = ref('')
-const confirmPassword = ref('')
-const confirmPin = ref('')
+const confirmSecret = ref('')
 const destinationType = ref<'PHONE_NUMBER' | 'BANK_ACCOUNT'>('PHONE_NUMBER')
 
 const branchOptions = computed(() => {
@@ -249,8 +252,7 @@ function resetPayoutForm() {
   recipientName.value = ''
   remarks.value = ''
   branchId.value = ''
-  confirmPassword.value = ''
-  confirmPin.value = ''
+  confirmSecret.value = ''
   validationResult.value = null
   screening.value = null
   selectedBeneficiaryId.value = ''
@@ -275,12 +277,8 @@ async function submitPayout() {
     requestError.value = 'Recipient phone number is required.'
     return
   }
-  if (!isOwner && !confirmPassword.value) {
-    requestError.value = 'Re-enter your account password to confirm this payout.'
-    return
-  }
-  if (isOwner && !/^\d{4}$/.test(confirmPin.value)) {
-    requestError.value = 'Enter your 4-digit transaction PIN to confirm this payout.'
+  if (isOwner ? !/^\d{4}$/.test(confirmSecret.value) : !confirmSecret.value) {
+    requestError.value = isOwner ? 'Enter your 4-digit transaction PIN to confirm this payout.' : 'Re-enter your account password to confirm this payout.'
     return
   }
   requesting.value = true
@@ -294,8 +292,8 @@ async function submitPayout() {
       phone_number: destinationType.value === 'PHONE_NUMBER' ? phoneNumber.value.trim() : undefined,
       bank_code: destinationType.value === 'BANK_ACCOUNT' ? bankCode.value : undefined,
       bank_account_number: destinationType.value === 'BANK_ACCOUNT' ? bankAccountNumber.value.trim() : undefined,
-      password: isOwner ? undefined : confirmPassword.value,
-      pin: isOwner ? confirmPin.value : undefined,
+      password: isOwner ? undefined : confirmSecret.value,
+      pin: isOwner ? confirmSecret.value : undefined,
     })
 
     if (saveAsBeneficiary.value && beneficiaryNickname.value.trim() && !isBranchSession) {
@@ -507,6 +505,10 @@ onMounted(() => {
   loadRecentSettlements()
   loadThreshold()
   loadRoleCeilings()
+  const branchQuery = route.query.branch
+  if (typeof branchQuery === 'string' && branchQuery) {
+    branchId.value = branchQuery
+  }
 })
 
 watch([amountKes, destinationType], () => {
@@ -578,21 +580,16 @@ watch([amountKes, destinationType], () => {
         </div>
       </AppCard>
 
-      <AppCard v-if="otpStep">
-        <h2 class="text-sm font-bold text-text-primary mb-1">Enter confirmation code</h2>
-        <p class="text-xs text-text-muted mb-4">
-          We sent a 6-digit code by SMS to confirm this payout<span v-if="pendingFeeCents !== undefined">
-            (fee: KES {{ formatMoney(pendingFeeCents) }})</span>. Enter it below to release the payout for execution.
-        </p>
-        <div v-if="otpError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ otpError }}</div>
-        <form class="flex flex-col gap-4 max-w-xs" @submit.prevent="submitOtp">
-          <AppInput v-model="otp" label="6-digit code" placeholder="000000" maxlength="6" required autofocus />
-          <div class="flex gap-2">
-            <AppButton type="submit" :loading="otpConfirming" class="self-start">Confirm payout</AppButton>
-            <AppButton type="button" variant="secondary" :disabled="otpConfirming" class="self-start" @click="cancelOtp">Cancel</AppButton>
-          </div>
-        </form>
-      </AppCard>
+      <OtpConfirmCard
+        v-if="otpStep"
+        v-model="otp"
+        subject="payout"
+        :fee-cents="pendingFeeCents"
+        :confirming="otpConfirming"
+        :error="otpError"
+        @confirm="submitOtp"
+        @cancel="cancelOtp"
+      />
 
       <AppCard v-else>
         <h2 class="text-sm font-bold text-text-primary mb-1">Request a payout</h2>
@@ -663,8 +660,7 @@ watch([amountKes, destinationType], () => {
             <AppInput v-if="saveAsBeneficiary" v-model="beneficiaryNickname" label="Beneficiary nickname" placeholder="e.g. Weekly supplier" required />
           </div>
 
-          <AppInput v-if="!isOwner" v-model="confirmPassword" type="password" label="Confirm your password" required />
-          <AppInput v-else v-model="confirmPin" type="password" label="Transaction PIN" placeholder="0000" required />
+          <ConfirmSecretInput v-model="confirmSecret" :is-pin="isOwner" />
 
           <AppButton type="submit" :loading="requesting" class="self-start">Request payout</AppButton>
         </form>

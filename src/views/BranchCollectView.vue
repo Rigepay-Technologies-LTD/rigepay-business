@@ -11,9 +11,7 @@ import AppButton from '@/components/ui/AppButton.vue'
 import AppInput from '@/components/ui/AppInput.vue'
 import { SmartphoneIcon, LandmarkIcon, CopyIcon, CheckIcon } from 'lucide-vue-next'
 
-// Branch-operator collect screen: collects into THIS branch's own wallet (the
-// server infers the branch from the branch_member session, so no source
-// selector). Mirrors OrgCollectView but with isBranchSession = true.
+
 const props = defineProps<{ orgId: string; branchId: string }>()
 
 const error = ref<string | null>(null)

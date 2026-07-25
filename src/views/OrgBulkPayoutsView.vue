@@ -88,8 +88,14 @@ interface EditableRow {
 let nextRowKey = 1
 function blankRow(): EditableRow {
   return {
-    key: nextRowKey++, destination_type: 'PHONE_NUMBER', amount_kes: '',
-    recipient_name: '', phone_number: '', bank_code: '', bank_account_number: '', remarks: '',
+    key: nextRowKey++,
+    destination_type: 'PHONE_NUMBER',
+    amount_kes: '',
+    recipient_name: '',
+    phone_number: '',
+    bank_code: '',
+    bank_account_number: '',
+    remarks: '',
   }
 }
 
@@ -126,7 +132,7 @@ async function submitBatch() {
   for (let i = 0; i < rows.value.length; i++) {
     const r = rows.value[i]
     const isBlank = !r.recipient_name.trim() && !r.amount_kes && !r.phone_number && !r.bank_account_number
-    if (isBlank) continue // silently skip fully-empty trailing rows
+    if (isBlank) continue 
 
     const amountCents = Math.round(Number(r.amount_kes) * 100)
     if (!amountCents || amountCents < 100) {
@@ -394,23 +400,23 @@ const availableTagsToAssign = () => allTags.value.filter((t) => !assignedTags.va
             <tbody>
               <tr v-for="(r, i) in rows" :key="r.key" class="border-b border-border last:border-0 align-top">
                 <td class="px-3 py-2.5 text-text-muted">{{ i + 1 }}</td>
-                <td class="px-3 py-2.5 min-w-[110px]">
+                <td class="px-3 py-2.5 min-w-27.5">
                   <AppSelect v-model="r.destination_type" :options="destinationOptions" />
                 </td>
-                <td class="px-3 py-2.5 min-w-[160px]">
+                <td class="px-3 py-2.5 min-w-40">
                   <AppInput v-model="r.recipient_name" placeholder="Jane Wanjiku" />
                 </td>
-                <td class="px-3 py-2.5 min-w-[220px]">
+                <td class="px-3 py-2.5 min-w-55">
                   <AppInput v-if="r.destination_type === 'PHONE_NUMBER'" v-model="r.phone_number" placeholder="+254712345678" />
                   <div v-else class="flex gap-2">
-                    <AppSelect v-model="r.bank_code" placeholder="Bank" :options="bankOptions" class="min-w-[140px]" />
+                    <AppSelect v-model="r.bank_code" placeholder="Bank" :options="bankOptions" class="min-w-35" />
                     <AppInput v-model="r.bank_account_number" placeholder="Account no." />
                   </div>
                 </td>
-                <td class="px-3 py-2.5 min-w-[110px]">
+                <td class="px-3 py-2.5 min-w-27.5">
                   <AppInput v-model="r.amount_kes" type="number" placeholder="0" />
                 </td>
-                <td class="px-3 py-2.5 min-w-[160px]">
+                <td class="px-3 py-2.5 min-w-40">
                   <AppInput v-model="r.remarks" placeholder="Optional" />
                 </td>
                 <td class="px-3 py-2.5">

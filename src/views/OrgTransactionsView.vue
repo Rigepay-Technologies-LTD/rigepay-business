@@ -5,7 +5,7 @@ import {
   type BranchesResponse, type PaginatedTransactions, type Transaction, type TransactionDetail,
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
-import { formatMoney, formatDate } from '@/lib/format'
+import { formatMoney, formatDate, txnReference } from '@/lib/format'
 import DashboardLayout from '@/layouts/DashboardLayout.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppButton from '@/components/ui/AppButton.vue'
@@ -132,6 +132,7 @@ async function openTxnDetail(row: Record<string, unknown>) {
           @row-click="openTxnDetail"
         >
           <template #cell-created_at="{ value }">{{ formatDate(value as string) }}</template>
+          <template #cell-reference="{ row }">{{ txnReference(row as unknown as Transaction) }}</template>
           <template #cell-status="{ value }">
             <AppBadge :variant="statusVariant(value as string)" size="sm">{{ value }}</AppBadge>
           </template>
@@ -152,7 +153,7 @@ async function openTxnDetail(row: Record<string, unknown>) {
       <p v-if="txnDetailLoading" class="text-sm text-text-muted">Loading…</p>
       <p v-else-if="txnDetailError" class="text-sm text-error-text">{{ txnDetailError }}</p>
       <dl v-else-if="selectedTxnDetail" class="flex flex-col gap-3 text-sm">
-        <div class="flex justify-between"><dt class="text-text-muted">Reference</dt><dd class="font-semibold text-text-primary">{{ selectedTxnDetail.reference }}</dd></div>
+        <div class="flex justify-between"><dt class="text-text-muted">Reference</dt><dd class="font-semibold text-text-primary">{{ txnReference(selectedTxnDetail) }}</dd></div>
         <div class="flex justify-between"><dt class="text-text-muted">External Txn Id</dt><dd class="font-semibold text-text-primary">{{ selectedTxnDetail.externalTxnId }}</dd></div>
         <div class="flex justify-between"><dt class="text-text-muted">Type</dt><dd class="font-semibold text-text-primary">{{ selectedTxnDetail.type }}</dd></div>
         <div class="flex justify-between"><dt class="text-text-muted">Status</dt><dd><AppBadge :variant="statusVariant(selectedTxnDetail.status)" size="sm">{{ selectedTxnDetail.status }}</AppBadge></dd></div>

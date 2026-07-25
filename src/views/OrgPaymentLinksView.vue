@@ -74,14 +74,13 @@ async function submitCreate() {
 
 const copiedId = ref<string | null>(null)
 function copyLink(link: OrgPaymentLink) {
-  const url = `${link.code}` // fallback if we don't have the full base URL client-side
+  const url = `${link.code}` 
   navigator.clipboard?.writeText(linkUrl(link)).catch(() => navigator.clipboard?.writeText(url))
   copiedId.value = link.id
   setTimeout(() => { if (copiedId.value === link.id) copiedId.value = null }, 2000)
 }
 
-// The API only returns the full URL at creation time; for existing links we
-// reconstruct it from the code using the same checkout domain.
+
 function linkUrl(link: OrgPaymentLink): string {
   return `https://pay.rigepay.co.ke/${link.code}`
 }
