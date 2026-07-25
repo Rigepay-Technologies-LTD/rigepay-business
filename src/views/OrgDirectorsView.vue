@@ -2,7 +2,7 @@
 import { ref, onMounted } from 'vue'
 import {
   fetchOrgDirectors, createOrgDirector, updateOrgDirector,
-  fetchDirectorDocuments, uploadDirectorDocument,
+  fetchDirectorDocuments, uploadDirectorDocument, fetchOrgScopedDocumentUrl,
   type OrgDirector, type DirectorDocument, type DirectorUpdateInput,
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
@@ -189,6 +189,20 @@ function latestDocFor(directorId: string, type: string): DirectorDocument | unde
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
 }
 
+const viewingDocId = ref<string | null>(null)
+
+async function handleView(docId: string) {
+  viewingDocId.value = docId
+  try {
+    const url = await fetchOrgScopedDocumentUrl(docId)
+    window.open(url, '_blank', 'noopener,noreferrer')
+  } catch (err) {
+    error.value = extractErrorMessage(err)
+  } finally {
+    viewingDocId.value = null
+  }
+}
+
 async function handleDirectorUpload(directorId: string, type: string, file: File) {
   const key = `${directorId}:${type}`
   uploadErrors.value = { ...uploadErrors.value, [key]: '' }
@@ -357,7 +371,10 @@ async function handleDirectorUpload(directorId: string, type: string, file: File
                 :uploaded-at="latestDocFor(d.id, slot.type)?.created_at"
                 :uploading="uploadingSlot === `${d.id}:${slot.type}`"
                 :error="uploadErrors[`${d.id}:${slot.type}`]"
+                :doc-id="latestDocFor(d.id, slot.type)?.id"
+                :viewing="viewingDocId === latestDocFor(d.id, slot.type)?.id"
                 @upload="(file) => handleDirectorUpload(d.id, slot.type, file)"
+                @view="handleView"
               />
             </div>
           </div>

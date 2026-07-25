@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import {
-  fetchOrgBranches, createOrgBranch, updateOrgBranch, fetchBranchDocuments, uploadBranchDocument,
+  fetchOrgBranches, createOrgBranch, updateOrgBranch, fetchBranchDocuments, uploadBranchDocument, fetchOrgScopedDocumentUrl,
   type BranchesResponse, type CreateBranchInput, type UpdateBranchInput, type BranchDocument, type BranchSummary,
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
@@ -272,6 +272,20 @@ function latestDocFor(branchId: string, type: string): BranchDocument | undefine
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
 }
 
+const viewingDocId = ref<string | null>(null)
+
+async function handleView(docId: string) {
+  viewingDocId.value = docId
+  try {
+    const url = await fetchOrgScopedDocumentUrl(docId)
+    window.open(url, '_blank', 'noopener,noreferrer')
+  } catch (err) {
+    error.value = extractErrorMessage(err)
+  } finally {
+    viewingDocId.value = null
+  }
+}
+
 async function handleBranchUpload(branchId: string, type: string, file: File) {
   const key = `${branchId}:${type}`
   uploadErrors.value = { ...uploadErrors.value, [key]: '' }
@@ -468,7 +482,10 @@ async function handleBranchUpload(branchId: string, type: string, file: File) {
                   :uploaded-at="latestDocFor(b.id, slot.type)?.created_at"
                   :uploading="uploadingSlot === `${b.id}:${slot.type}`"
                   :error="uploadErrors[`${b.id}:${slot.type}`]"
+                  :doc-id="latestDocFor(b.id, slot.type)?.id"
+                  :viewing="viewingDocId === latestDocFor(b.id, slot.type)?.id"
                   @upload="(file) => handleBranchUpload(b.id, slot.type, file)"
+                  @view="handleView"
                 />
               </div>
             </div>

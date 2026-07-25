@@ -2,7 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import {
-  fetchOrgMembers, inviteOrgMember, fetchOrgBranches, fetchMemberDocuments, uploadMemberDocument,
+  fetchOrgMembers, inviteOrgMember, fetchOrgBranches, fetchMemberDocuments, uploadMemberDocument, fetchOrgScopedDocumentUrl,
   updateOrgMember, suspendOrgMember, reactivateOrgMember, resetOrgMemberPassword,
   type OrgMember, type BranchSummary, type MemberDocument, type UpdateMemberInput,
 } from '@/lib/orgApi'
@@ -162,6 +162,20 @@ function latestDocFor(memberId: string, type: string): MemberDocument | undefine
   return (docsByMember.value[memberId] ?? [])
     .filter((d) => d.doc_type === type)
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
+}
+
+const viewingDocId = ref<string | null>(null)
+
+async function handleView(docId: string) {
+  viewingDocId.value = docId
+  try {
+    const url = await fetchOrgScopedDocumentUrl(docId)
+    window.open(url, '_blank', 'noopener,noreferrer')
+  } catch (err) {
+    error.value = extractErrorMessage(err)
+  } finally {
+    viewingDocId.value = null
+  }
 }
 
 async function handleMemberUpload(memberId: string, type: string, file: File) {
@@ -488,7 +502,10 @@ const memberColumns = [
                   :uploaded-at="latestDocFor(m.id, slot.type)?.created_at"
                   :uploading="uploadingSlot === `${m.id}:${slot.type}`"
                   :error="uploadErrors[`${m.id}:${slot.type}`]"
+                  :doc-id="latestDocFor(m.id, slot.type)?.id"
+                  :viewing="viewingDocId === latestDocFor(m.id, slot.type)?.id"
                   @upload="(file) => handleMemberUpload(m.id, slot.type, file)"
+                  @view="handleView"
                 />
               </div>
             </div>
