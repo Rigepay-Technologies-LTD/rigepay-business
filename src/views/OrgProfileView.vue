@@ -1,11 +1,17 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { fetchOrgProfile, updateOrgProfile, type ProfileResponse } from '@/lib/orgApi'
+import {
+  fetchOrgProfile, updateOrgProfile,
+  requestOrgIdentityChange, fetchOrgIdentityChangeRequests,
+  type ProfileResponse, type OrgIdentityChangeField, type OrgIdentityChangeRequest,
+} from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
+import { formatDate } from '@/lib/format'
 import DashboardLayout from '@/layouts/DashboardLayout.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppInput from '@/components/ui/AppInput.vue'
+import AppSelect from '@/components/ui/AppSelect.vue'
 import AppBadge from '@/components/ui/AppBadge.vue'
 
 const props = defineProps<{ orgId: string }>()
@@ -102,7 +108,59 @@ async function save() {
   }
 }
 
-onMounted(load)
+const identityRequests = ref<OrgIdentityChangeRequest[]>([])
+const identityRequestsLoading = ref(false)
+const identityField = ref<OrgIdentityChangeField>('legal_name')
+const identityNewValue = ref('')
+const identityRequestError = ref<string | null>(null)
+const identityRequestSuccess = ref<string | null>(null)
+const identityRequestSubmitting = ref(false)
+
+const identityFieldOptions = [
+  { value: 'legal_name', label: 'Legal name' },
+  { value: 'brs_registration_number', label: 'BRS registration number' },
+  { value: 'kra_pin', label: 'KRA PIN' },
+]
+
+async function loadIdentityRequests() {
+  identityRequestsLoading.value = true
+  try {
+    identityRequests.value = await fetchOrgIdentityChangeRequests()
+  } catch (err) {
+    identityRequestError.value = extractErrorMessage(err)
+  } finally {
+    identityRequestsLoading.value = false
+  }
+}
+
+async function submitIdentityChangeRequest() {
+  identityRequestError.value = null
+  identityRequestSuccess.value = null
+  if (!identityNewValue.value.trim()) {
+    identityRequestError.value = 'Enter the new value.'
+    return
+  }
+  identityRequestSubmitting.value = true
+  try {
+    await requestOrgIdentityChange(identityField.value, identityNewValue.value.trim())
+    identityRequestSuccess.value = 'Change request submitted for compliance review.'
+    identityNewValue.value = ''
+    await loadIdentityRequests()
+  } catch (err) {
+    identityRequestError.value = extractErrorMessage(err)
+  } finally {
+    identityRequestSubmitting.value = false
+  }
+}
+
+function identityFieldLabel(field: string): string {
+  return identityFieldOptions.find((f) => f.value === field)?.label ?? field
+}
+
+onMounted(() => {
+  load()
+  loadIdentityRequests()
+})
 
 function statusVariant(status: string) {
   if (status === 'approved') return 'success'
@@ -131,6 +189,32 @@ function statusVariant(status: string) {
         <p class="text-xs text-text-muted">
           {{ profile.organization.location }}, {{ profile.organization.county }}, {{ profile.organization.country }}
         </p>
+      </AppCard>
+
+      <AppCard>
+        <h2 class="text-sm font-bold text-text-primary mb-1">Request an identity change</h2>
+        <p class="text-xs text-text-muted mb-4">
+          Legal name, BRS registration number, and KRA PIN are locked once your organization is approved — changing
+          them requires compliance review. Submit a request below; an admin will approve or reject it.
+        </p>
+        <div v-if="identityRequestError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ identityRequestError }}</div>
+        <div v-if="identityRequestSuccess" class="text-xs text-success-text bg-success-light rounded-lg px-3 py-2 mb-3">{{ identityRequestSuccess }}</div>
+        <form class="flex flex-col sm:flex-row gap-3 sm:items-end" @submit.prevent="submitIdentityChangeRequest">
+          <AppSelect v-model="identityField" label="Field" :options="identityFieldOptions" class="sm:w-56" />
+          <AppInput v-model="identityNewValue" label="New value" placeholder="Enter the new value" class="flex-1" />
+          <AppButton type="submit" :loading="identityRequestSubmitting" class="shrink-0">Submit request</AppButton>
+        </form>
+
+        <div v-if="identityRequests.length" class="flex flex-col gap-2 mt-5 pt-5 border-t border-border">
+          <p class="text-xs font-bold text-text-muted uppercase tracking-wide">Request history</p>
+          <div v-for="r in identityRequests" :key="r.id" class="flex items-center justify-between gap-3 rounded-xl bg-surface-2 px-4 py-2.5">
+            <div class="min-w-0">
+              <p class="text-sm font-medium text-text-primary">{{ identityFieldLabel(r.field) }} → {{ r.new_value }}</p>
+              <p class="text-xs text-text-muted mt-0.5">Requested {{ formatDate(r.created_at) }}<template v-if="r.reason"> · {{ r.reason }}</template></p>
+            </div>
+            <AppBadge :variant="statusVariant(r.status)" size="sm">{{ r.status }}</AppBadge>
+          </div>
+        </div>
       </AppCard>
 
       <AppCard>

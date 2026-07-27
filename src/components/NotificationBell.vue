@@ -1,11 +1,19 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { fetchOrgNotifications, markNotificationRead, markAllNotificationsRead, type OrgNotification } from '@/lib/orgApi'
+import {
+  fetchOrgNotifications, markNotificationRead, markAllNotificationsRead,
+  fetchBranchNotifications, markBranchNotificationRead, markAllBranchNotificationsRead,
+  type OrgNotification,
+} from '@/lib/orgApi'
 import { formatDate } from '@/lib/format'
+import { useAuthStore } from '@/stores/auth'
 import { BellIcon } from 'lucide-vue-next'
 
 const router = useRouter()
+const auth = useAuthStore()
+const isBranchSession = computed(() => auth.meta?.memberType === 'branch_member')
+
 const open = ref(false)
 const loading = ref(false)
 const notifications = ref<OrgNotification[]>([])
@@ -14,7 +22,7 @@ const unreadCount = ref(0)
 async function load() {
   loading.value = true
   try {
-    const data = await fetchOrgNotifications()
+    const data = isBranchSession.value ? await fetchBranchNotifications() : await fetchOrgNotifications()
     notifications.value = data.notifications
     unreadCount.value = data.unread_count
   } catch (err) {
@@ -33,7 +41,8 @@ async function toggle() {
 async function openNotification(n: OrgNotification) {
   if (!n.read_at) {
     try {
-      await markNotificationRead(n.id)
+      if (isBranchSession.value) await markBranchNotificationRead(n.id)
+      else await markNotificationRead(n.id)
       n.read_at = new Date().toISOString()
       unreadCount.value = Math.max(0, unreadCount.value - 1)
     } catch {
@@ -46,7 +55,8 @@ async function openNotification(n: OrgNotification) {
 
 async function markAllRead() {
   try {
-    await markAllNotificationsRead()
+    if (isBranchSession.value) await markAllBranchNotificationsRead()
+    else await markAllNotificationsRead()
     notifications.value = notifications.value.map((n) => ({ ...n, read_at: n.read_at ?? new Date().toISOString() }))
     unreadCount.value = 0
   } catch {

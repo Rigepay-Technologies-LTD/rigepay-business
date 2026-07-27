@@ -2,7 +2,7 @@
 import { ref, watch, onMounted } from 'vue'
 import {
   fetchScheduledPayouts, createScheduledPayout, confirmScheduledPayout, pauseScheduledPayout, resumeScheduledPayout, cancelScheduledPayout,
-  fetchOrgBankCodes, fetchPayoutFeeEstimate,
+  fetchOrgBankCodes, fetchBranchPayoutFeeEstimate,
   type ScheduledPayout, type BankCode, type PayoutFeeEstimate,
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
@@ -39,7 +39,7 @@ async function load() {
 
 async function loadBankCodes() {
   try {
-    const codes: BankCode[] = await fetchOrgBankCodes(false)
+    const codes: BankCode[] = await fetchOrgBankCodes(true)
     bankOptions.value = codes.map((c) => ({ value: c.code, label: c.name }))
   } catch (err) {
     error.value = extractErrorMessage(err)
@@ -69,7 +69,7 @@ watch([amountKes, destinationType], () => {
   feeEstimateTimer = setTimeout(async () => {
     feeEstimateLoading.value = true
     try {
-      feeEstimate.value = await fetchPayoutFeeEstimate(amountCents, destinationType.value)
+      feeEstimate.value = await fetchBranchPayoutFeeEstimate(amountCents, destinationType.value)
     } catch {
       feeEstimate.value = null
     } finally {

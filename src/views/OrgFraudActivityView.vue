@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { fetchOrgFraudActivity, fetchFraudBranchBreakdown, type OrgFraudDecision, type OrgFraudBranchBreakdownRow } from '@/lib/orgApi'
+import { fetchOrgFraudActivity, fetchFraudBranchBreakdown, fetchFraudAggregateScore, type OrgFraudDecision, type OrgFraudBranchBreakdownRow, type OrgFraudAggregateScore } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
 import { formatMoney, formatDate } from '@/lib/format'
 import DashboardLayout from '@/layouts/DashboardLayout.vue'
@@ -19,6 +19,26 @@ const decisions = ref<OrgFraudDecision[]>([])
 
 const breakdown = ref<OrgFraudBranchBreakdownRow[]>([])
 const breakdownLoading = ref(true)
+
+const aggregateScore = ref<OrgFraudAggregateScore | null>(null)
+const aggregateLoading = ref(true)
+
+async function loadAggregateScore() {
+  aggregateLoading.value = true
+  try {
+    aggregateScore.value = await fetchFraudAggregateScore()
+  } catch (err) {
+    error.value = extractErrorMessage(err)
+  } finally {
+    aggregateLoading.value = false
+  }
+}
+
+function scoreVariant(score: number): 'error' | 'warning' | 'success' {
+  if (score >= 60) return 'error'
+  if (score >= 30) return 'warning'
+  return 'success'
+}
 
 async function load() {
   loading.value = true
@@ -49,6 +69,7 @@ async function loadBreakdown() {
 onMounted(() => {
   load()
   loadBreakdown()
+  loadAggregateScore()
 })
 
 function actionVariant(action: string): 'error' | 'warning' | 'success' {
@@ -66,6 +87,36 @@ function actionVariant(action: string): 'error' | 'warning' | 'success' {
       <p class="text-xs text-text-muted -mt-2">
         Fraud gate decisions across your organization's own wallet and all branch payouts/collections.
       </p>
+
+      <AppCard v-if="aggregateLoading || aggregateScore">
+        <div class="flex items-center justify-between mb-1">
+          <h2 class="text-sm font-bold text-text-primary">Cross-branch fraud aggregate score</h2>
+          <AppBadge v-if="aggregateScore" :variant="scoreVariant(aggregateScore.score)" size="sm">{{ aggregateScore.score }}/100</AppBadge>
+        </div>
+        <p class="text-xs text-text-muted mb-3">
+          Looks for patterns invisible from any single branch — the same device, IP, or phone number hitting
+          multiple branches, or fraud activity spread across many branches at once. Last {{ aggregateScore?.window_days ?? 30 }} days.
+        </p>
+        <p v-if="aggregateLoading" class="text-sm text-text-muted">Loading…</p>
+        <div v-else-if="aggregateScore" class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+          <div class="rounded-xl bg-surface-2 px-3 py-2.5">
+            <p class="text-lg font-bold text-text-primary">{{ aggregateScore.branches_with_risk_activity }}</p>
+            <p class="text-[11px] text-text-muted mt-0.5">Branches w/ risk activity</p>
+          </div>
+          <div class="rounded-xl bg-surface-2 px-3 py-2.5">
+            <p class="text-lg font-bold text-text-primary">{{ aggregateScore.device_overlap_count }}</p>
+            <p class="text-[11px] text-text-muted mt-0.5">Devices across branches</p>
+          </div>
+          <div class="rounded-xl bg-surface-2 px-3 py-2.5">
+            <p class="text-lg font-bold text-text-primary">{{ aggregateScore.ip_overlap_count }}</p>
+            <p class="text-[11px] text-text-muted mt-0.5">IPs across branches</p>
+          </div>
+          <div class="rounded-xl bg-surface-2 px-3 py-2.5">
+            <p class="text-lg font-bold text-text-primary">{{ aggregateScore.phone_overlap_count }}</p>
+            <p class="text-[11px] text-text-muted mt-0.5">Phones across branches</p>
+          </div>
+        </div>
+      </AppCard>
 
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <AppStat label="Open blocks" :value="openBlocks" icon-color="error">

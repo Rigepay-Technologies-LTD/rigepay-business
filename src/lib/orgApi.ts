@@ -460,6 +460,29 @@ export async function updateOrgProfile(input: ProfileUpdateInput): Promise<void>
   await http.put('/org/v1/profile', input)
 }
 
+export type OrgIdentityChangeField = 'legal_name' | 'brs_registration_number' | 'kra_pin'
+
+export interface OrgIdentityChangeRequest {
+  id: string
+  organization_id: string
+  field: OrgIdentityChangeField
+  old_value: string | null
+  new_value: string
+  status: 'pending' | 'approved' | 'rejected'
+  reason?: string | null
+  created_at: string
+  reviewed_at?: string | null
+}
+
+export async function requestOrgIdentityChange(field: OrgIdentityChangeField, newValue: string): Promise<void> {
+  await http.post('/org/v1/profile/identity-change-request', { field, new_value: newValue })
+}
+
+export async function fetchOrgIdentityChangeRequests(): Promise<OrgIdentityChangeRequest[]> {
+  const res = await http.get<{ status: string; data: OrgIdentityChangeRequest[] }>('/org/v1/profile/identity-change-requests')
+  return res.data.data
+}
+
 export interface OrgDirector {
   id: string
   full_name: string
@@ -714,6 +737,63 @@ export async function createOrgApiKey(input: CreateApiKeyInput): Promise<CreateA
 
 export async function revokeOrgApiKey(id: string): Promise<void> {
   await http.delete(`/org/v1/api-keys/${id}`)
+}
+
+export const WEBHOOK_EVENT_TYPES = [
+  'collection.completed',
+  'collection.failed',
+  'payout.completed',
+  'payout.failed',
+  'transfer.completed',
+  'checkout.session.completed',
+] as const
+
+export interface OrgWebhookEndpoint {
+  id: string
+  url: string
+  event_types: string[]
+  is_active: boolean
+  created_at: string
+}
+
+export interface CreateWebhookEndpointInput {
+  url: string
+  event_types: string[]
+}
+
+export interface CreateWebhookEndpointResult extends OrgWebhookEndpoint {
+  secret: string
+}
+
+export interface OrgWebhookDelivery {
+  id: string
+  event_type: string
+  status: string
+  attempt_count: number
+  last_attempted_at: string | null
+  last_response_code: number | null
+  last_error: string | null
+  next_retry_at: string | null
+  created_at: string
+}
+
+export async function fetchOrgWebhookEndpoints(): Promise<OrgWebhookEndpoint[]> {
+  const res = await http.get<{ status: string; data: OrgWebhookEndpoint[] }>('/org/v1/webhook-endpoints')
+  return res.data.data
+}
+
+export async function createOrgWebhookEndpoint(input: CreateWebhookEndpointInput): Promise<CreateWebhookEndpointResult> {
+  const res = await http.post<{ status: string; data: CreateWebhookEndpointResult }>('/org/v1/webhook-endpoints', input)
+  return res.data.data
+}
+
+export async function deleteOrgWebhookEndpoint(id: string): Promise<void> {
+  await http.delete(`/org/v1/webhook-endpoints/${id}`)
+}
+
+export async function fetchOrgWebhookDeliveries(endpointId: string): Promise<OrgWebhookDelivery[]> {
+  const res = await http.get<{ status: string; data: OrgWebhookDelivery[] }>(`/org/v1/webhook-endpoints/${endpointId}/deliveries`)
+  return res.data.data
 }
 
 
@@ -1220,7 +1300,8 @@ export interface OrgNotification {
   id: string
   created_at: string
   organization_id: string
-  org_member_id: string
+  org_member_id?: string | null
+  branch_member_id?: string | null
   type: string
   title: string
   body: string | null
@@ -1245,6 +1326,19 @@ export async function markNotificationRead(id: string): Promise<void> {
 
 export async function markAllNotificationsRead(): Promise<void> {
   await http.post('/org/v1/notifications/read-all')
+}
+
+export async function fetchBranchNotifications(): Promise<OrgNotificationsResponse> {
+  const res = await http.get<{ status: string; data: OrgNotificationsResponse }>('/org/v1/branch/notifications')
+  return res.data.data
+}
+
+export async function markBranchNotificationRead(id: string): Promise<void> {
+  await http.post(`/org/v1/branch/notifications/${id}/read`)
+}
+
+export async function markAllBranchNotificationsRead(): Promise<void> {
+  await http.post('/org/v1/branch/notifications/read-all')
 }
 
 export interface OrgFraudDecision {
@@ -1287,6 +1381,23 @@ export interface OrgFraudBranchBreakdownRow {
 
 export async function fetchFraudBranchBreakdown(): Promise<OrgFraudBranchBreakdownRow[]> {
   const res = await http.get<{ status: string; data: OrgFraudBranchBreakdownRow[] }>('/org/v1/fraud/branch-breakdown')
+  return res.data.data
+}
+
+export interface OrgFraudAggregateScore {
+  window_days: number
+  branches_with_risk_activity: number
+  total_blocks: number
+  total_holds: number
+  total_decisions: number
+  device_overlap_count: number
+  ip_overlap_count: number
+  phone_overlap_count: number
+  score: number
+}
+
+export async function fetchFraudAggregateScore(days = 30): Promise<OrgFraudAggregateScore> {
+  const res = await http.get<{ status: string; data: OrgFraudAggregateScore }>('/org/v1/fraud/aggregate-score', { params: { days } })
   return res.data.data
 }
 

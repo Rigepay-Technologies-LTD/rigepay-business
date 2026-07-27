@@ -4,7 +4,9 @@ import {
   fetchOrgCredentials, createOrgCredential, revokeOrgCredential,
   fetchOrgApiKeys, createOrgApiKey, revokeOrgApiKey,
   fetchOrgBranches,
-  type OrgCredential, type OrgApiKey, type BranchSummary,
+  fetchOrgWebhookEndpoints, createOrgWebhookEndpoint, deleteOrgWebhookEndpoint, fetchOrgWebhookDeliveries,
+  WEBHOOK_EVENT_TYPES,
+  type OrgCredential, type OrgApiKey, type BranchSummary, type OrgWebhookEndpoint, type OrgWebhookDelivery,
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
 import { formatDate } from '@/lib/format'
@@ -24,17 +26,30 @@ const error = ref<string | null>(null)
 const credentials = ref<OrgCredential[]>([])
 const apiKeys = ref<OrgApiKey[]>([])
 const branches = ref<BranchSummary[]>([])
+const webhookEndpoints = ref<OrgWebhookEndpoint[]>([])
 
-const availableScopes = ['payouts:write', 'collections:write']
+const availableScopes = [
+  'payouts:write',
+  'payouts:read',
+  'collections:write',
+  'collections:read',
+  'balance:read',
+  'transactions:read',
+  'transfers:write',
+  'transfers:read',
+  'checkout:write',
+  'checkout:read',
+]
 
 async function load() {
   loading.value = true
   error.value = null
   try {
-    const [c, k, b] = await Promise.all([fetchOrgCredentials(), fetchOrgApiKeys(), fetchOrgBranches()])
+    const [c, k, b, w] = await Promise.all([fetchOrgCredentials(), fetchOrgApiKeys(), fetchOrgBranches(), fetchOrgWebhookEndpoints()])
     credentials.value = c
     apiKeys.value = k
     branches.value = b.branches
+    webhookEndpoints.value = w
   } catch (err) {
     error.value = extractErrorMessage(err)
   } finally {
@@ -123,6 +138,69 @@ async function revokeCred(id: string) {
     await load()
   } catch (err) {
     error.value = extractErrorMessage(err)
+  }
+}
+
+const showWebhookForm = ref(false)
+const creatingWebhook = ref(false)
+const webhookError = ref<string | null>(null)
+const revealedWebhookSecret = ref<{ url: string; secret: string } | null>(null)
+const newWebhookUrl = ref('')
+const newWebhookEvents = ref<string[]>([])
+const webhookDeliveries = ref<Record<string, OrgWebhookDelivery[]>>({})
+const expandedWebhookId = ref<string | null>(null)
+
+async function createWebhook() {
+  webhookError.value = null
+  if (!newWebhookUrl.value.trim() || newWebhookEvents.value.length === 0) {
+    webhookError.value = 'URL and at least one event type are required.'
+    return
+  }
+  creatingWebhook.value = true
+  try {
+    const result = await createOrgWebhookEndpoint({
+      url: newWebhookUrl.value.trim(),
+      event_types: newWebhookEvents.value,
+    })
+    revealedWebhookSecret.value = { url: result.url, secret: result.secret }
+    newWebhookUrl.value = ''
+    newWebhookEvents.value = []
+    showWebhookForm.value = false
+    await load()
+  } catch (err) {
+    webhookError.value = extractErrorMessage(err)
+  } finally {
+    creatingWebhook.value = false
+  }
+}
+
+async function deleteWebhook(id: string) {
+  try {
+    await deleteOrgWebhookEndpoint(id)
+    await load()
+  } catch (err) {
+    error.value = extractErrorMessage(err)
+  }
+}
+
+function toggleWebhookEvent(eventType: string) {
+  const i = newWebhookEvents.value.indexOf(eventType)
+  if (i >= 0) newWebhookEvents.value.splice(i, 1)
+  else newWebhookEvents.value.push(eventType)
+}
+
+async function toggleDeliveries(endpointId: string) {
+  if (expandedWebhookId.value === endpointId) {
+    expandedWebhookId.value = null
+    return
+  }
+  expandedWebhookId.value = endpointId
+  if (!webhookDeliveries.value[endpointId]) {
+    try {
+      webhookDeliveries.value[endpointId] = await fetchOrgWebhookDeliveries(endpointId)
+    } catch (err) {
+      error.value = extractErrorMessage(err)
+    }
   }
 }
 
@@ -282,6 +360,73 @@ const credColumns = [
           >
             Revoke {{ c.client_id }}
           </button>
+        </div>
+      </AppCard>
+
+      <!-- Webhook endpoints -->
+      <div v-if="revealedWebhookSecret" class="text-sm text-success-text bg-success-light rounded-xl px-4 py-3 flex flex-col gap-1">
+        <p class="font-semibold">Webhook endpoint created for {{ revealedWebhookSecret.url }}.</p>
+        <p>Signing secret: <span class="font-mono font-bold break-all">{{ revealedWebhookSecret.secret }}</span></p>
+        <p class="text-xs">Copy this now — it will not be shown again. Use it to verify the X-RigePay-Signature header on every delivery.</p>
+      </div>
+
+      <AppCard>
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-sm font-bold text-text-primary">Webhook endpoints</h2>
+          <AppButton size="sm" @click="showWebhookForm = !showWebhookForm">
+            <template #icon><PlusIcon class="w-4 h-4" /></template>
+            New endpoint
+          </AppButton>
+        </div>
+        <p class="text-xs text-text-muted -mt-2 mb-4">
+          RigePay POSTs an event to your URL whenever something you've subscribed to happens (a collection settles, a payout completes, a transfer finishes). Every delivery is HMAC-signed and retried on failure.
+        </p>
+
+        <AppCard v-if="showWebhookForm" class="mb-4">
+          <div v-if="webhookError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ webhookError }}</div>
+          <form class="flex flex-col gap-4" @submit.prevent="createWebhook">
+            <AppInput v-model="newWebhookUrl" label="Endpoint URL" placeholder="https://your-system.example.com/webhooks/rigepay" required />
+            <div class="flex flex-col gap-1.5">
+              <label class="text-xs font-semibold text-text-secondary uppercase tracking-wide">Event types</label>
+              <label v-for="e in WEBHOOK_EVENT_TYPES" :key="e" class="flex items-center gap-2 text-sm text-text-secondary">
+                <input type="checkbox" :checked="newWebhookEvents.includes(e)" class="w-4 h-4 rounded border-input-border" @change="toggleWebhookEvent(e)" />
+                {{ e }}
+              </label>
+            </div>
+            <div class="flex gap-2">
+              <AppButton type="submit" :loading="creatingWebhook">Create endpoint</AppButton>
+              <AppButton type="button" variant="ghost" @click="showWebhookForm = false">Cancel</AppButton>
+            </div>
+          </form>
+        </AppCard>
+
+        <div v-if="!webhookEndpoints.length && !loading" class="text-sm text-text-muted py-4 text-center">No webhook endpoints yet.</div>
+        <div v-for="ep in webhookEndpoints" :key="ep.id" class="border border-border rounded-xl p-4 mb-3">
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm font-semibold text-text-primary font-mono">{{ ep.url }}</p>
+              <p class="text-xs text-text-muted mt-1">{{ ep.event_types.join(', ') }} · {{ formatDate(ep.created_at) }}</p>
+            </div>
+            <div class="flex items-center gap-3">
+              <AppBadge :variant="ep.is_active ? 'success' : 'neutral'" size="sm">{{ ep.is_active ? 'active' : 'inactive' }}</AppBadge>
+              <button type="button" class="text-xs text-text-secondary hover:underline" @click="toggleDeliveries(ep.id)">
+                {{ expandedWebhookId === ep.id ? 'Hide' : 'View' }} deliveries
+              </button>
+              <button type="button" class="text-xs text-error-text hover:underline" @click="deleteWebhook(ep.id)">Delete</button>
+            </div>
+          </div>
+          <div v-if="expandedWebhookId === ep.id" class="mt-3 pt-3 border-t border-border">
+            <div v-if="!webhookDeliveries[ep.id]?.length" class="text-xs text-text-muted">No deliveries yet.</div>
+            <div v-for="d in webhookDeliveries[ep.id]" :key="d.id" class="flex items-center justify-between text-xs py-1.5">
+              <span class="font-mono">{{ d.event_type }}</span>
+              <span class="text-text-muted">attempt {{ d.attempt_count }}{{ d.last_response_code ? ` · HTTP ${d.last_response_code}` : '' }}</span>
+              <AppBadge
+                :variant="d.status === 'delivered' ? 'success' : d.status === 'exhausted' ? 'error' : 'neutral'"
+                size="sm"
+              >{{ d.status }}</AppBadge>
+              <span class="text-text-muted">{{ formatDate(d.created_at) }}</span>
+            </div>
+          </div>
         </div>
       </AppCard>
     </div>

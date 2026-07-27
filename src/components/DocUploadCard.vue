@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { FileTextIcon, UploadCloudIcon, CheckCircle2Icon, XCircleIcon, ClockIcon, Loader2Icon, EyeIcon } from 'lucide-vue-next'
 import AppBadge from '@/components/ui/AppBadge.vue'
 import { formatDate } from '@/lib/format'
@@ -20,6 +20,7 @@ const props = defineProps<{
 const emit = defineEmits<{ (e: 'upload', file: File): void; (e: 'view', docId: string): void }>()
 
 const dragOver = ref(false)
+const isLocked = computed(() => props.status === 'APPROVED')
 
 function onView() {
   if (props.docId) emit('view', props.docId)
@@ -47,6 +48,7 @@ function onInputChange(e: Event) {
 
 function onDrop(e: DragEvent) {
   dragOver.value = false
+  if (isLocked.value) return
   const file = e.dataTransfer?.files?.[0]
   if (file) emit('upload', file)
 }
@@ -77,7 +79,14 @@ function onDrop(e: DragEvent) {
       </AppBadge>
     </div>
 
+    <div v-if="isLocked" class="flex-1 flex flex-col items-center justify-center gap-2 rounded-xl py-6 bg-surface-2">
+      <CheckCircle2Icon class="w-5 h-5 text-success" />
+      <span class="text-xs font-semibold text-text-secondary text-center px-2">
+        Approved {{ props.uploadedAt ? formatDate(props.uploadedAt) : '' }} — locked, contact support to change it
+      </span>
+    </div>
     <label
+      v-else
       :for="`file-${props.slotId}`"
       class="flex-1 flex flex-col items-center justify-center gap-2 rounded-xl py-6 cursor-pointer hover:bg-surface-2 transition-colors"
     >

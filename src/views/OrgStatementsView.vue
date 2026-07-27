@@ -99,7 +99,7 @@ onMounted(async () => {
               @change="loadStatement"
             />
           </div>
-          <AppSelect v-model="scopeSelection" label="Scope" :options="scopeOptions" class="min-w-[240px]" @update:modelValue="loadStatement" />
+          <AppSelect v-model="scopeSelection" label="Scope" :options="scopeOptions" class="min-w-60" @update:modelValue="loadStatement" />
           <AppButton size="sm" variant="secondary" :loading="downloading" @click="downloadCsv">
             <template #icon><DownloadIcon class="w-4 h-4" /></template>
             Download CSV
