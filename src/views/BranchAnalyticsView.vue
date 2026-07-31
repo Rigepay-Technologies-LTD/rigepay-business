@@ -2,11 +2,13 @@
 import { ref, onMounted } from 'vue'
 import { fetchBranchAnalyticsDetail, type AnalyticsDetail } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
+import { useResponseModal } from '@/composables/useResponseModal'
 import DashboardLayout from '@/layouts/DashboardLayout.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AnalyticsDetailPanel from '@/components/AnalyticsDetailPanel.vue'
 
 const props = defineProps<{ orgId: string; branchId: string }>()
+const { showError } = useResponseModal()
 
 function currentPeriod() {
   const now = new Date()
@@ -24,7 +26,9 @@ async function load() {
   try {
     data.value = await fetchBranchAnalyticsDetail(period.value)
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   } finally {
     loading.value = false
   }
@@ -35,8 +39,7 @@ onMounted(load)
 <template>
   <DashboardLayout :org-id="props.orgId" :branch-id="props.branchId" title="Analytics">
     <div class="flex flex-col gap-6">
-      <div v-if="error" class="text-sm text-error-text bg-error-light rounded-xl px-4 py-3">{{ error }}</div>
-
+      <p class="text-xs text-text-muted -mt-2">Collections, payouts, and net cash flow for this branch over a chosen month.</p>
       <AppCard padding="sm">
         <div class="flex items-end gap-3">
           <div class="flex flex-col gap-1.5">

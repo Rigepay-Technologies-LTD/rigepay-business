@@ -15,6 +15,9 @@ import AppBadge from '@/components/ui/AppBadge.vue'
 import AppTooltip from '@/components/ui/AppTooltip.vue'
 import DocUploadCard from '@/components/DocUploadCard.vue'
 import { PlusIcon, ShieldAlertIcon, ChevronDownIcon, ChevronUpIcon, UserIcon, PencilIcon } from 'lucide-vue-next'
+import { useResponseModal } from '@/composables/useResponseModal'
+
+const { showError } = useResponseModal()
 
 const props = defineProps<{ orgId: string }>()
 
@@ -28,7 +31,9 @@ async function load() {
   try {
     directors.value = await fetchOrgDirectors()
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   } finally {
     loading.value = false
   }
@@ -83,7 +88,9 @@ async function addDirector() {
     showAddForm.value = false
     await load()
   } catch (err) {
-    addError.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    addError.value = msg
+    showError(msg)
   } finally {
     adding.value = false
   }
@@ -146,7 +153,9 @@ async function saveEdit(directorId: string) {
     editingDirectorId.value = null
     await load()
   } catch (err) {
-    editError.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    editError.value = msg
+    showError(msg)
   } finally {
     editing.value = false
   }
@@ -176,7 +185,9 @@ async function toggleExpand(directorId: string) {
     try {
       docsByDirector.value = { ...docsByDirector.value, [directorId]: await fetchDirectorDocuments(directorId) }
     } catch (err) {
-      error.value = extractErrorMessage(err)
+      const msg = extractErrorMessage(err)
+      error.value = msg
+      showError(msg)
     } finally {
       docsLoading.value = null
     }
@@ -197,7 +208,9 @@ async function handleView(docId: string) {
     const url = await fetchOrgScopedDocumentUrl(docId)
     window.open(url, '_blank', 'noopener,noreferrer')
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   } finally {
     viewingDocId.value = null
   }
@@ -211,7 +224,9 @@ async function handleDirectorUpload(directorId: string, type: string, file: File
     await uploadDirectorDocument(directorId, file, type)
     docsByDirector.value = { ...docsByDirector.value, [directorId]: await fetchDirectorDocuments(directorId) }
   } catch (err) {
-    uploadErrors.value = { ...uploadErrors.value, [key]: extractErrorMessage(err) }
+    const msg = extractErrorMessage(err)
+    uploadErrors.value = { ...uploadErrors.value, [key]: msg }
+    showError(msg)
   } finally {
     uploadingSlot.value = null
   }
@@ -221,8 +236,6 @@ async function handleDirectorUpload(directorId: string, type: string, file: File
 <template>
   <DashboardLayout :org-id="props.orgId" title="Directors">
     <div class="flex flex-col gap-6">
-      <div v-if="error" class="text-sm text-error-text bg-error-light rounded-xl px-4 py-3">{{ error }}</div>
-
       <div class="flex items-center justify-between">
         <div>
           <h2 class="text-sm font-bold text-text-primary">Directors</h2>

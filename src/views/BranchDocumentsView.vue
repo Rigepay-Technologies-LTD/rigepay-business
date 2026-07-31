@@ -2,10 +2,12 @@
 import { ref, onMounted, computed } from 'vue'
 import { fetchOwnBranchMemberDocuments, uploadOwnBranchMemberDocument, fetchOwnBranchMemberDocumentUrl, type OrgDocument } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
+import { useResponseModal } from '@/composables/useResponseModal'
 import DashboardLayout from '@/layouts/DashboardLayout.vue'
 import DocUploadCard from '@/components/DocUploadCard.vue'
 
 const props = defineProps<{ orgId: string; branchId: string }>()
+const { showError } = useResponseModal()
 
 interface DocSlot {
   type: string
@@ -54,7 +56,9 @@ async function handleView(docId: string) {
     const url = await fetchOwnBranchMemberDocumentUrl(docId)
     window.open(url, '_blank', 'noopener,noreferrer')
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   } finally {
     viewingDocId.value = null
   }
@@ -66,7 +70,9 @@ async function load() {
   try {
     docs.value = await fetchOwnBranchMemberDocuments()
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   } finally {
     loading.value = false
   }
@@ -99,8 +105,6 @@ const completedCount = computed(() => docSlots.filter((s) => latestFor(s.type)).
 <template>
   <DashboardLayout :org-id="props.orgId" :branch-id="props.branchId" title="My KYC documents">
     <div class="flex flex-col gap-6">
-      <div v-if="error" class="text-sm text-error-text bg-error-light rounded-xl px-4 py-3">{{ error }}</div>
-
       <div class="flex items-center justify-between">
         <div>
           <h2 class="text-sm font-bold text-text-primary">My KYC documents</h2>

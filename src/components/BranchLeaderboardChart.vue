@@ -28,12 +28,12 @@ function pct(cents: number): number {
       <div class="flex-1 h-5 rounded-md bg-surface-2 overflow-hidden">
         <div
           class="h-full rounded-md bg-primary transition-all duration-500"
-          :style="{ width: pct(r.collections_cents) + '%' }"
-          :title="`${r.branch_name} — KES ${formatMoney(r.collections_cents)} collected, ${r.collections_count} transaction${r.collections_count === 1 ? '' : 's'}`"
+          :style="{ width: pct(r.current_balance_cents) + '%' }"
+          :title="`${r.branch_name} — KES ${formatMoney(r.current_balance_cents)} collected, ${r.collections_count} transaction${r.collections_count === 1 ? '' : 's'}`"
         />
       </div>
       <span class="w-20 sm:w-24 shrink-0 text-right text-xs font-semibold text-text-primary tabular-nums">
-        KES {{ formatMoney(r.collections_cents) }}
+        KES {{ formatMoney(r.current_balance_cents) }}
       </span>
     </div>
     <p v-if="!ranked.length" class="text-sm text-text-muted">No branch activity yet this period.</p>

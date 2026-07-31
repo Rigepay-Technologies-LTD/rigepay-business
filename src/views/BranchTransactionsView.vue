@@ -13,6 +13,9 @@ import AppButton from '@/components/ui/AppButton.vue'
 import AppInput from '@/components/ui/AppInput.vue'
 import AppTable from '@/components/ui/AppTable.vue'
 import AppBadge from '@/components/ui/AppBadge.vue'
+import { useResponseModal } from '@/composables/useResponseModal'
+
+const { showError } = useResponseModal()
 
 const props = defineProps<{ orgId: string; branchId: string }>()
 
@@ -35,7 +38,9 @@ async function loadTransactions() {
       end_date: endDate.value || undefined,
     })
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   } finally {
     txnLoading.value = false
   }
@@ -67,12 +72,11 @@ function statusVariant(status: string) {
 <template>
   <DashboardLayout :org-id="props.orgId" :branch-id="props.branchId" title="Transaction history">
     <div class="flex flex-col gap-6">
-      <div v-if="error" class="text-sm text-error-text bg-error-light rounded-xl px-4 py-3">{{ error }}</div>
-
       <AppCard>
-        <div class="flex items-center justify-between mb-5">
+        <div class="flex items-center justify-between mb-1">
           <h2 class="text-sm font-bold text-text-primary">Transactions</h2>
         </div>
+        <p class="text-xs text-text-muted mb-4">Every collection, payout, transfer, and fee for this branch — search by reference.</p>
         <form class="flex flex-col sm:flex-row gap-3 mb-5" @submit.prevent="search">
           <AppInput v-model="searchText" placeholder="Reference, description..." class="flex-1" />
           <AppInput v-model="startDate" type="date" />

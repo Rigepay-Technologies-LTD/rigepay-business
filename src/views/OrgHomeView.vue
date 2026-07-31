@@ -19,6 +19,9 @@ import {
   WalletIcon, ShieldCheckIcon, AlertOctagonIcon,
   BanknoteIcon, LinkIcon, UsersIcon, VaultIcon, ArrowLeftRightIcon,
 } from 'lucide-vue-next'
+import { useResponseModal } from '@/composables/useResponseModal'
+
+const { showError } = useResponseModal()
 
 const props = defineProps<{ orgId: string }>()
 
@@ -58,7 +61,9 @@ async function loadOverview() {
   try {
     overview.value = await fetchOrgBranches()
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   } finally {
     loading.value = false
   }
@@ -68,7 +73,9 @@ async function loadProfile() {
   try {
     profile.value = await fetchOrgProfile()
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   }
 }
 
@@ -77,7 +84,9 @@ async function loadCashFlow() {
   try {
     cashFlow.value = await fetchOrgCashFlow(14)
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   } finally {
     cashFlowLoading.value = false
   }
@@ -89,7 +98,9 @@ async function loadTransactions() {
   try {
     txns.value = await fetchOrgTransactions({ page: 1, page_size: 5 })
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   } finally {
     txnLoading.value = false
   }
@@ -143,7 +154,9 @@ async function openTxnDetail(row: Record<string, unknown>) {
   try {
     selectedTxnDetail.value = await fetchOrgTransaction(txn.id)
   } catch (err) {
-    txnDetailError.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    txnDetailError.value = msg
+    showError(msg)
   } finally {
     txnDetailLoading.value = false
   }
@@ -153,8 +166,6 @@ async function openTxnDetail(row: Record<string, unknown>) {
 <template>
   <DashboardLayout :org-id="props.orgId" :branches="overview?.branches ?? []" title="Organization overview">
     <div class="flex flex-col gap-6">
-      <div v-if="error" class="text-sm text-error-text bg-error-light rounded-xl px-4 py-3">{{ error }}</div>
-
       <div v-if="profile">
         <h1 class="text-xl font-bold text-text-primary">{{ greeting }}, {{ profile.member.first_name }}!</h1>
         <p class="text-xs text-text-muted mt-1">

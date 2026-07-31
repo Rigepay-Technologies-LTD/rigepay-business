@@ -7,6 +7,7 @@ import {
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
 import { formatMoney, formatDate } from '@/lib/format'
+import { useResponseModal } from '@/composables/useResponseModal'
 import DashboardLayout from '@/layouts/DashboardLayout.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppButton from '@/components/ui/AppButton.vue'
@@ -17,6 +18,7 @@ import AppBadge from '@/components/ui/AppBadge.vue'
 import { PlusIcon } from 'lucide-vue-next'
 
 const props = defineProps<{ orgId: string }>()
+const { showError } = useResponseModal()
 
 const loading = ref(true)
 const error = ref<string | null>(null)
@@ -32,7 +34,9 @@ async function load() {
     schedules.value = s
     vaults.value = v
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   } finally {
     loading.value = false
   }
@@ -43,7 +47,9 @@ async function loadBankCodes() {
     const codes: BankCode[] = await fetchOrgBankCodes(false)
     bankOptions.value = codes.map((c) => ({ value: c.code, label: c.name }))
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   }
 }
 
@@ -213,7 +219,9 @@ async function submitCreate() {
     showCreateForm.value = false
     await load()
   } catch (err) {
-    createError.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    createError.value = msg
+    showError(msg)
   } finally {
     creating.value = false
   }
@@ -238,7 +246,9 @@ async function submitOtp() {
     showCreateForm.value = false
     await load()
   } catch (err) {
-    otpError.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    otpError.value = msg
+    showError(msg)
   } finally {
     otpConfirming.value = false
   }
@@ -260,7 +270,9 @@ async function handlePause(id: string) {
     await pauseScheduledPayout(id)
     await load()
   } catch (err) {
-    actionError.value = { ...actionError.value, [id]: extractErrorMessage(err) }
+    const msg = extractErrorMessage(err)
+    actionError.value = { ...actionError.value, [id]: msg }
+    showError(msg)
   } finally {
     actionLoading.value = null
   }
@@ -272,7 +284,9 @@ async function handleResume(id: string) {
     await resumeScheduledPayout(id)
     await load()
   } catch (err) {
-    actionError.value = { ...actionError.value, [id]: extractErrorMessage(err) }
+    const msg = extractErrorMessage(err)
+    actionError.value = { ...actionError.value, [id]: msg }
+    showError(msg)
   } finally {
     actionLoading.value = null
   }
@@ -285,7 +299,9 @@ async function handleCancel(id: string) {
     await cancelScheduledPayout(id)
     await load()
   } catch (err) {
-    actionError.value = { ...actionError.value, [id]: extractErrorMessage(err) }
+    const msg = extractErrorMessage(err)
+    actionError.value = { ...actionError.value, [id]: msg }
+    showError(msg)
   } finally {
     actionLoading.value = null
   }
@@ -317,8 +333,6 @@ function fundingLabel(sp: ScheduledPayout): string {
 <template>
   <DashboardLayout :org-id="props.orgId" title="Scheduled payouts">
     <div class="flex flex-col gap-6">
-      <div v-if="error" class="text-sm text-error-text bg-error-light rounded-xl px-4 py-3">{{ error }}</div>
-
       <div class="flex items-center justify-between">
         <div>
           <h2 class="text-sm font-bold text-text-primary">Pay as you go</h2>
@@ -452,7 +466,6 @@ function fundingLabel(sp: ScheduledPayout): string {
                 <AppButton v-if="sp.status === 'ACTIVE' || sp.status === 'PAUSED'" size="sm" variant="ghost" :loading="actionLoading === sp.id" @click="handleCancel(sp.id)">Cancel</AppButton>
               </div>
             </div>
-            <div v-if="actionError[sp.id]" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2">{{ actionError[sp.id] }}</div>
           </div>
         </div>
       </AppCard>

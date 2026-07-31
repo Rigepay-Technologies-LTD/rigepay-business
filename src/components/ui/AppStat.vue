@@ -9,7 +9,7 @@ defineProps<{
 </script>
 
 <template>
-  <div class="bg-surface rounded-2xl shadow-sm p-5 flex flex-col gap-3">
+  <div class="bg-surface rounded-2xl shadow-sm p-5 flex flex-col gap-3 min-w-0">
     <div class="flex items-start justify-between gap-2">
       <p class="text-xs font-bold text-text-muted uppercase tracking-wider leading-none">{{ label }}</p>
       <div
@@ -28,7 +28,7 @@ defineProps<{
     </div>
 
     <div class="space-y-1">
-      <p class="text-2xl font-bold text-text-primary leading-none tracking-tight">{{ value }}</p>
+      <p class="text-2xl font-bold text-text-primary leading-tight tracking-tight break-words">{{ value }}</p>
       <p v-if="sub" class="text-xs text-text-muted">{{ sub }}</p>
     </div>
 

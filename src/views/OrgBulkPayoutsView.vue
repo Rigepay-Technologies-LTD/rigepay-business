@@ -16,6 +16,9 @@ import AppSelect from '@/components/ui/AppSelect.vue'
 import AppBadge from '@/components/ui/AppBadge.vue'
 import AppModal from '@/components/ui/AppModal.vue'
 import { PlusIcon, ChevronDownIcon, ChevronUpIcon, TrashIcon, TagIcon } from 'lucide-vue-next'
+import { useResponseModal } from '@/composables/useResponseModal'
+
+const { showError, showSuccess } = useResponseModal()
 
 const props = defineProps<{ orgId: string }>()
 const auth = useAuthStore()
@@ -35,7 +38,9 @@ async function load() {
     batches.value = b
     vaults.value = v
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   } finally {
     loading.value = false
   }
@@ -45,7 +50,9 @@ async function loadBankCodes() {
     const codes: BankCode[] = await fetchOrgBankCodes(false)
     bankOptions.value = codes.map((c) => ({ value: c.code, label: c.name }))
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   }
 }
 onMounted(() => {
@@ -189,13 +196,17 @@ async function submitBatch() {
     const itemCount = result.data?.item_count ?? result.item_count ?? 0
     const totalAmount = result.data?.total_amount_cents ?? result.total_amount_cents ?? 0
     const totalFeeReserve = result.data?.total_fee_reserve_cents ?? result.total_fee_reserve_cents ?? 0
-    submitSuccess.value = `Batch escrowed: ${itemCount} items, KES ${formatMoney(totalAmount)} + an estimated KES ${formatMoney(totalFeeReserve)} in fees reserved (KES ${formatMoney(totalAmount + totalFeeReserve)} total held) — dispatching shortly.`
+    const successMsg = `Batch escrowed: ${itemCount} items, KES ${formatMoney(totalAmount)} + an estimated KES ${formatMoney(totalFeeReserve)} in fees reserved (KES ${formatMoney(totalAmount + totalFeeReserve)} total held) — dispatching shortly.`
+    submitSuccess.value = successMsg
+    showSuccess(successMsg)
     resetRows()
     remarks.value = ''
     showCreateForm.value = false
     await load()
   } catch (err) {
-    submitError.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    submitError.value = msg
+    showError(msg)
   } finally {
     submitting.value = false
   }
@@ -218,14 +229,18 @@ async function submitOtp() {
     const itemCount = result.data?.item_count ?? 0
     const totalAmount = result.data?.total_amount_cents ?? 0
     const totalFeeReserve = result.data?.total_fee_reserve_cents ?? 0
-    submitSuccess.value = `Batch escrowed: ${itemCount} items, KES ${formatMoney(totalAmount)} + an estimated KES ${formatMoney(totalFeeReserve)} in fees reserved (KES ${formatMoney(totalAmount + totalFeeReserve)} total held) — dispatching shortly.`
+    const successMsg = `Batch escrowed: ${itemCount} items, KES ${formatMoney(totalAmount)} + an estimated KES ${formatMoney(totalFeeReserve)} in fees reserved (KES ${formatMoney(totalAmount + totalFeeReserve)} total held) — dispatching shortly.`
+    submitSuccess.value = successMsg
+    showSuccess(successMsg)
     otpStep.value = false
     resetRows()
     remarks.value = ''
     showCreateForm.value = false
     await load()
   } catch (err) {
-    otpError.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    otpError.value = msg
+    showError(msg)
   } finally {
     otpConfirming.value = false
   }
@@ -255,7 +270,9 @@ async function toggleExpand(batchId: string) {
   try {
     batchDetail.value = await fetchBulkPayoutBatch(batchId)
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   } finally {
     detailLoading.value = false
   }
@@ -266,12 +283,16 @@ async function handleReclaim(batchId: string) {
   reclaimMessage.value = null
   try {
     const result = await reclaimBulkPayoutResidual(batchId)
-    reclaimMessage.value = result.reclaimed_cents > 0
+    const successMsg = result.reclaimed_cents > 0
       ? `Reclaimed KES ${formatMoney(result.reclaimed_cents)} back to the funding wallet.`
       : 'Nothing left to reclaim.'
+    reclaimMessage.value = successMsg
+    showSuccess(successMsg)
     batchDetail.value = await fetchBulkPayoutBatch(batchId)
   } catch (err) {
-    reclaimMessage.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    reclaimMessage.value = msg
+    showError(msg)
   } finally {
     reclaiming.value = false
   }
@@ -320,7 +341,9 @@ async function handleAssignTag() {
     assignedTags.value = await fetchTagsForSubject('payout', selectedItem.value.payout_id)
     tagToAssign.value = ''
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   } finally {
     assigningTag.value = false
   }
@@ -332,7 +355,9 @@ async function handleUnassignTag(tag: OrgTag) {
     await unassignTag(tag.id, 'payout', selectedItem.value.payout_id)
     assignedTags.value = assignedTags.value.filter((t) => t.id !== tag.id)
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   }
 }
 
@@ -342,8 +367,6 @@ const availableTagsToAssign = () => allTags.value.filter((t) => !assignedTags.va
 <template>
   <DashboardLayout :org-id="props.orgId" title="Bulk payouts">
     <div class="flex flex-col gap-6">
-      <div v-if="error" class="text-sm text-error-text bg-error-light rounded-xl px-4 py-3">{{ error }}</div>
-
       <div class="flex items-center justify-between">
         <div>
           <h2 class="text-sm font-bold text-text-primary">Payroll & supplier runs</h2>
@@ -380,7 +403,6 @@ const availableTagsToAssign = () => allTags.value.filter((t) => !assignedTags.va
             Add one row per payee. Choose M-Pesa or Bank per row — bank rows fetch your bank list, M-Pesa rows just need a phone number.
           </p>
           <div v-if="submitError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ submitError }}</div>
-          <div v-if="submitSuccess" class="text-xs text-success-text bg-success-light rounded-lg px-3 py-2 mb-3">{{ submitSuccess }}</div>
           <AppSelect v-model="fundingSourceCombined" label="Funded from" :options="fundingSourceOptions" class="max-w-sm mb-4" />
         </div>
 

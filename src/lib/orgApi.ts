@@ -699,9 +699,13 @@ export async function revokeOrgCredential(id: string): Promise<void> {
   await http.delete(`/org/v1/credentials/${id}`)
 }
 
+export type ApiKeyAuthScheme = 'bearer' | 'hmac'
+
 export interface OrgApiKey {
   id: string
   name: string
+  auth_scheme: ApiKeyAuthScheme
+  key_id?: string
   prefix: string
   display: string
   branch_id: string | null
@@ -714,15 +718,21 @@ export interface CreateApiKeyInput {
   name: string
   branch_id?: string
   scopes: string[]
+  auth_scheme?: ApiKeyAuthScheme
 }
 
 export interface CreateApiKeyResult {
   id: string
   name: string
-  full_key: string
-  key_prefix: string
+  auth_scheme: ApiKeyAuthScheme
   branch_id: string | null
   scopes: string[]
+  // Bearer scheme
+  full_key?: string
+  key_prefix?: string
+  // HMAC scheme — secret is shown exactly once, on creation
+  key_id?: string
+  secret?: string
 }
 
 export async function fetchOrgApiKeys(): Promise<OrgApiKey[]> {
@@ -1110,8 +1120,9 @@ export interface ScreenNameResult {
 }
 
 
-export async function validateOrgScreenName(name: string): Promise<ScreenNameResult> {
-  const res = await http.post<{ status: string; data: ScreenNameResult }>('/org/v1/utils/validate/screen-name', { name })
+export async function validateOrgScreenName(name: string, isBranchSession = false): Promise<ScreenNameResult> {
+  const path = isBranchSession ? '/org/v1/branch/utils/validate/screen-name' : '/org/v1/utils/validate/screen-name'
+  const res = await http.post<{ status: string; data: ScreenNameResult }>(path, { name })
   return res.data.data
 }
 
@@ -1922,6 +1933,24 @@ export async function downloadOrgInvoicePdf(id: string, isBranch = false): Promi
   return res.data
 }
 
+export async function fetchOrgInvoiceDetail(id: string, isBranch = false): Promise<OrgInvoice> {
+  const base = isBranch ? '/org/v1/branch/invoices' : '/org/v1/invoices'
+  const res = await http.get<{ status: string; data: OrgInvoice }>(`${base}/${id}`)
+  return res.data.data
+}
+
+export async function markOrgInvoicePaid(id: string, isBranch = false): Promise<OrgInvoice> {
+  const base = isBranch ? '/org/v1/branch/invoices' : '/org/v1/invoices'
+  const res = await http.post<{ status: string; data: OrgInvoice }>(`${base}/${id}/mark-paid`)
+  return res.data.data
+}
+
+export async function cancelOrgInvoice(id: string, isBranch = false): Promise<OrgInvoice> {
+  const base = isBranch ? '/org/v1/branch/invoices' : '/org/v1/invoices'
+  const res = await http.post<{ status: string; data: OrgInvoice }>(`${base}/${id}/cancel`)
+  return res.data.data
+}
+
 
 export interface OrgExpense {
   id: string
@@ -2168,4 +2197,96 @@ export async function confirmPettyCashPayout(floatId: string, otp: string, isBra
   const base = isBranch ? '/org/v1/branch/petty-cash' : '/org/v1/petty-cash'
   const res = await http.post<PettyCashPayoutResult>(`${base}/${floatId}/payout/confirm`, { otp })
   return res.data
+}
+
+export interface OrgSupportMessage {
+  id: string
+  created_at: string
+  ticket_id: string
+  sender_type: 'org_member' | 'branch_member' | 'admin' | 'system'
+  sender_id: string
+  body: string
+  is_read: boolean
+}
+
+export interface OrgSupportTicket {
+  id: string
+  created_at: string
+  updated_at: string
+  organization_id: string
+  org_member_id?: string | null
+  branch_member_id?: string | null
+  branch_id?: string | null
+  admin_user_id?: string | null
+  subject: string
+  status: string
+  priority: string
+  last_message_at: string
+  last_message_from: string
+  messages?: OrgSupportMessage[]
+}
+
+export async function fetchOrgSupportTickets(isBranch = false): Promise<OrgSupportTicket[]> {
+  const base = isBranch ? '/org/v1/branch/support/tickets' : '/org/v1/support/tickets'
+  const res = await http.get<{ status: string; data: OrgSupportTicket[] }>(base)
+  return res.data.data
+}
+
+export async function fetchOrgSupportTicket(ticketId: string, isBranch = false): Promise<OrgSupportTicket> {
+  const base = isBranch ? '/org/v1/branch/support/tickets' : '/org/v1/support/tickets'
+  const res = await http.get<{ status: string; data: OrgSupportTicket }>(`${base}/${ticketId}`)
+  return res.data.data
+}
+
+export async function createOrgSupportTicket(subject: string, message: string, isBranch = false): Promise<OrgSupportTicket> {
+  const base = isBranch ? '/org/v1/branch/support/tickets' : '/org/v1/support/tickets'
+  const res = await http.post<{ status: string; data: OrgSupportTicket }>(base, { subject, message })
+  return res.data.data
+}
+
+export async function sendOrgSupportMessage(ticketId: string, message: string, isBranch = false): Promise<OrgSupportMessage> {
+  const base = isBranch ? '/org/v1/branch/support/tickets' : '/org/v1/support/tickets'
+  const res = await http.post<{ status: string; data: OrgSupportMessage }>(`${base}/${ticketId}/send`, { message })
+  return res.data.data
+}
+
+export interface OrgMemberLoginHistoryRow {
+  id: string
+  organization_id: string
+  org_member_id?: string | null
+  branch_member_id?: string | null
+  ip_address: string
+  country: string
+  country_code: string
+  city: string
+  latitude?: number | null
+  longitude?: number | null
+  isp: string
+  user_agent: string
+  login_method: string
+  created_at: string
+}
+
+export async function fetchLoginHistory(isBranchSession: boolean): Promise<OrgMemberLoginHistoryRow[]> {
+  const path = isBranchSession ? '/org/v1/branch/security/login-history' : '/org/v1/security/login-history'
+  const res = await http.get<{ status: string; data: OrgMemberLoginHistoryRow[] }>(path)
+  return res.data.data
+}
+
+export async function fetchOrganizationLoginHistory(): Promise<OrgMemberLoginHistoryRow[]> {
+  const res = await http.get<{ status: string; data: OrgMemberLoginHistoryRow[] }>('/org/v1/security/login-history/organization')
+  return res.data.data
+}
+
+export interface OrgSupportContact {
+  type: string
+  name: string
+  email: string
+  phone: string
+}
+
+export async function fetchOrgSupportContacts(isBranchSession = false): Promise<OrgSupportContact[]> {
+  const path = isBranchSession ? '/org/v1/branch/utils/support-details' : '/org/v1/utils/support-details'
+  const res = await http.get<{ contacts: OrgSupportContact[] }>(path)
+  return res.data.contacts ?? []
 }

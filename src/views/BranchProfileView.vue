@@ -2,11 +2,13 @@
 import { ref, onMounted } from 'vue'
 import { fetchBranchProfile, type BranchProfileDetail } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
+import { useResponseModal } from '@/composables/useResponseModal'
 import DashboardLayout from '@/layouts/DashboardLayout.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppBadge from '@/components/ui/AppBadge.vue'
 
 const props = defineProps<{ orgId: string; branchId: string }>()
+const { showError } = useResponseModal()
 
 const profile = ref<BranchProfileDetail | null>(null)
 const loading = ref(true)
@@ -18,7 +20,9 @@ async function load() {
   try {
     profile.value = await fetchBranchProfile()
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   } finally {
     loading.value = false
   }
@@ -36,7 +40,6 @@ function statusVariant(status: string): 'success' | 'warning' | 'error' | 'neutr
 <template>
   <DashboardLayout :org-id="props.orgId" :branch-id="props.branchId" title="Branch profile">
     <div class="flex flex-col gap-6">
-      <div v-if="error" class="text-sm text-error-text bg-error-light rounded-xl px-4 py-3">{{ error }}</div>
       <p v-if="loading" class="text-sm text-text-muted">Loading…</p>
 
       <template v-else-if="profile">

@@ -7,6 +7,7 @@ import {
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
 import { formatMoney, formatDate } from '@/lib/format'
+import { useResponseModal } from '@/composables/useResponseModal'
 import DashboardLayout from '@/layouts/DashboardLayout.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppButton from '@/components/ui/AppButton.vue'
@@ -15,6 +16,7 @@ import AppModal from '@/components/ui/AppModal.vue'
 import { PlusIcon, ReceiptIcon, PaperclipIcon } from 'lucide-vue-next'
 
 const props = defineProps<{ orgId: string; branchId: string }>()
+const { showError } = useResponseModal()
 
 const loading = ref(true)
 const error = ref<string | null>(null)
@@ -29,7 +31,9 @@ async function load() {
     expenses.value = result.expenses
     totalCount.value = result.totalCount
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   } finally {
     loading.value = false
   }
@@ -57,7 +61,9 @@ async function handleReceiptChange(e: Event) {
   try {
     receiptUrl.value = await uploadExpenseReceipt(file, true)
   } catch (err) {
-    createError.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    createError.value = msg
+    showError(msg)
   } finally {
     uploadingReceipt.value = false
   }
@@ -93,7 +99,9 @@ async function submitCreate() {
     showCreateForm.value = false
     await load()
   } catch (err) {
-    createError.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    createError.value = msg
+    showError(msg)
   } finally {
     creating.value = false
   }
@@ -128,7 +136,9 @@ async function handleAssignTag() {
     assignedTags.value = await fetchTagsForSubject('expense', selectedExpense.value.id, true)
     tagToAssign.value = ''
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   } finally {
     assigningTag.value = false
   }
@@ -140,7 +150,9 @@ async function handleUnassignTag(tag: OrgTag) {
     await unassignTag(tag.id, 'expense', selectedExpense.value.id, true)
     assignedTags.value = assignedTags.value.filter((t) => t.id !== tag.id)
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   }
 }
 
@@ -150,8 +162,6 @@ const availableTagsToAssign = () => allTags.value.filter((t) => !assignedTags.va
 <template>
   <DashboardLayout :org-id="props.orgId" :branch-id="props.branchId" title="Expenses">
     <div class="flex flex-col gap-6">
-      <div v-if="error" class="text-sm text-error-text bg-error-light rounded-xl px-4 py-3">{{ error }}</div>
-
       <div class="flex items-center justify-between">
         <div>
           <h2 class="text-sm font-bold text-text-primary">Expenses</h2>

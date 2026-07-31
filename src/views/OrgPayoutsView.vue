@@ -9,10 +9,11 @@ import {
   fetchApprovalThreshold, setApprovalThreshold, fetchPayoutFeeEstimate,
   fetchRoleApprovalThresholds, setRoleApprovalThreshold,
   type PayoutApproval, type BranchSummary, type ProfileResponse, type Beneficiary, type RecentSettlement,
-  type ApprovalThreshold, type PayoutFeeEstimate, type RoleApprovalThreshold,
+  type ApprovalThreshold, type PayoutFeeEstimate, type RoleApprovalThreshold, type ScreenNameMatch,
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
 import { formatMoney, formatDate } from '@/lib/format'
+import { useResponseModal } from '@/composables/useResponseModal'
 import DashboardLayout from '@/layouts/DashboardLayout.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppButton from '@/components/ui/AppButton.vue'
@@ -28,6 +29,7 @@ const route = useRoute()
 const auth = useAuthStore()
 const isOwner = auth.meta?.role === 'owner'
 const isBranchSession = auth.meta?.memberType === 'branch_member'
+const { showError, showSuccess } = useResponseModal()
 
 const error = ref<string | null>(null)
 const branches = ref<BranchSummary[]>([])
@@ -40,7 +42,9 @@ async function loadBranches() {
     const overview = await fetchOrgBranches()
     branches.value = overview.branches
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   } finally {
     branchesLoading.value = false
   }
@@ -51,7 +55,9 @@ async function loadProfile() {
   try {
     profile.value = await fetchOrgProfile()
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   }
 }
 
@@ -95,7 +101,9 @@ async function loadBankCodes() {
     const codes = await fetchOrgBankCodes(isBranchSession)
     bankOptions.value = codes.map((c) => ({ value: c.code, label: c.name }))
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   }
 }
 
@@ -122,7 +130,9 @@ async function loadBeneficiaries() {
   try {
     beneficiaries.value = await fetchOrgBeneficiaries()
   } catch (err) {
-    beneficiaryError.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    beneficiaryError.value = msg
+    showError(msg)
   } finally {
     beneficiariesLoading.value = false
   }
@@ -153,7 +163,9 @@ async function removeBeneficiary(id: string) {
     beneficiaries.value = beneficiaries.value.filter((b) => b.id !== id)
     if (selectedBeneficiaryId.value === id) selectedBeneficiaryId.value = ''
   } catch (err) {
-    beneficiaryError.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    beneficiaryError.value = msg
+    showError(msg)
   } finally {
     removingBeneficiaryId.value = null
   }
@@ -168,7 +180,9 @@ async function loadRecentSettlements() {
   try {
     recentSettlements.value = await fetchRecentSettlements()
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   } finally {
     recentSettlementsLoading.value = false
   }
@@ -194,7 +208,7 @@ function repeatSettlement(s: RecentSettlement) {
 
 const validating = ref(false)
 const validationResult = ref<{ ok: boolean; message: string } | null>(null)
-const screening = ref<{ isMatch: boolean; message: string } | null>(null)
+const screening = ref<{ isMatch: boolean; matches: ScreenNameMatch[] } | null>(null)
 
 async function validateRecipient() {
   validationResult.value = null
@@ -230,7 +244,7 @@ async function screenRecipientName() {
   try {
     const result = await validateOrgScreenName(recipientName.value.trim())
     if (result.is_match) {
-      screening.value = { isMatch: true, message: `Possible sanctions/PEP match — this will be re-checked and may block the payout on submission.` }
+      screening.value = { isMatch: true, matches: result.matches }
     }
   } catch {
     console.log("Failed to screen")
@@ -309,7 +323,9 @@ async function submitPayout() {
         })
         beneficiaries.value.unshift(b)
       } catch (err) {
-        beneficiaryError.value = extractErrorMessage(err)
+        const msg = extractErrorMessage(err)
+        beneficiaryError.value = msg
+        showError(msg)
       } finally {
         savingBeneficiary.value = false
       }
@@ -326,12 +342,15 @@ async function submitPayout() {
     requestResult.value = result.status === 'approval_required'
       ? `This payout requires the owner's approval before it executes.`
       : 'Payout queued for execution.'
+    showSuccess(requestResult.value)
 
     resetPayoutForm()
     if (isOwner) await loadApprovals()
     await loadRecentSettlements()
   } catch (err) {
-    requestError.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    requestError.value = msg
+    showError(msg)
   } finally {
     requesting.value = false
   }
@@ -347,12 +366,15 @@ async function submitOtp() {
   try {
     const result = await confirmOrgPayoutAsMember(otp.value)
     requestResult.value = result.message || 'Payout queued for execution.'
+    showSuccess(requestResult.value)
     otpStep.value = false
     resetPayoutForm()
     if (isOwner) await loadApprovals()
     await loadRecentSettlements()
   } catch (err) {
-    otpError.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    otpError.value = msg
+    showError(msg)
   } finally {
     otpConfirming.value = false
   }
@@ -375,7 +397,9 @@ async function loadApprovals() {
   try {
     approvals.value = await fetchPendingPayoutApprovals()
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   } finally {
     approvalsLoading.value = false
   }
@@ -388,7 +412,9 @@ async function approve(id: string) {
     await approvePayoutRequest(id)
     await loadApprovals()
   } catch (err) {
-    decisionError.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    decisionError.value = msg
+    showError(msg)
   } finally {
     decidingId.value = null
   }
@@ -401,7 +427,9 @@ async function reject(id: string) {
     await rejectPayoutRequest(id)
     await loadApprovals()
   } catch (err) {
-    decisionError.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    decisionError.value = msg
+    showError(msg)
   } finally {
     decidingId.value = null
   }
@@ -423,7 +451,9 @@ async function loadThreshold() {
     thresholdAmountKes.value = threshold.value.amount_cents ? String(threshold.value.amount_cents / 100) : ''
     thresholdActive.value = threshold.value.active
   } catch (err) {
-    thresholdError.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    thresholdError.value = msg
+    showError(msg)
   } finally {
     thresholdLoading.value = false
   }
@@ -441,9 +471,12 @@ async function saveThreshold() {
   try {
     const result = await setApprovalThreshold({ amount_cents: amountCents, active: thresholdActive.value })
     thresholdSuccess.value = result.warning || 'Approval ceiling updated.'
+    showSuccess(thresholdSuccess.value)
     await loadThreshold()
   } catch (err) {
-    thresholdError.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    thresholdError.value = msg
+    showError(msg)
   } finally {
     thresholdSaving.value = false
   }
@@ -470,7 +503,9 @@ async function loadRoleCeilings() {
       roleCeilingActive.value[role] = row?.active ?? false
     }
   } catch (err) {
-    roleCeilingError.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    roleCeilingError.value = msg
+    showError(msg)
   } finally {
     roleCeilingLoading.value = false
   }
@@ -488,9 +523,12 @@ async function saveRoleCeiling(role: string) {
   try {
     await setRoleApprovalThreshold(role, { amount_cents: amountCents, active: roleCeilingActive.value[role] })
     roleCeilingSuccess.value = `${role[0].toUpperCase()}${role.slice(1)} ceiling updated.`
+    showSuccess(roleCeilingSuccess.value)
     await loadRoleCeilings()
   } catch (err) {
-    roleCeilingError.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    roleCeilingError.value = msg
+    showError(msg)
   } finally {
     roleCeilingSaving.value = null
   }
@@ -532,8 +570,7 @@ watch([amountKes, destinationType], () => {
 <template>
   <DashboardLayout :org-id="props.orgId" title="Payouts">
     <div class="flex flex-col gap-6">
-      <div v-if="error" class="text-sm text-error-text bg-error-light rounded-xl px-4 py-3">{{ error }}</div>
-
+      <p class="text-xs text-text-muted -mt-2">Send money out via M-Pesa or bank transfer, straight from the organization's own wallet.</p>
       <AppCard v-if="!isBranchSession && recentSettlements.length">
         <h2 class="text-sm font-bold text-text-primary mb-1">Recent settlements</h2>
         <p class="text-xs text-text-muted mb-4">Click one to repeat it — prefills the form below.</p>
@@ -558,7 +595,6 @@ watch([amountKes, destinationType], () => {
       <AppCard v-if="!isBranchSession && beneficiaries.length">
         <h2 class="text-sm font-bold text-text-primary mb-1">Saved payees</h2>
         <p class="text-xs text-text-muted mb-4">Manage your saved beneficiaries — pick one below to autofill the payout form.</p>
-        <div v-if="beneficiaryError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ beneficiaryError }}</div>
         <p v-if="beneficiariesLoading" class="text-sm text-text-muted">Loading…</p>
         <div v-else class="flex flex-col gap-2">
           <div v-for="b in beneficiaries" :key="b.id" class="flex items-center justify-between gap-2 rounded-xl bg-surface-2 px-4 py-2.5">
@@ -601,7 +637,6 @@ watch([amountKes, destinationType], () => {
           with your account password below — you cannot approve your own request.
         </p>
         <div v-if="requestError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ requestError }}</div>
-        <div v-if="requestResult" class="text-xs text-success-text bg-success-light rounded-lg px-3 py-2 mb-3">{{ requestResult }}</div>
         <form class="flex flex-col gap-4" @submit.prevent="submitPayout">
           <AppSelect
             v-if="!isBranchSession && beneficiaries.length"
@@ -645,9 +680,20 @@ watch([amountKes, destinationType], () => {
             <span>Estimated fee: <span class="font-semibold text-text-primary">KES {{ formatMoney(feeEstimate.fee_cents) }}</span></span>
             <span>Total to be debited: <span class="font-semibold text-text-primary">KES {{ formatMoney(feeEstimate.total_cents) }}</span></span>
           </div>
-          <div v-if="screening?.isMatch" class="text-xs bg-warning-light text-warning-text rounded-lg px-3 py-2 flex items-center gap-2">
-            <AlertTriangleIcon class="w-3.5 h-3.5 shrink-0" />
-            {{ screening.message }}
+          <div v-if="screening?.isMatch" class="text-xs bg-warning-light text-warning-text rounded-lg px-3 py-2.5 flex flex-col gap-2">
+            <div class="flex items-center gap-2 font-semibold">
+              <AlertTriangleIcon class="w-3.5 h-3.5 shrink-0" />
+              Possible sanctions/PEP watchlist match — this payout will be held for compliance review if you continue.
+            </div>
+            <div class="flex flex-col gap-1.5 pl-5.5">
+              <div v-for="(m, idx) in screening.matches" :key="idx" class="border-l-2 border-warning/40 pl-2">
+                <p>Match confidence: <span class="font-semibold">{{ Math.round(m.score * 100) }}%</span> on {{ m.matched_field }}</p>
+                <p v-if="m.list_names?.length">Watchlist: {{ m.list_names.join(', ') }}</p>
+                <p v-if="m.entity_type || m.country">
+                  <span v-if="m.entity_type">{{ m.entity_type }}</span><span v-if="m.entity_type && m.country"> · </span><span v-if="m.country">{{ m.country }}</span>
+                </p>
+              </div>
+            </div>
           </div>
 
           <AppInput v-model="remarks" label="Remarks" placeholder="Reason for this payout" required />
@@ -671,7 +717,6 @@ watch([amountKes, destinationType], () => {
         <p class="text-xs text-text-muted mb-4">
           Every payout requested by another member. You cannot approve your own requests.
         </p>
-        <div v-if="decisionError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ decisionError }}</div>
         <p v-if="approvalsLoading" class="text-sm text-text-muted">Loading approvals…</p>
         <p v-else-if="!approvals.length" class="text-sm text-text-muted">No pending approvals.</p>
         <div v-else class="flex flex-col gap-3">
@@ -700,7 +745,6 @@ watch([amountKes, destinationType], () => {
           before it executes, even if the initiating owner could otherwise self-approve.
         </p>
         <div v-if="thresholdError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ thresholdError }}</div>
-        <div v-if="thresholdSuccess" class="text-xs text-success-text bg-success-light rounded-lg px-3 py-2 mb-3">{{ thresholdSuccess }}</div>
         <p v-if="thresholdLoading" class="text-sm text-text-muted">Loading…</p>
         <template v-else>
           <p v-if="threshold" class="text-xs text-text-muted mb-3">
@@ -732,7 +776,6 @@ watch([amountKes, destinationType], () => {
           code — as long as they stay below the amount. Anything at or above it still comes to you for approval.
         </p>
         <div v-if="roleCeilingError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ roleCeilingError }}</div>
-        <div v-if="roleCeilingSuccess" class="text-xs text-success-text bg-success-light rounded-lg px-3 py-2 mb-3">{{ roleCeilingSuccess }}</div>
         <p v-if="roleCeilingLoading" class="text-sm text-text-muted">Loading…</p>
         <div v-else class="flex flex-col gap-6">
           <form

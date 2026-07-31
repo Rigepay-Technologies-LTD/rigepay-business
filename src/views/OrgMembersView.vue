@@ -8,6 +8,7 @@ import {
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
 import { formatDate } from '@/lib/format'
+import { useResponseModal } from '@/composables/useResponseModal'
 import DashboardLayout from '@/layouts/DashboardLayout.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppButton from '@/components/ui/AppButton.vue'
@@ -20,6 +21,7 @@ import { PlusIcon, ChevronDownIcon, ChevronUpIcon, UserIcon, PencilIcon } from '
 
 const props = defineProps<{ orgId: string }>()
 const auth = useAuthStore()
+const { showError, showSuccess } = useResponseModal()
 
 const loading = ref(true)
 const error = ref<string | null>(null)
@@ -34,7 +36,9 @@ async function load() {
     members.value = m
     branches.value = b.branches
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   } finally {
     loading.value = false
   }
@@ -90,6 +94,7 @@ async function sendInvite() {
       signing_mandate: newIsSignatory.value ? (newSigningMandate.value.trim() || undefined) : undefined,
     })
     inviteSent.value = `Invite sent to ${newEmail.value.trim()}.`
+    showSuccess(inviteSent.value)
     newEmail.value = ''
     newRole.value = 'member'
     newBranchId.value = ''
@@ -100,7 +105,9 @@ async function sendInvite() {
     showInviteForm.value = false
     await load()
   } catch (err) {
-    inviteError.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    inviteError.value = msg
+    showError(msg)
   } finally {
     inviting.value = false
   }
@@ -151,7 +158,9 @@ async function toggleExpand(memberId: string) {
     try {
       docsByMember.value = { ...docsByMember.value, [memberId]: await fetchMemberDocuments(memberId) }
     } catch (err) {
-      error.value = extractErrorMessage(err)
+      const msg = extractErrorMessage(err)
+      error.value = msg
+      showError(msg)
     } finally {
       docsLoading.value = null
     }
@@ -172,7 +181,9 @@ async function handleView(docId: string) {
     const url = await fetchOrgScopedDocumentUrl(docId)
     window.open(url, '_blank', 'noopener,noreferrer')
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   } finally {
     viewingDocId.value = null
   }
@@ -186,7 +197,9 @@ async function handleMemberUpload(memberId: string, type: string, file: File) {
     await uploadMemberDocument(memberId, file, type)
     docsByMember.value = { ...docsByMember.value, [memberId]: await fetchMemberDocuments(memberId) }
   } catch (err) {
-    uploadErrors.value = { ...uploadErrors.value, [key]: extractErrorMessage(err) }
+    const msg = extractErrorMessage(err)
+    uploadErrors.value = { ...uploadErrors.value, [key]: msg }
+    showError(msg)
   } finally {
     uploadingSlot.value = null
   }
@@ -239,7 +252,9 @@ async function saveEditMember(memberId: string) {
     editingMemberId.value = null
     await load()
   } catch (err) {
-    editMemberError.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    editMemberError.value = msg
+    showError(msg)
   } finally {
     editingMember.value = false
   }
@@ -256,7 +271,9 @@ async function handleSuspend(memberId: string) {
     await suspendOrgMember(memberId)
     await load()
   } catch (err) {
-    actionError.value = { ...actionError.value, [memberId]: extractErrorMessage(err) }
+    const msg = extractErrorMessage(err)
+    actionError.value = { ...actionError.value, [memberId]: msg }
+    showError(msg)
   } finally {
     actionLoading.value = null
   }
@@ -269,7 +286,9 @@ async function handleReactivate(memberId: string) {
     await reactivateOrgMember(memberId)
     await load()
   } catch (err) {
-    actionError.value = { ...actionError.value, [memberId]: extractErrorMessage(err) }
+    const msg = extractErrorMessage(err)
+    actionError.value = { ...actionError.value, [memberId]: msg }
+    showError(msg)
   } finally {
     actionLoading.value = null
   }
@@ -284,8 +303,11 @@ async function handleResetPassword(memberId: string) {
   try {
     const message = await resetOrgMemberPassword(memberId)
     resetResult.value = { ...resetResult.value, [memberId]: message }
+    showSuccess(message)
   } catch (err) {
-    actionError.value = { ...actionError.value, [memberId]: extractErrorMessage(err) }
+    const msg = extractErrorMessage(err)
+    actionError.value = { ...actionError.value, [memberId]: msg }
+    showError(msg)
   } finally {
     actionLoading.value = null
   }
@@ -304,9 +326,6 @@ const memberColumns = [
 <template>
   <DashboardLayout :org-id="props.orgId" title="Members">
     <div class="flex flex-col gap-6">
-      <div v-if="error" class="text-sm text-error-text bg-error-light rounded-xl px-4 py-3">{{ error }}</div>
-      <div v-if="inviteSent" class="text-sm text-success-text bg-success-light rounded-xl px-4 py-3">{{ inviteSent }}</div>
-
       <div class="flex items-center justify-between">
         <div>
           <h2 class="text-sm font-bold text-text-primary">Organization members</h2>
@@ -417,7 +436,6 @@ const memberColumns = [
           </button>
 
           <div v-if="editingMemberId === m.id" class="border-t border-border px-5 py-5">
-            <div v-if="editMemberError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ editMemberError }}</div>
             <form class="flex flex-col gap-4" @submit.prevent="saveEditMember(m.id)">
               <AppSelect
                 v-model="editRole"
@@ -476,8 +494,6 @@ const memberColumns = [
                   </AppButton>
                 </div>
               </div>
-              <div v-if="actionError[m.id]" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ actionError[m.id] }}</div>
-              <div v-if="resetResult[m.id]" class="text-xs text-success-text bg-success-light rounded-lg px-3 py-2 mb-3">{{ resetResult[m.id] }}</div>
               <dl class="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-3 text-xs">
                 <div><dt class="text-text-muted mb-0.5">Corporate designation</dt><dd class="font-semibold text-text-primary">{{ m.corporate_designation ?? '—' }}</dd></div>
                 <div><dt class="text-text-muted mb-0.5">Signatory status</dt><dd class="font-semibold text-text-primary">{{ m.is_signatory ? 'Authorized signatory' : 'Not a signatory' }}</dd></div>

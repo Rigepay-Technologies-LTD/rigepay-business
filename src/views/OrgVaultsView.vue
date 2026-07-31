@@ -7,6 +7,7 @@ import {
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
 import { formatMoney, formatDate } from '@/lib/format'
+import { useResponseModal } from '@/composables/useResponseModal'
 import DashboardLayout from '@/layouts/DashboardLayout.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppButton from '@/components/ui/AppButton.vue'
@@ -16,6 +17,7 @@ import { PlusIcon, VaultIcon, ChevronDownIcon, ChevronUpIcon } from 'lucide-vue-
 const props = defineProps<{ orgId: string }>()
 const auth = useAuthStore()
 const isOwner = auth.meta?.role === 'owner'
+const { showError, showSuccess } = useResponseModal()
 
 const loading = ref(true)
 const error = ref<string | null>(null)
@@ -27,7 +29,9 @@ async function load() {
   try {
     vaults.value = await fetchOrgVaults()
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   } finally {
     loading.value = false
   }
@@ -52,7 +56,9 @@ async function createVault() {
     showCreateForm.value = false
     await load()
   } catch (err) {
-    createError.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    createError.value = msg
+    showError(msg)
   } finally {
     creating.value = false
   }
@@ -106,12 +112,15 @@ async function submitTransfer(vaultId: string) {
       await withdrawOrgVault(vaultId, input)
       transferSuccess.value = 'Withdrawal successful.'
     }
+    showSuccess(transferSuccess.value)
     transferAmount.value = ''
     transferPassword.value = ''
     transferPin.value = ''
     await load()
   } catch (err) {
-    transferError.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    transferError.value = msg
+    showError(msg)
   } finally {
     transferring.value = false
   }
@@ -121,8 +130,6 @@ async function submitTransfer(vaultId: string) {
 <template>
   <DashboardLayout :org-id="props.orgId" title="Vaults">
     <div class="flex flex-col gap-6">
-      <div v-if="error" class="text-sm text-error-text bg-error-light rounded-xl px-4 py-3">{{ error }}</div>
-
       <div class="flex items-center justify-between">
         <div>
           <h2 class="text-sm font-bold text-text-primary">Vaults</h2>
@@ -193,7 +200,6 @@ async function submitTransfer(vaultId: string) {
             </div>
 
             <div v-if="transferError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ transferError }}</div>
-            <div v-if="transferSuccess" class="text-xs text-success-text bg-success-light rounded-lg px-3 py-2 mb-3">{{ transferSuccess }}</div>
 
             <form class="flex flex-col gap-3 max-w-sm" @submit.prevent="submitTransfer(v.id)">
               <AppInput v-model="transferAmount" type="number" label="Amount (KES)" placeholder="Min 1" required />

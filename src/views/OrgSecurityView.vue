@@ -5,8 +5,11 @@ import { useAuthStore } from '@/stores/auth'
 import {
   setTransactionPin, fetchEnrolled2FAMethods, addTotpSetup, addTotpVerify, regenerateBackupCodes,
   addPasskeyBegin, addPasskeyFinish, disableTotp, deletePasskey, type Enrolled2FAMethods,
+  fetchLoginHistory, fetchOrganizationLoginHistory, type OrgMemberLoginHistoryRow,
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
+import { formatDate } from '@/lib/format'
+import { useResponseModal } from '@/composables/useResponseModal'
 import { decodeCreationOptions, encodeAttestationResponse, isWebAuthnSupported } from '@/lib/webauthn'
 import DashboardLayout from '@/layouts/DashboardLayout.vue'
 import AppCard from '@/components/ui/AppCard.vue'
@@ -18,6 +21,7 @@ const props = defineProps<{ orgId: string }>()
 const auth = useAuthStore()
 const isOwner = auth.meta?.role === 'owner'
 const isBranchSession = auth.meta?.memberType === 'branch_member'
+const { showError, showSuccess } = useResponseModal()
 
 const currentPassword = ref('')
 const pin = ref('')
@@ -45,11 +49,14 @@ async function save() {
   try {
     await setTransactionPin(currentPassword.value, pin.value)
     saved.value = true
+    showSuccess('Transaction PIN set successfully.')
     currentPassword.value = ''
     pin.value = ''
     confirmPin.value = ''
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   } finally {
     saving.value = false
   }
@@ -64,7 +71,9 @@ async function loadMethods() {
   try {
     methods.value = await fetchEnrolled2FAMethods(isBranchSession)
   } catch (err) {
-    methodsError.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    methodsError.value = msg
+    showError(msg)
   } finally {
     methodsLoading.value = false
   }
@@ -90,7 +99,9 @@ async function beginAddTotp() {
     totpQrDataUrl.value = await QRCode.toDataURL(result.otpauth_uri)
     showAddTotp.value = true
   } catch (err) {
-    totpError.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    totpError.value = msg
+    showError(msg)
   } finally {
     addingTotp.value = false
   }
@@ -109,7 +120,9 @@ async function verifyAddTotp() {
     totpCode.value = ''
     await loadMethods()
   } catch (err) {
-    totpError.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    totpError.value = msg
+    showError(msg)
   } finally {
     addingTotp.value = false
   }
@@ -124,7 +137,9 @@ async function handleRegenerateBackupCodes() {
   try {
     revealedBackupCodes.value = await regenerateBackupCodes(isBranchSession)
   } catch (err) {
-    regenerateError.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    regenerateError.value = msg
+    showError(msg)
   } finally {
     regenerating.value = false
   }
@@ -157,6 +172,7 @@ async function handleAddPasskey() {
     } else {
       passkeyError.value = extractErrorMessage(err)
     }
+    showError(passkeyError.value)
   } finally {
     addingPasskey.value = false
   }
@@ -174,7 +190,9 @@ async function handleDisableTotp() {
     await disableTotp(isBranchSession)
     await loadMethods()
   } catch (err) {
-    removeError.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    removeError.value = msg
+    showError(msg)
   } finally {
     removingTotp.value = false
   }
@@ -188,10 +206,52 @@ async function handleDeletePasskey(id: string) {
     await deletePasskey(isBranchSession, id)
     await loadMethods()
   } catch (err) {
-    removeError.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    removeError.value = msg
+    showError(msg)
   } finally {
     removingPasskeyId.value = null
   }
+}
+
+const loginHistory = ref<OrgMemberLoginHistoryRow[]>([])
+const loginHistoryLoading = ref(true)
+const loginHistoryError = ref<string | null>(null)
+const showOrgWideHistory = ref(false)
+
+async function loadLoginHistory() {
+  loginHistoryLoading.value = true
+  loginHistoryError.value = null
+  try {
+    loginHistory.value = showOrgWideHistory.value
+      ? await fetchOrganizationLoginHistory()
+      : await fetchLoginHistory(isBranchSession)
+  } catch (err) {
+    const msg = extractErrorMessage(err)
+    loginHistoryError.value = msg
+    showError(msg)
+  } finally {
+    loginHistoryLoading.value = false
+  }
+}
+onMounted(loadLoginHistory)
+
+function toggleOrgWideHistory() {
+  showOrgWideHistory.value = !showOrgWideHistory.value
+  loadLoginHistory()
+}
+
+function locationLabel(row: OrgMemberLoginHistoryRow) {
+  const parts = [row.city, row.country].filter(Boolean)
+  return parts.length ? parts.join(', ') : 'Unknown location'
+}
+
+function methodLabel(method: string) {
+  if (method === 'totp') return 'Authenticator app'
+  if (method === 'backup_code') return 'Backup code'
+  if (method === 'passkey_register') return 'Passkey (added)'
+  if (method === 'passkey_auth') return 'Passkey'
+  return method || 'Unknown'
 }
 </script>
 
@@ -217,7 +277,6 @@ async function handleDeletePasskey(id: string) {
           you can change it any time by re-confirming your account password.
         </p>
         <div v-if="error" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-4">{{ error }}</div>
-        <div v-if="saved" class="text-xs text-success-text bg-success-light rounded-lg px-3 py-2 mb-4">Transaction PIN set successfully.</div>
         <form class="flex flex-col gap-4 max-w-sm" @submit.prevent="save">
           <AppInput v-model="currentPassword" type="password" label="Current account password" required />
           <div class="grid grid-cols-2 gap-4">
@@ -231,11 +290,8 @@ async function handleDeletePasskey(id: string) {
       <AppCard>
         <h2 class="text-sm font-bold text-text-primary mb-1">Two-factor authentication</h2>
         <p class="text-xs text-text-muted mb-5">You must have at least one method enrolled to access the dashboard — add a second one here so you're never locked out.</p>
-        <div v-if="methodsError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-4">{{ methodsError }}</div>
         <p v-if="methodsLoading" class="text-sm text-text-muted">Loading…</p>
         <div v-else-if="methods" class="flex flex-col gap-4">
-          <div v-if="removeError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2">{{ removeError }}</div>
-
           <div class="flex items-center justify-between rounded-xl bg-surface-2 px-4 py-3">
             <div>
               <p class="text-sm font-semibold text-text-primary">Authenticator app (TOTP)</p>
@@ -295,6 +351,40 @@ async function handleDeletePasskey(id: string) {
             </div>
             <div v-if="passkeyError" class="text-xs text-error-text">{{ passkeyError }}</div>
           </div>
+        </div>
+      </AppCard>
+
+      <AppCard>
+        <div class="flex items-center justify-between mb-1">
+          <h2 class="text-sm font-bold text-text-primary">Login activity</h2>
+          <AppButton v-if="isOwner && !isBranchSession" size="sm" variant="ghost" @click="toggleOrgWideHistory">
+            {{ showOrgWideHistory ? 'Show my logins only' : 'Show all organization logins' }}
+          </AppButton>
+        </div>
+        <p class="text-xs text-text-muted mb-5">Recent sign-ins to your account, with approximate location.</p>
+        <p v-if="loginHistoryLoading" class="text-sm text-text-muted">Loading…</p>
+        <p v-else-if="!loginHistory.length" class="text-sm text-text-muted">No login activity recorded yet.</p>
+        <div v-else class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="text-left text-xs text-text-muted uppercase tracking-wide border-b border-border">
+                <th class="py-2 pr-4 font-semibold">When</th>
+                <th class="py-2 pr-4 font-semibold">Location</th>
+                <th class="py-2 pr-4 font-semibold">IP address</th>
+                <th class="py-2 pr-4 font-semibold">Method</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in loginHistory" :key="row.id" class="border-b border-border last:border-0">
+                <td class="py-2 pr-4 whitespace-nowrap text-text-primary">{{ formatDate(row.created_at) }}</td>
+                <td class="py-2 pr-4 text-text-primary">{{ locationLabel(row) }}</td>
+                <td class="py-2 pr-4 font-mono text-xs text-text-muted">{{ row.ip_address || '—' }}</td>
+                <td class="py-2 pr-4">
+                  <AppBadge variant="neutral" size="sm">{{ methodLabel(row.login_method) }}</AppBadge>
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </AppCard>
     </div>

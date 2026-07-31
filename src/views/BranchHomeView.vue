@@ -17,6 +17,7 @@ import {
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
 import { formatMoney, formatDate, txnReference, riskTier } from '@/lib/format'
+import { useResponseModal } from '@/composables/useResponseModal'
 import DashboardLayout from '@/layouts/DashboardLayout.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppTable from '@/components/ui/AppTable.vue'
@@ -28,6 +29,7 @@ import { WalletIcon, BanknoteIcon, LinkIcon, ReceiptIcon, CoinsIcon, ArrowLeftRi
 const props = defineProps<{ orgId: string; branchId: string }>()
 
 const auth = useAuthStore()
+const { showError } = useResponseModal()
 
 
 const isOrgMemberView = computed(() => auth.meta?.memberType === 'org_member')
@@ -65,7 +67,9 @@ async function loadWallets() {
       branchProfile.value = await fetchBranchProfile()
     }
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   } finally {
     loading.value = false
   }
@@ -79,7 +83,9 @@ async function loadTransactions() {
       ? await fetchOrgTransactions({ ...params, branch_id: props.branchId })
       : await fetchBranchTransactions(params)
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   } finally {
     txnLoading.value = false
   }

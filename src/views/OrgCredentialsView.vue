@@ -6,7 +6,7 @@ import {
   fetchOrgBranches,
   fetchOrgWebhookEndpoints, createOrgWebhookEndpoint, deleteOrgWebhookEndpoint, fetchOrgWebhookDeliveries,
   WEBHOOK_EVENT_TYPES,
-  type OrgCredential, type OrgApiKey, type BranchSummary, type OrgWebhookEndpoint, type OrgWebhookDelivery,
+  type OrgCredential, type OrgApiKey, type ApiKeyAuthScheme, type BranchSummary, type OrgWebhookEndpoint, type OrgWebhookDelivery,
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
 import { formatDate } from '@/lib/format'
@@ -18,6 +18,9 @@ import AppSelect from '@/components/ui/AppSelect.vue'
 import AppTable from '@/components/ui/AppTable.vue'
 import AppBadge from '@/components/ui/AppBadge.vue'
 import { PlusIcon } from 'lucide-vue-next'
+import { useResponseModal } from '@/composables/useResponseModal'
+
+const { showError } = useResponseModal()
 
 const props = defineProps<{ orgId: string }>()
 
@@ -39,6 +42,8 @@ const availableScopes = [
   'transfers:read',
   'checkout:write',
   'checkout:read',
+  'utils:read',
+  'screening:read',
 ]
 
 async function load() {
@@ -51,7 +56,9 @@ async function load() {
     branches.value = b.branches
     webhookEndpoints.value = w
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   } finally {
     loading.value = false
   }
@@ -61,10 +68,11 @@ onMounted(load)
 const showKeyForm = ref(false)
 const creatingKey = ref(false)
 const keyError = ref<string | null>(null)
-const revealedKey = ref<{ name: string; full_key: string } | null>(null)
+const revealedKey = ref<{ name: string; auth_scheme: ApiKeyAuthScheme; full_key?: string; key_id?: string; secret?: string } | null>(null)
 const newKeyName = ref('')
 const newKeyBranchId = ref('')
 const newKeyScopes = ref<string[]>([])
+const newKeyAuthScheme = ref<ApiKeyAuthScheme>('bearer')
 
 async function createKey() {
   keyError.value = null
@@ -78,15 +86,25 @@ async function createKey() {
       name: newKeyName.value.trim(),
       branch_id: newKeyBranchId.value || undefined,
       scopes: newKeyScopes.value,
+      auth_scheme: newKeyAuthScheme.value,
     })
-    revealedKey.value = { name: result.name, full_key: result.full_key }
+    revealedKey.value = {
+      name: result.name,
+      auth_scheme: result.auth_scheme,
+      full_key: result.full_key,
+      key_id: result.key_id,
+      secret: result.secret,
+    }
     newKeyName.value = ''
     newKeyBranchId.value = ''
     newKeyScopes.value = []
+    newKeyAuthScheme.value = 'bearer'
     showKeyForm.value = false
     await load()
   } catch (err) {
-    keyError.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    keyError.value = msg
+    showError(msg)
   } finally {
     creatingKey.value = false
   }
@@ -97,7 +115,9 @@ async function revokeKey(id: string) {
     await revokeOrgApiKey(id)
     await load()
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   }
 }
 
@@ -126,7 +146,9 @@ async function createCred() {
     showCredForm.value = false
     await load()
   } catch (err) {
-    credError.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    credError.value = msg
+    showError(msg)
   } finally {
     creatingCred.value = false
   }
@@ -137,7 +159,9 @@ async function revokeCred(id: string) {
     await revokeOrgCredential(id)
     await load()
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   }
 }
 
@@ -168,7 +192,9 @@ async function createWebhook() {
     showWebhookForm.value = false
     await load()
   } catch (err) {
-    webhookError.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    webhookError.value = msg
+    showError(msg)
   } finally {
     creatingWebhook.value = false
   }
@@ -179,7 +205,9 @@ async function deleteWebhook(id: string) {
     await deleteOrgWebhookEndpoint(id)
     await load()
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   }
 }
 
@@ -199,7 +227,9 @@ async function toggleDeliveries(endpointId: string) {
     try {
       webhookDeliveries.value[endpointId] = await fetchOrgWebhookDeliveries(endpointId)
     } catch (err) {
-      error.value = extractErrorMessage(err)
+      const msg = extractErrorMessage(err)
+      error.value = msg
+      showError(msg)
     }
   }
 }
@@ -218,6 +248,7 @@ function toggleCredScope(scope: string) {
 
 const apiKeyColumns = [
   { key: 'name', label: 'Name' },
+  { key: 'auth_scheme', label: 'Scheme' },
   { key: 'display', label: 'Key' },
   { key: 'scopes', label: 'Scopes' },
   { key: 'status', label: 'Status' },
@@ -235,7 +266,6 @@ const credColumns = [
 <template>
   <DashboardLayout :org-id="props.orgId" title="API credentials">
     <div class="flex flex-col gap-6">
-      <div v-if="error" class="text-sm text-error-text bg-error-light rounded-xl px-4 py-3">{{ error }}</div>
       <p class="text-xs text-text-muted -mt-2">
         These credentials are for machine-to-machine integration (your own systems calling the RigePay API directly) —
         not for logging into this dashboard.
@@ -244,8 +274,15 @@ const credColumns = [
       <!-- API keys -->
       <div v-if="revealedKey" class="text-sm text-success-text bg-success-light rounded-xl px-4 py-3 flex flex-col gap-1">
         <p class="font-semibold">API key "{{ revealedKey.name }}" created.</p>
-        <p>Key: <span class="font-mono font-bold break-all">{{ revealedKey.full_key }}</span></p>
-        <p class="text-xs">Copy this now — it will not be shown again.</p>
+        <template v-if="revealedKey.auth_scheme === 'hmac'">
+          <p>Key ID: <span class="font-mono font-bold break-all">{{ revealedKey.key_id }}</span></p>
+          <p>Secret: <span class="font-mono font-bold break-all">{{ revealedKey.secret }}</span></p>
+          <p class="text-xs">Copy the secret now — it will not be shown again. Use it to sign requests (see docs for the X-RigePay-Key-Id / Timestamp / Request-Id / Signature headers) — never send it directly.</p>
+        </template>
+        <template v-else>
+          <p>Key: <span class="font-mono font-bold break-all">{{ revealedKey.full_key }}</span></p>
+          <p class="text-xs">Copy this now — it will not be shown again.</p>
+        </template>
       </div>
 
       <AppCard>
@@ -261,6 +298,14 @@ const credColumns = [
           <div v-if="keyError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ keyError }}</div>
           <form class="flex flex-col gap-4" @submit.prevent="createKey">
             <AppInput v-model="newKeyName" label="Key name" placeholder="e.g. Backend integration" required />
+            <AppSelect
+              v-model="newKeyAuthScheme"
+              label="Authentication scheme"
+              :options="[
+                { value: 'bearer', label: 'Bearer token — send the key directly (simplest)' },
+                { value: 'hmac', label: 'HMAC request signing — sign each request, secret never sent' },
+              ]"
+            />
             <AppSelect
               v-model="newKeyBranchId"
               label="Branch (optional — leave unset for org-wide)"
@@ -281,6 +326,9 @@ const credColumns = [
         </AppCard>
 
         <AppTable :columns="apiKeyColumns" :rows="apiKeys" :loading="loading" empty-message="No API keys yet.">
+          <template #cell-auth_scheme="{ value }">
+            <AppBadge :variant="value === 'hmac' ? 'info' : 'neutral'" size="sm">{{ value === 'hmac' ? 'HMAC' : 'Bearer' }}</AppBadge>
+          </template>
           <template #cell-scopes="{ value }">
             <span class="text-xs">{{ (value as string[]).join(', ') }}</span>
           </template>

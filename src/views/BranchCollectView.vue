@@ -5,6 +5,7 @@ import {
   type CollectionInstructions,
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
+import { useResponseModal } from '@/composables/useResponseModal'
 import DashboardLayout from '@/layouts/DashboardLayout.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppButton from '@/components/ui/AppButton.vue'
@@ -13,6 +14,7 @@ import { SmartphoneIcon, LandmarkIcon, CopyIcon, CheckIcon } from 'lucide-vue-ne
 
 
 const props = defineProps<{ orgId: string; branchId: string }>()
+const { showError, showSuccess } = useResponseModal()
 
 const error = ref<string | null>(null)
 const instructions = ref<CollectionInstructions | null>(null)
@@ -24,7 +26,9 @@ async function loadInstructions() {
   try {
     instructions.value = await fetchCollectionInstructions(true)
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
     instructions.value = null
   } finally {
     instructionsLoading.value = false
@@ -65,12 +69,16 @@ async function sendStkPush() {
       customer_phone: stkPhone.value.trim(),
       remarks: stkRemarks.value.trim() || undefined,
     })
-    stkResult.value = result.customer_message || 'STK push sent — ask the customer to check their phone and enter their M-Pesa PIN.'
+    const msg = result.customer_message || 'STK push sent — ask the customer to check their phone and enter their M-Pesa PIN.'
+    stkResult.value = msg
+    showSuccess(msg)
     stkAmountKes.value = ''
     stkPhone.value = ''
     stkRemarks.value = ''
   } catch (err) {
-    stkError.value = extractErrorMessage(err)
+    const errMsg = extractErrorMessage(err)
+    stkError.value = errMsg
+    showError(errMsg)
   } finally {
     stkSending.value = false
   }
@@ -80,8 +88,6 @@ async function sendStkPush() {
 <template>
   <DashboardLayout :org-id="props.orgId" :branch-id="props.branchId" title="Collect payments">
     <div class="flex flex-col gap-6">
-      <div v-if="error" class="text-sm text-error-text bg-error-light rounded-xl px-4 py-3">{{ error }}</div>
-
       <p class="text-xs text-text-muted">Payments collected here credit this branch's own wallet.</p>
 
       <!-- STK push -->
@@ -91,8 +97,6 @@ async function sendStkPush() {
           <h2 class="text-sm font-bold text-text-primary">Send an STK push</h2>
         </div>
         <p class="text-xs text-text-muted mb-5">Prompts the customer's phone to enter their M-Pesa PIN and pay instantly.</p>
-        <div v-if="stkError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-4">{{ stkError }}</div>
-        <div v-if="stkResult" class="text-xs text-success-text bg-success-light rounded-lg px-3 py-2 mb-4">{{ stkResult }}</div>
         <form class="flex flex-col gap-4" @submit.prevent="sendStkPush">
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <AppInput v-model="stkAmountKes" type="number" label="Amount (KES)" placeholder="Min 10" required />

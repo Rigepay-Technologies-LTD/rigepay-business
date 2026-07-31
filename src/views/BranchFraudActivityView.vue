@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { fetchBranchFraudActivity, type OrgFraudDecision } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
 import { formatMoney, formatDate } from '@/lib/format'
+import { useResponseModal } from '@/composables/useResponseModal'
 import DashboardLayout from '@/layouts/DashboardLayout.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppStat from '@/components/ui/AppStat.vue'
@@ -10,6 +11,7 @@ import AppBadge from '@/components/ui/AppBadge.vue'
 import { ShieldAlertIcon, ShieldOffIcon, ShieldIcon } from 'lucide-vue-next'
 
 const props = defineProps<{ orgId: string; branchId: string }>()
+const { showError } = useResponseModal()
 
 const loading = ref(true)
 const error = ref<string | null>(null)
@@ -26,7 +28,9 @@ async function load() {
     openHolds.value = data.open_holds
     decisions.value = data.decisions
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   } finally {
     loading.value = false
   }
@@ -43,8 +47,6 @@ function actionVariant(action: string): 'error' | 'warning' | 'success' {
 <template>
   <DashboardLayout :org-id="props.orgId" :branch-id="props.branchId" title="Fraud activity">
     <div class="flex flex-col gap-6">
-      <div v-if="error" class="text-sm text-error-text bg-error-light rounded-xl px-4 py-3">{{ error }}</div>
-
       <p class="text-xs text-text-muted -mt-2">
         Fraud gate decisions on this branch's own payouts and collections.
       </p>

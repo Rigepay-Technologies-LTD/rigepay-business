@@ -6,6 +6,7 @@ import {
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
 import { formatMoney, formatDate, txnReference } from '@/lib/format'
+import { useResponseModal } from '@/composables/useResponseModal'
 import DashboardLayout from '@/layouts/DashboardLayout.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppButton from '@/components/ui/AppButton.vue'
@@ -16,6 +17,7 @@ import AppBadge from '@/components/ui/AppBadge.vue'
 import AppModal from '@/components/ui/AppModal.vue'
 
 const props = defineProps<{ orgId: string }>()
+const { showError } = useResponseModal()
 
 const error = ref<string | null>(null)
 const overview = ref<BranchesResponse | null>(null)
@@ -32,7 +34,9 @@ async function loadOverview() {
   try {
     overview.value = await fetchOrgBranches()
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   }
 }
 
@@ -48,7 +52,9 @@ async function loadTransactions() {
       branch_id: branchFilter.value || undefined,
     })
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   } finally {
     txnLoading.value = false
   }
@@ -99,7 +105,9 @@ async function openTxnDetail(row: Record<string, unknown>) {
   try {
     selectedTxnDetail.value = await fetchOrgTransaction(txn.id)
   } catch (err) {
-    txnDetailError.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    txnDetailError.value = msg
+    showError(msg)
   } finally {
     txnDetailLoading.value = false
   }
@@ -109,12 +117,11 @@ async function openTxnDetail(row: Record<string, unknown>) {
 <template>
   <DashboardLayout :org-id="props.orgId" :branches="overview?.branches ?? []" title="Transaction history">
     <div class="flex flex-col gap-6">
-      <div v-if="error" class="text-sm text-error-text bg-error-light rounded-xl px-4 py-3">{{ error }}</div>
-
       <AppCard>
-        <div class="flex items-center justify-between mb-5">
+        <div class="flex items-center justify-between mb-1">
           <h2 class="text-sm font-bold text-text-primary">Transactions</h2>
         </div>
+        <p class="text-xs text-text-muted mb-4">Every collection, payout, transfer, and fee across the organization and its branches — search by reference or filter by branch.</p>
         <form class="flex flex-col sm:flex-row gap-3 mb-5" @submit.prevent="search">
           <AppInput v-model="searchText" placeholder="Reference, description..." class="flex-1" />
           <AppInput v-model="startDate" type="date" />
@@ -151,7 +158,6 @@ async function openTxnDetail(row: Record<string, unknown>) {
 
     <AppModal v-model="showTxnDetail" title="Transaction detail" size="sm">
       <p v-if="txnDetailLoading" class="text-sm text-text-muted">Loading…</p>
-      <p v-else-if="txnDetailError" class="text-sm text-error-text">{{ txnDetailError }}</p>
       <dl v-else-if="selectedTxnDetail" class="flex flex-col gap-3 text-sm">
         <div class="flex justify-between"><dt class="text-text-muted">Reference</dt><dd class="font-semibold text-text-primary">{{ txnReference(selectedTxnDetail) }}</dd></div>
         <div class="flex justify-between"><dt class="text-text-muted">External Txn Id</dt><dd class="font-semibold text-text-primary">{{ selectedTxnDetail.externalTxnId }}</dd></div>

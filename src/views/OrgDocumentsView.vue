@@ -4,6 +4,9 @@ import { fetchOrgDocuments, uploadOrgDocument, fetchOrgScopedDocumentUrl, type O
 import { extractErrorMessage } from '@/lib/errors'
 import DashboardLayout from '@/layouts/DashboardLayout.vue'
 import DocUploadCard from '@/components/DocUploadCard.vue'
+import { useResponseModal } from '@/composables/useResponseModal'
+
+const { showError } = useResponseModal()
 
 const props = defineProps<{ orgId: string }>()
 
@@ -84,7 +87,9 @@ async function handleView(docId: string) {
     const url = await fetchOrgScopedDocumentUrl(docId)
     window.open(url, '_blank', 'noopener,noreferrer')
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   } finally {
     viewingDocId.value = null
   }
@@ -96,7 +101,9 @@ async function load() {
   try {
     docs.value = await fetchOrgDocuments()
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   } finally {
     loading.value = false
   }
@@ -115,7 +122,9 @@ async function handleUpload(type: string, file: File) {
     await uploadOrgDocument(file, type)
     await load()
   } catch (err) {
-    uploadErrors.value = { ...uploadErrors.value, [type]: extractErrorMessage(err) }
+    const msg = extractErrorMessage(err)
+    uploadErrors.value = { ...uploadErrors.value, [type]: msg }
+    showError(msg)
   } finally {
     uploadingType.value = null
   }
@@ -129,8 +138,6 @@ const completedCount = computed(() => docSlots.filter((s) => latestFor(s.type)).
 <template>
   <DashboardLayout :org-id="props.orgId" title="Compliance documents">
     <div class="flex flex-col gap-6">
-      <div v-if="error" class="text-sm text-error-text bg-error-light rounded-xl px-4 py-3">{{ error }}</div>
-
       <div class="flex items-center justify-between">
         <div>
           <h2 class="text-sm font-bold text-text-primary">Organization documents</h2>

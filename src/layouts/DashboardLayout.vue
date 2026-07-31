@@ -5,7 +5,7 @@ import {
   LayoutDashboardIcon, UsersIcon, BanknoteIcon, FileTextIcon, BuildingIcon, Building2Icon, UserCheckIcon,
   KeyIcon, WalletIcon, ShieldIcon, ScrollTextIcon, LogOutIcon, MenuIcon, XIcon, HistoryIcon, GaugeIcon,
   VaultIcon, CalendarClockIcon, ShieldAlertIcon, ArrowLeftRightIcon, FileBarChart2Icon, BarChart3Icon, LayersIcon,
-  MapPinIcon, LinkIcon, ClipboardListIcon, ReceiptIcon, TagIcon, CoinsIcon,
+  MapPinIcon, LinkIcon, ClipboardListIcon, ReceiptIcon, TagIcon, CoinsIcon, LifeBuoyIcon,
 } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
 import AppLogo from '@/components/ui/AppLogo.vue'
@@ -132,6 +132,9 @@ const navItems = computed(() => [
   { name: 'Profile', group: 'Settings', icon: BuildingIcon, active: isOrgWide.value || !!props.branchId, to: isOrgWide.value && !isBranchMode.value
       ? { name: 'org-profile', params: { orgId: props.orgId } }
       : { name: 'branch-profile', params: { orgId: props.orgId, branchId: props.branchId } } },
+  { name: 'Support', group: 'Settings', icon: LifeBuoyIcon, active: isOrgWide.value || !!props.branchId, to: isOrgWide.value && !isBranchMode.value
+      ? { name: 'org-support', params: { orgId: props.orgId } }
+      : { name: 'branch-support', params: { orgId: props.orgId, branchId: props.branchId } } },
 ].filter((item) => item.active))
 
 const groupedNavItems = computed(() =>
@@ -159,6 +162,7 @@ function isCurrent(itemName: string) {
   if (itemName === 'Expenses') return route.name === 'org-expenses' || route.name === 'branch-expenses'
   if (itemName === 'Tags') return route.name === 'org-tags' || route.name === 'branch-tags'
   if (itemName === 'Petty cash') return route.name === 'org-petty-cash' || route.name === 'branch-petty-cash'
+  if (itemName === 'Support') return route.name === 'org-support' || route.name === 'branch-support'
   if (itemName === 'Credentials') return route.name === 'org-credentials'
   if (itemName === 'Branches') return route.name === 'org-branches'
   if (itemName === 'Transfers') return route.name === 'org-transfers' || route.name === 'branch-transfers'

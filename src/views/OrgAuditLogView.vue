@@ -10,6 +10,9 @@ import AppInput from '@/components/ui/AppInput.vue'
 import AppTable from '@/components/ui/AppTable.vue'
 import AppBadge from '@/components/ui/AppBadge.vue'
 import AppModal from '@/components/ui/AppModal.vue'
+import { useResponseModal } from '@/composables/useResponseModal'
+
+const { showError } = useResponseModal()
 
 const props = defineProps<{ orgId: string }>()
 
@@ -28,7 +31,9 @@ async function load() {
     logs.value = res.logs
     totalPages.value = res.total_pages
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   } finally {
     loading.value = false
   }
@@ -66,7 +71,9 @@ async function openDetail(row: Record<string, unknown>) {
   try {
     selectedDetail.value = await fetchOrgAuditLogDetail(log.id)
   } catch (err) {
-    detailError.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    detailError.value = msg
+    showError(msg)
   } finally {
     detailLoading.value = false
   }
@@ -76,8 +83,6 @@ async function openDetail(row: Record<string, unknown>) {
 <template>
   <DashboardLayout :org-id="props.orgId" title="Audit log">
     <div class="flex flex-col gap-6">
-      <div v-if="error" class="text-sm text-error-text bg-error-light rounded-xl px-4 py-3">{{ error }}</div>
-
       <AppCard>
         <h2 class="text-sm font-bold text-text-primary mb-1">Activity</h2>
         <p class="text-xs text-text-muted mb-5">Who did what, where, and when — every action taken by a member of your organization.</p>

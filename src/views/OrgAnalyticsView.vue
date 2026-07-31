@@ -7,6 +7,9 @@ import DashboardLayout from '@/layouts/DashboardLayout.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AnalyticsDetailPanel from '@/components/AnalyticsDetailPanel.vue'
 import { TrendingUpIcon, TrendingDownIcon } from 'lucide-vue-next'
+import { useResponseModal } from '@/composables/useResponseModal'
+
+const { showError } = useResponseModal()
 
 const props = defineProps<{ orgId: string }>()
 
@@ -29,7 +32,9 @@ async function load() {
   try {
     data.value = await fetchBranchAnalytics(period.value)
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   } finally {
     loading.value = false
   }
@@ -40,7 +45,9 @@ async function loadDetail() {
   try {
     detail.value = await fetchOrgAnalyticsDetail(period.value)
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   } finally {
     detailLoading.value = false
   }
@@ -56,8 +63,7 @@ onMounted(loadAll)
 <template>
   <DashboardLayout :org-id="props.orgId" title="Analytics">
     <div class="flex flex-col gap-6">
-      <div v-if="error" class="text-sm text-error-text bg-error-light rounded-xl px-4 py-3">{{ error }}</div>
-
+      <p class="text-xs text-text-muted -mt-2">Collections, payouts, and net cash flow for a chosen month — organization-wide, plus a per-branch breakdown below.</p>
       <AppCard padding="sm">
         <div class="flex items-end gap-3">
           <div class="flex flex-col gap-1.5">
@@ -109,6 +115,7 @@ onMounted(loadAll)
 
         <AppCard padding="none">
           <h2 class="text-sm font-bold text-text-primary px-5 pt-5 mb-3">Per-branch leaderboard (ranked by collections)</h2>
+          <div class="overflow-x-auto">
           <table class="w-full text-sm">
             <thead>
               <tr class="text-left text-[10px] font-bold uppercase tracking-widest text-text-muted border-b border-border">
@@ -145,6 +152,7 @@ onMounted(loadAll)
               </tr>
             </tbody>
           </table>
+          </div>
         </AppCard>
       </template>
     </div>

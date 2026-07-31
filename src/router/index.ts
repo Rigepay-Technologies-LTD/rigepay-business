@@ -185,6 +185,13 @@ const router = createRouter({
       meta: { requiresAuth: true },
       props: true,
     },
+    {
+      path: '/org/:orgId/branch/:branchId/support',
+      name: 'branch-support',
+      component: () => import('@/views/BranchSupportView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
 
     {
       path: '/org/:orgId/documents',
@@ -224,7 +231,14 @@ const router = createRouter({
       meta: { requiresAuth: true },
       props: true,
     },
-  
+    {
+      path: '/org/:orgId/support',
+      name: 'org-support',
+      component: () => import('@/views/OrgSupportView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+
     {
       path: '/org/:orgId/branches',
       name: 'org-branches',
@@ -411,7 +425,7 @@ router.beforeEach((to) => {
     'branch-collect', 'branch-profile', 'branch-security', 'branch-transactions', 'branch-documents',
     'branch-payouts', 'branch-fraud', 'branch-payment-links', 'branch-invoices',
     'branch-expenses', 'branch-tags', 'branch-petty-cash', 'branch-analytics',
-    'branch-scheduled-payouts',
+    'branch-scheduled-payouts', 'branch-support',
   ]
   if (typeof to.name === 'string' && branchOperatorRoutes.includes(to.name)) {
     if (to.params.orgId !== auth.meta.organizationId) {
@@ -430,7 +444,8 @@ router.beforeEach((to) => {
     to.name === 'org-vaults' || to.name === 'org-scheduled-payouts' || to.name === 'org-fraud' ||
     to.name === 'org-transfers' || to.name === 'org-statements' || to.name === 'org-analytics' ||
     to.name === 'org-bulk-payouts' || to.name === 'org-petty-cash' || to.name === 'org-payment-links' ||
-    to.name === 'org-invoices' || to.name === 'org-expenses' || to.name === 'org-tags'
+    to.name === 'org-invoices' || to.name === 'org-expenses' || to.name === 'org-tags' ||
+    to.name === 'org-support'
   ) {
     if (to.params.orgId !== auth.meta.organizationId || auth.meta.memberType !== 'org_member') {
       return resolveLandingRoute(auth.meta)

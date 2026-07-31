@@ -4,11 +4,13 @@ import {
   requestBranchPayout, confirmBranchPayout, fetchBranchPayoutFeeEstimate,
   requestOrgPayoutAsMember, confirmOrgPayoutAsMember, fetchPayoutFeeEstimate,
   fetchOrgBankCodes, fetchOrgBeneficiaries, createOrgBeneficiary, deleteOrgBeneficiary, fetchRecentSettlements,
-  type BankCode, type PayoutFeeEstimate, type Beneficiary, type RecentSettlement,
+  validateOrgScreenName,
+  type BankCode, type PayoutFeeEstimate, type Beneficiary, type RecentSettlement, type ScreenNameMatch,
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
 import { formatMoney, formatDate } from '@/lib/format'
 import { useAuthStore } from '@/stores/auth'
+import { useResponseModal } from '@/composables/useResponseModal'
 import DashboardLayout from '@/layouts/DashboardLayout.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppButton from '@/components/ui/AppButton.vue'
@@ -16,10 +18,11 @@ import AppInput from '@/components/ui/AppInput.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import OtpConfirmCard from '@/components/OtpConfirmCard.vue'
 import ConfirmSecretInput from '@/components/ConfirmSecretInput.vue'
-import { RepeatIcon, XIcon } from 'lucide-vue-next'
+import { RepeatIcon, XIcon, AlertTriangleIcon } from 'lucide-vue-next'
 
 const props = defineProps<{ orgId: string; branchId: string }>()
 const auth = useAuthStore()
+const { showError, showSuccess } = useResponseModal()
 
 
 const isOrgMemberView = computed(() => auth.meta?.memberType === 'org_member')
@@ -33,7 +36,9 @@ async function loadBankCodes() {
     const codes: BankCode[] = await fetchOrgBankCodes(!isOrgMemberView.value)
     bankOptions.value = codes.map((c) => ({ value: c.code, label: c.name }))
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   }
 }
 
@@ -58,7 +63,9 @@ async function loadBeneficiaries() {
   try {
     beneficiaries.value = await fetchOrgBeneficiaries(true)
   } catch (err) {
-    beneficiaryError.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    beneficiaryError.value = msg
+    showError(msg)
   } finally {
     beneficiariesLoading.value = false
   }
@@ -87,7 +94,9 @@ async function removeBeneficiary(id: string) {
     beneficiaries.value = beneficiaries.value.filter((b) => b.id !== id)
     if (selectedBeneficiaryId.value === id) selectedBeneficiaryId.value = ''
   } catch (err) {
-    beneficiaryError.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    beneficiaryError.value = msg
+    showError(msg)
   } finally {
     removingBeneficiaryId.value = null
   }
@@ -101,7 +110,9 @@ async function loadRecentSettlements() {
   try {
     recentSettlements.value = await fetchRecentSettlements(true)
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   } finally {
     recentSettlementsLoading.value = false
   }
@@ -140,6 +151,21 @@ const destinationOptions = [
   { value: 'PHONE_NUMBER', label: 'Mobile money (M-Pesa)' },
   { value: 'BANK_ACCOUNT', label: 'Bank account' },
 ]
+
+const screening = ref<{ isMatch: boolean; matches: ScreenNameMatch[] } | null>(null)
+
+async function screenRecipientName() {
+  screening.value = null
+  if (!recipientName.value.trim()) return
+  try {
+    const result = await validateOrgScreenName(recipientName.value.trim(), !isOrgMemberView.value)
+    if (result.is_match) {
+      screening.value = { isMatch: true, matches: result.matches }
+    }
+  } catch {
+    console.log('Failed to screen')
+  }
+}
 
 const feeEstimate = ref<PayoutFeeEstimate | null>(null)
 const feeEstimateLoading = ref(false)
@@ -186,6 +212,7 @@ function resetForm() {
   selectedBeneficiaryId.value = ''
   saveAsBeneficiary.value = false
   beneficiaryNickname.value = ''
+  screening.value = null
 }
 
 async function submitPayout() {
@@ -242,7 +269,9 @@ async function submitPayout() {
         }, true)
         beneficiaries.value.unshift(b)
       } catch (err) {
-        beneficiaryError.value = extractErrorMessage(err)
+        const msg = extractErrorMessage(err)
+        beneficiaryError.value = msg
+        showError(msg)
       }
     }
 
@@ -253,16 +282,22 @@ async function submitPayout() {
       otpError.value = null
       otpStep.value = true
     } else if (result.status === 'approval_required') {
-      requestSuccess.value = result.message || 'This payout requires an owner\'s approval before it executes.'
+      const msg = result.message || 'This payout requires an owner\'s approval before it executes.'
+      requestSuccess.value = msg
+      showSuccess(msg)
       resetForm()
       await loadRecentSettlements()
     } else {
-      requestSuccess.value = result.message || 'Payout queued for execution.'
+      const msg = result.message || 'Payout queued for execution.'
+      requestSuccess.value = msg
+      showSuccess(msg)
       resetForm()
       await loadRecentSettlements()
     }
   } catch (err) {
-    requestError.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    requestError.value = msg
+    showError(msg)
   } finally {
     requesting.value = false
   }
@@ -279,12 +314,16 @@ async function submitOtp() {
     const result = isOrgMemberView.value
       ? await confirmOrgPayoutAsMember(otp.value)
       : await confirmBranchPayout(otp.value)
-    requestSuccess.value = result.message || 'Payout queued for execution.'
+    const msg = result.message || 'Payout queued for execution.'
+    requestSuccess.value = msg
+    showSuccess(msg)
     otpStep.value = false
     resetForm()
     await loadRecentSettlements()
   } catch (err) {
-    otpError.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    otpError.value = msg
+    showError(msg)
   } finally {
     otpConfirming.value = false
   }
@@ -300,8 +339,7 @@ function cancelOtp() {
 <template>
   <DashboardLayout :org-id="props.orgId" :branch-id="props.branchId" title="Payouts">
     <div class="flex flex-col gap-6">
-      <div v-if="error" class="text-sm text-error-text bg-error-light rounded-xl px-4 py-3">{{ error }}</div>
-
+      <p class="text-xs text-text-muted -mt-2">Send money out via M-Pesa or bank transfer, straight from this branch's own wallet.</p>
       <AppCard v-if="recentSettlements.length">
         <h2 class="text-sm font-bold text-text-primary mb-1">Recent settlements</h2>
         <p class="text-xs text-text-muted mb-4">Click one to repeat it — prefills the form below.</p>
@@ -326,7 +364,6 @@ function cancelOtp() {
       <AppCard v-if="beneficiaries.length">
         <h2 class="text-sm font-bold text-text-primary mb-1">Saved payees</h2>
         <p class="text-xs text-text-muted mb-4">Manage your saved beneficiaries — pick one below to autofill the payout form.</p>
-        <div v-if="beneficiaryError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ beneficiaryError }}</div>
         <p v-if="beneficiariesLoading" class="text-sm text-text-muted">Loading…</p>
         <div v-else class="flex flex-col gap-2">
           <div v-for="b in beneficiaries" :key="b.id" class="flex items-center justify-between gap-2 rounded-xl bg-surface-2 px-4 py-2.5">
@@ -387,12 +424,27 @@ function cancelOtp() {
 
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <AppInput v-model="amountKes" type="number" label="Amount (KES)" placeholder="Min 1" required />
-            <AppInput v-model="recipientName" label="Recipient name" required />
+            <AppInput v-model="recipientName" label="Recipient name" required @blur="screenRecipientName" />
           </div>
           <p v-if="feeEstimateLoading" class="text-xs text-text-muted">Estimating fee…</p>
           <div v-else-if="feeEstimate" class="text-xs text-text-secondary bg-surface-2 rounded-lg px-3 py-2 flex items-center justify-between">
             <span>Estimated fee: <span class="font-semibold text-text-primary">KES {{ formatMoney(feeEstimate.fee_cents) }}</span></span>
             <span>Total to be debited: <span class="font-semibold text-text-primary">KES {{ formatMoney(feeEstimate.total_cents) }}</span></span>
+          </div>
+          <div v-if="screening?.isMatch" class="text-xs bg-warning-light text-warning-text rounded-lg px-3 py-2.5 flex flex-col gap-2">
+            <div class="flex items-center gap-2 font-semibold">
+              <AlertTriangleIcon class="w-3.5 h-3.5 shrink-0" />
+              Possible sanctions/PEP watchlist match — this payout will be held for compliance review if you continue.
+            </div>
+            <div class="flex flex-col gap-1.5 pl-5.5">
+              <div v-for="(m, idx) in screening.matches" :key="idx" class="border-l-2 border-warning/40 pl-2">
+                <p>Match confidence: <span class="font-semibold">{{ Math.round(m.score * 100) }}%</span> on {{ m.matched_field }}</p>
+                <p v-if="m.list_names?.length">Watchlist: {{ m.list_names.join(', ') }}</p>
+                <p v-if="m.entity_type || m.country">
+                  <span v-if="m.entity_type">{{ m.entity_type }}</span><span v-if="m.entity_type && m.country"> · </span><span v-if="m.country">{{ m.country }}</span>
+                </p>
+              </div>
+            </div>
           </div>
 
           <AppInput v-model="remarks" label="Remarks" placeholder="Reason for this payout" required />

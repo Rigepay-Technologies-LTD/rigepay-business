@@ -8,6 +8,7 @@ import {
 import { extractErrorMessage } from '@/lib/errors'
 import { formatMoney } from '@/lib/format'
 import { useAuthStore } from '@/stores/auth'
+import { useResponseModal } from '@/composables/useResponseModal'
 import DashboardLayout from '@/layouts/DashboardLayout.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppButton from '@/components/ui/AppButton.vue'
@@ -20,6 +21,7 @@ import { ArrowRightIcon, CheckIcon, AlertTriangleIcon } from 'lucide-vue-next'
 const props = defineProps<{ orgId: string }>()
 const auth = useAuthStore()
 const isOwner = auth.meta?.role === 'owner'
+const { showError, showSuccess } = useResponseModal()
 
 const error = ref<string | null>(null)
 const loading = ref(true)
@@ -34,7 +36,9 @@ async function load() {
     branches.value = b.branches
     profile.value = p
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   } finally {
     loading.value = false
   }
@@ -91,12 +95,15 @@ async function submitTransfer() {
       pin: isOwner ? confirmSecret.value : undefined,
     })
     submitSuccess.value = `Moved KES ${formatMoney(result.amount_cents)} from ${result.from} to ${result.to}.`
+    showSuccess(submitSuccess.value)
     amountKes.value = ''
     remarks.value = ''
     confirmSecret.value = ''
     await load()
   } catch (err) {
-    submitError.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    submitError.value = msg
+    showError(msg)
   } finally {
     submitting.value = false
   }
@@ -134,7 +141,9 @@ async function verifyRecipient() {
   try {
     lookupResult.value = await lookupTransferRecipient(code)
   } catch (err) {
-    lookupError.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    lookupError.value = msg
+    showError(msg)
   } finally {
     lookupLoading.value = false
   }
@@ -181,11 +190,14 @@ async function submitExternalTransfer() {
       extOtpStep.value = true
     } else {
       extSuccess.value = `Sent KES ${formatMoney(result.data.amount_cents)} from ${result.data.from} to ${result.data.to}.`
+      showSuccess(extSuccess.value)
       resetExternalForm()
       await load()
     }
   } catch (err) {
-    extError.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    extError.value = msg
+    showError(msg)
   } finally {
     extSubmitting.value = false
   }
@@ -197,11 +209,14 @@ async function submitExternalOtp() {
   try {
     const result = await confirmExternalTransfer(extOtp.value)
     extSuccess.value = `Sent KES ${formatMoney(result.amount_cents)} from ${result.from} to ${result.to}.`
+    showSuccess(extSuccess.value)
     extOtpStep.value = false
     resetExternalForm()
     await load()
   } catch (err) {
-    extOtpError.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    extOtpError.value = msg
+    showError(msg)
   } finally {
     extOtpConfirming.value = false
   }
@@ -217,8 +232,6 @@ function cancelExternalOtp() {
 <template>
   <DashboardLayout :org-id="props.orgId" title="Transfers">
     <div class="flex flex-col gap-6">
-      <div v-if="error" class="text-sm text-error-text bg-error-light rounded-xl px-4 py-3">{{ error }}</div>
-
       <AppCard>
         <h2 class="text-sm font-bold text-text-primary mb-1">Move funds internally</h2>
         <p class="text-xs text-text-muted mb-5">
@@ -229,7 +242,6 @@ function cancelExternalOtp() {
         <p v-if="loading" class="text-sm text-text-muted">Loading wallets…</p>
         <template v-else>
           <div v-if="submitError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ submitError }}</div>
-          <div v-if="submitSuccess" class="text-xs text-success-text bg-success-light rounded-lg px-3 py-2 mb-3">{{ submitSuccess }}</div>
 
           <form class="flex flex-col gap-4 max-w-md" @submit.prevent="submitTransfer">
             <div class="flex items-end gap-3">
@@ -263,7 +275,6 @@ function cancelExternalOtp() {
         </p>
 
         <div v-if="extError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ extError }}</div>
-        <div v-if="extSuccess" class="text-xs text-success-text bg-success-light rounded-lg px-3 py-2 mb-3">{{ extSuccess }}</div>
 
         <form class="flex flex-col gap-4 max-w-md" @submit.prevent="submitExternalTransfer">
           <AppSelect v-model="extFromEndpoint" label="From" :options="endpointOptions" />

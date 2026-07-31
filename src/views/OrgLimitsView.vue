@@ -3,12 +3,14 @@ import { ref, onMounted } from 'vue'
 import { fetchOrgLimits, requestLimitChange, type OrgLimitsSnapshot } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
 import { formatMoney } from '@/lib/format'
+import { useResponseModal } from '@/composables/useResponseModal'
 import DashboardLayout from '@/layouts/DashboardLayout.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppInput from '@/components/ui/AppInput.vue'
 
 const props = defineProps<{ orgId: string }>()
+const { showError, showSuccess } = useResponseModal()
 
 const limits = ref<OrgLimitsSnapshot | null>(null)
 const limitsLoading = ref(true)
@@ -19,7 +21,9 @@ async function loadLimits() {
   try {
     limits.value = await fetchOrgLimits()
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   } finally {
     limitsLoading.value = false
   }
@@ -61,6 +65,7 @@ async function submitRequest() {
       requested_daily_collection_count: reqCollectionCount.value ? Number(reqCollectionCount.value) : undefined,
       reason: reason.value.trim(),
     })
+    showSuccess(requestResult.value)
     reqPayoutAmountKes.value = ''
     reqPayoutCount.value = ''
     reqCollectionAmountKes.value = ''
@@ -68,7 +73,9 @@ async function submitRequest() {
     reason.value = ''
     showRequestForm.value = false
   } catch (err) {
-    requestError.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    requestError.value = msg
+    showError(msg)
   } finally {
     requesting.value = false
   }
@@ -78,9 +85,10 @@ async function submitRequest() {
 <template>
   <DashboardLayout :org-id="props.orgId" title="Daily limits">
     <div class="flex flex-col gap-6">
-      <div v-if="error" class="text-sm text-error-text bg-error-light rounded-xl px-4 py-3">{{ error }}</div>
-      <div v-if="requestResult" class="text-sm text-success-text bg-success-light rounded-xl px-4 py-3">{{ requestResult }}</div>
-
+      <p class="text-xs text-text-muted -mt-2">
+        Daily caps on how much can move in and out via payouts and collections, reset every 24h. Running close to a
+        cap? Request higher limits below — our operations team reviews every request.
+      </p>
       <AppCard>
         <div class="flex items-center justify-between mb-1">
           <h2 class="text-sm font-bold text-text-primary">Today's usage</h2>

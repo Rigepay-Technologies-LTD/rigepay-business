@@ -6,6 +6,7 @@ import {
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
 import { formatMoney } from '@/lib/format'
+import { useResponseModal } from '@/composables/useResponseModal'
 import DashboardLayout from '@/layouts/DashboardLayout.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppButton from '@/components/ui/AppButton.vue'
@@ -13,6 +14,7 @@ import AppSelect from '@/components/ui/AppSelect.vue'
 import { DownloadIcon } from 'lucide-vue-next'
 
 const props = defineProps<{ orgId: string }>()
+const { showError } = useResponseModal()
 
 function currentPeriod() {
   const now = new Date()
@@ -46,7 +48,9 @@ async function loadStatement() {
   try {
     statement.value = await fetchStatement(currentParams())
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   } finally {
     loading.value = false
   }
@@ -57,7 +61,9 @@ async function loadBranches() {
     const b = await fetchOrgBranches()
     branches.value = b.branches
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   }
 }
 
@@ -72,7 +78,9 @@ async function downloadCsv() {
     a.click()
     URL.revokeObjectURL(url)
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   } finally {
     downloading.value = false
   }
@@ -87,8 +95,7 @@ onMounted(async () => {
 <template>
   <DashboardLayout :org-id="props.orgId" title="Statements">
     <div class="flex flex-col gap-6">
-      <div v-if="error" class="text-sm text-error-text bg-error-light rounded-xl px-4 py-3">{{ error }}</div>
-
+      <p class="text-xs text-text-muted -mt-2">A downloadable record of every wallet movement for a chosen period — useful for reconciliation and audits.</p>
       <AppCard>
         <div class="flex flex-wrap items-end gap-3">
           <div class="flex flex-col gap-1.5">
@@ -141,6 +148,7 @@ onMounted(async () => {
 
         <AppCard v-if="statement.by_type.length" padding="none">
           <h2 class="text-sm font-bold text-text-primary px-5 pt-5 mb-3">Breakdown by type</h2>
+          <div class="overflow-x-auto">
           <table class="w-full text-sm">
             <thead>
               <tr class="text-left text-[10px] font-bold uppercase tracking-widest text-text-muted border-b border-border">
@@ -157,6 +165,7 @@ onMounted(async () => {
               </tr>
             </tbody>
           </table>
+          </div>
         </AppCard>
         <AppCard v-else>
           <p class="text-sm text-text-muted">No activity in this period for this scope.</p>

@@ -13,7 +13,9 @@ import AppInput from '@/components/ui/AppInput.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import OtpConfirmCard from '@/components/OtpConfirmCard.vue'
 import { ArrowRightIcon, CheckIcon, AlertTriangleIcon } from 'lucide-vue-next'
+import { useResponseModal } from '@/composables/useResponseModal'
 
+const { showError, showSuccess } = useResponseModal()
 
 const props = defineProps<{ orgId: string; branchId: string }>()
 
@@ -27,7 +29,9 @@ async function load() {
   try {
     siblingBranches.value = await fetchSiblingBranches()
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   } finally {
     loading.value = false
   }
@@ -67,13 +71,17 @@ async function submitTransfer() {
       remarks: remarks.value.trim() || undefined,
       password: confirmPassword.value,
     })
-    submitSuccess.value = `Moved KES ${formatMoney(result.amount_cents)} from ${result.from} to ${result.to}.`
+    const successMsg = `Moved KES ${formatMoney(result.amount_cents)} from ${result.from} to ${result.to}.`
+    submitSuccess.value = successMsg
+    showSuccess(successMsg)
     amountKes.value = ''
     remarks.value = ''
     confirmPassword.value = ''
     await load()
   } catch (err) {
-    submitError.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    submitError.value = msg
+    showError(msg)
   } finally {
     submitting.value = false
   }
@@ -108,7 +116,9 @@ async function verifyRecipient() {
   try {
     lookupResult.value = await lookupTransferRecipient(code, true)
   } catch (err) {
-    lookupError.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    lookupError.value = msg
+    showError(msg)
   } finally {
     lookupLoading.value = false
   }
@@ -152,11 +162,15 @@ async function submitExternalTransfer() {
       extOtpError.value = null
       extOtpStep.value = true
     } else {
-      extSuccess.value = `Sent KES ${formatMoney(result.data.amount_cents)} from ${result.data.from} to ${result.data.to}.`
+      const successMsg = `Sent KES ${formatMoney(result.data.amount_cents)} from ${result.data.from} to ${result.data.to}.`
+      extSuccess.value = successMsg
+      showSuccess(successMsg)
       resetExternalForm()
     }
   } catch (err) {
-    extError.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    extError.value = msg
+    showError(msg)
   } finally {
     extSubmitting.value = false
   }
@@ -167,11 +181,15 @@ async function submitExternalOtp() {
   extOtpConfirming.value = true
   try {
     const result = await confirmBranchExternalTransfer(extOtp.value)
-    extSuccess.value = `Sent KES ${formatMoney(result.amount_cents)} from ${result.from} to ${result.to}.`
+    const successMsg = `Sent KES ${formatMoney(result.amount_cents)} from ${result.from} to ${result.to}.`
+    extSuccess.value = successMsg
+    showSuccess(successMsg)
     extOtpStep.value = false
     resetExternalForm()
   } catch (err) {
-    extOtpError.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    extOtpError.value = msg
+    showError(msg)
   } finally {
     extOtpConfirming.value = false
   }
@@ -187,8 +205,6 @@ function cancelExternalOtp() {
 <template>
   <DashboardLayout :org-id="props.orgId" :branch-id="props.branchId" title="Transfers">
     <div class="flex flex-col gap-6">
-      <div v-if="error" class="text-sm text-error-text bg-error-light rounded-xl px-4 py-3">{{ error }}</div>
-
       <AppCard>
         <h2 class="text-sm font-bold text-text-primary mb-1">Move funds internally</h2>
         <p class="text-xs text-text-muted mb-5">
@@ -198,7 +214,6 @@ function cancelExternalOtp() {
         <p v-if="loading" class="text-sm text-text-muted">Loading…</p>
         <template v-else>
           <div v-if="submitError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ submitError }}</div>
-          <div v-if="submitSuccess" class="text-xs text-success-text bg-success-light rounded-lg px-3 py-2 mb-3">{{ submitSuccess }}</div>
 
           <form class="flex flex-col gap-4 max-w-md" @submit.prevent="submitTransfer">
             <div class="flex items-end gap-3">
@@ -235,7 +250,6 @@ function cancelExternalOtp() {
         </p>
 
         <div v-if="extError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ extError }}</div>
-        <div v-if="extSuccess" class="text-xs text-success-text bg-success-light rounded-lg px-3 py-2 mb-3">{{ extSuccess }}</div>
 
         <form class="flex flex-col gap-4 max-w-md" @submit.prevent="submitExternalTransfer">
           <div class="flex items-end gap-3">

@@ -15,6 +15,9 @@ import AppTable from '@/components/ui/AppTable.vue'
 import AppBadge from '@/components/ui/AppBadge.vue'
 import DocUploadCard from '@/components/DocUploadCard.vue'
 import { PlusIcon, ChevronDownIcon, ChevronUpIcon, BuildingIcon, PencilIcon } from 'lucide-vue-next'
+import { useResponseModal } from '@/composables/useResponseModal'
+
+const { showError } = useResponseModal()
 
 const props = defineProps<{ orgId: string }>()
 
@@ -28,7 +31,9 @@ async function loadOverview() {
   try {
     overview.value = await fetchOrgBranches()
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   } finally {
     loading.value = false
   }
@@ -148,7 +153,9 @@ async function createBranch() {
     showCreateForm.value = false
     await loadOverview()
   } catch (err) {
-    createError.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    createError.value = msg
+    showError(msg)
   } finally {
     creating.value = false
   }
@@ -218,7 +225,9 @@ async function saveEditBranch(branchId: string) {
     editingBranchId.value = null
     await loadOverview()
   } catch (err) {
-    editError.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    editError.value = msg
+    showError(msg)
   } finally {
     editing.value = false
   }
@@ -259,7 +268,9 @@ async function toggleExpand(branchId: string) {
     try {
       docsByBranch.value = { ...docsByBranch.value, [branchId]: await fetchBranchDocuments(branchId) }
     } catch (err) {
-      error.value = extractErrorMessage(err)
+      const msg = extractErrorMessage(err)
+      error.value = msg
+      showError(msg)
     } finally {
       docsLoading.value = null
     }
@@ -280,7 +291,9 @@ async function handleView(docId: string) {
     const url = await fetchOrgScopedDocumentUrl(docId)
     window.open(url, '_blank', 'noopener,noreferrer')
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   } finally {
     viewingDocId.value = null
   }
@@ -294,7 +307,9 @@ async function handleBranchUpload(branchId: string, type: string, file: File) {
     await uploadBranchDocument(branchId, file, type)
     docsByBranch.value = { ...docsByBranch.value, [branchId]: await fetchBranchDocuments(branchId) }
   } catch (err) {
-    uploadErrors.value = { ...uploadErrors.value, [key]: extractErrorMessage(err) }
+    const msg = extractErrorMessage(err)
+    uploadErrors.value = { ...uploadErrors.value, [key]: msg }
+    showError(msg)
   } finally {
     uploadingSlot.value = null
   }
@@ -304,8 +319,6 @@ async function handleBranchUpload(branchId: string, type: string, file: File) {
 <template>
   <DashboardLayout :org-id="props.orgId" :branches="overview?.branches ?? []" title="Branches">
     <div class="flex flex-col gap-6">
-      <div v-if="error" class="text-sm text-error-text bg-error-light rounded-xl px-4 py-3">{{ error }}</div>
-
       <div v-if="createdResult" class="text-sm text-success-text bg-success-light rounded-xl px-4 py-3 flex flex-col gap-1">
         <p class="font-semibold">Branch "{{ createdResult.name }}" created — collection code {{ createdResult.collection_code }}.</p>
         <p>Manager login: {{ createdResult.manager_email }} — temporary password: <span class="font-mono font-bold">{{ createdResult.temp_password }}</span></p>
@@ -315,7 +328,9 @@ async function handleBranchUpload(branchId: string, type: string, file: File) {
       <div class="flex items-center justify-between">
         <div>
           <h2 class="text-sm font-bold text-text-primary">All branches</h2>
-          <p class="text-xs text-text-muted mt-0.5">{{ overview?.branch_count ?? 0 }} branch{{ overview?.branch_count === 1 ? '' : 'es' }}</p>
+          <p class="text-xs text-text-muted mt-0.5">
+            Each branch gets its own wallet, manager login, and collection code — {{ overview?.branch_count ?? 0 }} branch{{ overview?.branch_count === 1 ? '' : 'es' }} so far.
+          </p>
         </div>
         <AppButton size="sm" @click="showCreateForm = !showCreateForm">
           <template #icon><PlusIcon class="w-4 h-4" /></template>

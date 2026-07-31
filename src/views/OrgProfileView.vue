@@ -7,6 +7,7 @@ import {
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
 import { formatDate } from '@/lib/format'
+import { useResponseModal } from '@/composables/useResponseModal'
 import DashboardLayout from '@/layouts/DashboardLayout.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppButton from '@/components/ui/AppButton.vue'
@@ -15,6 +16,7 @@ import AppSelect from '@/components/ui/AppSelect.vue'
 import AppBadge from '@/components/ui/AppBadge.vue'
 
 const props = defineProps<{ orgId: string }>()
+const { showError, showSuccess } = useResponseModal()
 
 const loading = ref(true)
 const error = ref<string | null>(null)
@@ -67,7 +69,9 @@ async function load() {
     regulatoryLicenseNumber.value = profile.value.organization.regulatory_license_number ?? ''
     regulatoryLicenseExpiry.value = profile.value.organization.regulatory_license_expiry ?? ''
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   } finally {
     loading.value = false
   }
@@ -100,9 +104,12 @@ async function save() {
       regulatory_license_expiry: regulatoryLicenseExpiry.value || undefined,
     })
     saved.value = true
+    showSuccess('Profile updated.')
     await load()
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   } finally {
     saving.value = false
   }
@@ -127,7 +134,9 @@ async function loadIdentityRequests() {
   try {
     identityRequests.value = await fetchOrgIdentityChangeRequests()
   } catch (err) {
-    identityRequestError.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    identityRequestError.value = msg
+    showError(msg)
   } finally {
     identityRequestsLoading.value = false
   }
@@ -144,10 +153,13 @@ async function submitIdentityChangeRequest() {
   try {
     await requestOrgIdentityChange(identityField.value, identityNewValue.value.trim())
     identityRequestSuccess.value = 'Change request submitted for compliance review.'
+    showSuccess(identityRequestSuccess.value)
     identityNewValue.value = ''
     await loadIdentityRequests()
   } catch (err) {
-    identityRequestError.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    identityRequestError.value = msg
+    showError(msg)
   } finally {
     identityRequestSubmitting.value = false
   }
@@ -172,8 +184,6 @@ function statusVariant(status: string) {
 <template>
   <DashboardLayout :org-id="props.orgId" title="Organization profile">
     <div class="flex flex-col gap-6">
-      <div v-if="error" class="text-sm text-error-text bg-error-light rounded-xl px-4 py-3">{{ error }}</div>
-      <div v-if="saved" class="text-sm text-success-text bg-success-light rounded-xl px-4 py-3">Profile updated.</div>
       <p v-if="loading" class="text-sm text-text-muted">Loading profile…</p>
 
       <AppCard v-if="profile && !loading">
@@ -198,7 +208,6 @@ function statusVariant(status: string) {
           them requires compliance review. Submit a request below; an admin will approve or reject it.
         </p>
         <div v-if="identityRequestError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ identityRequestError }}</div>
-        <div v-if="identityRequestSuccess" class="text-xs text-success-text bg-success-light rounded-lg px-3 py-2 mb-3">{{ identityRequestSuccess }}</div>
         <form class="flex flex-col sm:flex-row gap-3 sm:items-end" @submit.prevent="submitIdentityChangeRequest">
           <AppSelect v-model="identityField" label="Field" :options="identityFieldOptions" class="sm:w-56" />
           <AppInput v-model="identityNewValue" label="New value" placeholder="Enter the new value" class="flex-1" />

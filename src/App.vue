@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useRoute } from 'vue-router'
+import ResponseModal from '@/components/ResponseModal.vue'
 
 const route = useRoute()
 
@@ -14,5 +15,6 @@ const isDashboardRoute = () => route.path.startsWith('/org/')
         <component :is="Component" />
       </transition>
     </router-view>
+    <ResponseModal />
   </div>
 </template>

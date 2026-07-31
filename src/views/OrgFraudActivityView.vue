@@ -8,6 +8,9 @@ import AppCard from '@/components/ui/AppCard.vue'
 import AppStat from '@/components/ui/AppStat.vue'
 import AppBadge from '@/components/ui/AppBadge.vue'
 import { ShieldAlertIcon, ShieldOffIcon, ShieldIcon } from 'lucide-vue-next'
+import { useResponseModal } from '@/composables/useResponseModal'
+
+const { showError } = useResponseModal()
 
 const props = defineProps<{ orgId: string }>()
 
@@ -28,7 +31,9 @@ async function loadAggregateScore() {
   try {
     aggregateScore.value = await fetchFraudAggregateScore()
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   } finally {
     aggregateLoading.value = false
   }
@@ -49,7 +54,9 @@ async function load() {
     openHolds.value = data.open_holds
     decisions.value = data.decisions
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   } finally {
     loading.value = false
   }
@@ -60,7 +67,9 @@ async function loadBreakdown() {
   try {
     breakdown.value = await fetchFraudBranchBreakdown()
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   } finally {
     breakdownLoading.value = false
   }
@@ -82,8 +91,6 @@ function actionVariant(action: string): 'error' | 'warning' | 'success' {
 <template>
   <DashboardLayout :org-id="props.orgId" title="Fraud activity">
     <div class="flex flex-col gap-6">
-      <div v-if="error" class="text-sm text-error-text bg-error-light rounded-xl px-4 py-3">{{ error }}</div>
-
       <p class="text-xs text-text-muted -mt-2">
         Fraud gate decisions across your organization's own wallet and all branch payouts/collections.
       </p>

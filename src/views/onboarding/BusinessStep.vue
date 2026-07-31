@@ -24,6 +24,7 @@ const region = ref('')
 const location = ref('')
 const nearestLandmark = ref('')
 const yearOfRegistration = ref('')
+const referralCode = ref('')
 
 
 const website = ref('')
@@ -101,6 +102,7 @@ async function submit() {
       location: location.value.trim(),
       nearest_landmark: nearestLandmark.value.trim() || undefined,
       year_of_registration: yearOfRegistration.value ? Number(yearOfRegistration.value) : undefined,
+      referral_code: referralCode.value.trim() || undefined,
       website: website.value.trim() || undefined,
       industry: industry.value.trim() || undefined,
       employee_count: employeeCount.value ? Number(employeeCount.value) : undefined,
@@ -153,6 +155,7 @@ async function submit() {
       </div>
       <AppInput v-model="location" label="Location / address" required />
       <AppInput v-model="nearestLandmark" label="Nearest landmark" placeholder="Optional" />
+      <AppInput v-model="referralCode" label="Referral code" placeholder="Optional — if someone referred you" />
 
       <div class="mt-2">
         <p class="text-xs font-bold text-text-muted uppercase tracking-wider">Additional details (optional)</p>

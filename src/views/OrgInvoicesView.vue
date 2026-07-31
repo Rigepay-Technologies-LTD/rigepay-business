@@ -2,6 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import {
   fetchOrgInvoices, createOrgInvoice, sendOrgInvoice, downloadOrgInvoicePdf,
+  fetchOrgInvoiceDetail, markOrgInvoicePaid, cancelOrgInvoice,
   type OrgInvoice, type CreateOrgInvoiceItemInput,
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
@@ -11,7 +12,11 @@ import AppCard from '@/components/ui/AppCard.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppInput from '@/components/ui/AppInput.vue'
 import AppBadge from '@/components/ui/AppBadge.vue'
+import AppModal from '@/components/ui/AppModal.vue'
 import { PlusIcon, FileTextIcon, DownloadIcon, SendIcon } from 'lucide-vue-next'
+import { useResponseModal } from '@/composables/useResponseModal'
+
+const { showError } = useResponseModal()
 
 const props = defineProps<{ orgId: string }>()
 
@@ -25,7 +30,9 @@ async function load() {
   try {
     invoices.value = await fetchOrgInvoices()
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   } finally {
     loading.value = false
   }
@@ -91,7 +98,9 @@ async function submitCreate() {
     showCreateForm.value = false
     await load()
   } catch (err) {
-    createError.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    createError.value = msg
+    showError(msg)
   } finally {
     creating.value = false
   }
@@ -108,7 +117,9 @@ async function handleSend(invoice: OrgInvoice) {
     await sendOrgInvoice(invoice.id, channels)
     await load()
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   } finally {
     sendingId.value = null
   }
@@ -126,7 +137,9 @@ async function handleDownload(invoice: OrgInvoice) {
     a.click()
     URL.revokeObjectURL(url)
   } catch (err) {
-    error.value = extractErrorMessage(err)
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
   } finally {
     downloadingId.value = null
   }
@@ -138,13 +151,59 @@ function statusVariant(status: string) {
   if (status === 'SENT') return 'warning'
   return 'neutral'
 }
+
+const selectedInvoice = ref<OrgInvoice | null>(null)
+const detailLoading = ref(false)
+const actionLoading = ref(false)
+
+async function openDetail(invoice: OrgInvoice) {
+  selectedInvoice.value = invoice
+  detailLoading.value = true
+  try {
+    selectedInvoice.value = await fetchOrgInvoiceDetail(invoice.id)
+  } catch (err) {
+    showError(extractErrorMessage(err))
+  } finally {
+    detailLoading.value = false
+  }
+}
+
+function closeDetail() {
+  selectedInvoice.value = null
+}
+
+async function handleMarkPaid() {
+  if (!selectedInvoice.value) return
+  if (!confirm('Mark this invoice as paid? This cannot be undone from here.')) return
+  actionLoading.value = true
+  try {
+    selectedInvoice.value = await markOrgInvoicePaid(selectedInvoice.value.id)
+    await load()
+  } catch (err) {
+    showError(extractErrorMessage(err))
+  } finally {
+    actionLoading.value = false
+  }
+}
+
+async function handleCancel() {
+  if (!selectedInvoice.value) return
+  if (!confirm('Cancel this invoice? The customer will no longer be able to pay it.')) return
+  actionLoading.value = true
+  try {
+    selectedInvoice.value = await cancelOrgInvoice(selectedInvoice.value.id)
+    await load()
+  } catch (err) {
+    showError(extractErrorMessage(err))
+  } finally {
+    actionLoading.value = false
+  }
+}
 </script>
 
 <template>
   <DashboardLayout :org-id="props.orgId" title="Invoices">
     <div class="flex flex-col gap-6">
-      <div v-if="error" class="text-sm text-error-text bg-error-light rounded-xl px-4 py-3">{{ error }}</div>
-
       <div class="flex items-center justify-between">
         <div>
           <h2 class="text-sm font-bold text-text-primary">Invoices</h2>
@@ -218,18 +277,18 @@ function statusVariant(status: string) {
       <div v-else class="flex flex-col gap-2">
         <AppCard v-for="invoice in invoices" :key="invoice.id" padding="none">
           <div class="flex items-center justify-between gap-3 px-5 py-3.5">
-            <div class="min-w-0 flex-1">
+            <button type="button" class="min-w-0 flex-1 text-left" @click="openDetail(invoice)">
               <div class="flex items-center gap-2">
                 <AppBadge :variant="statusVariant(invoice.status)" size="sm">{{ invoice.status }}</AppBadge>
                 <span class="text-xs font-mono text-text-muted">{{ invoice.invoice_number }}</span>
               </div>
-              <p class="text-sm font-semibold text-text-primary mt-1 truncate">
+              <p class="text-sm font-semibold text-text-primary mt-1 truncate hover:text-primary transition-colors">
                 {{ invoice.customer_name }} — KES {{ formatMoney(invoice.total_cents) }}
               </p>
               <p class="text-xs text-text-muted mt-0.5">
                 Due {{ formatDate(invoice.due_date) }} · created {{ formatDate(invoice.created_at) }}
               </p>
-            </div>
+            </button>
             <div class="flex items-center gap-2 shrink-0">
               <button
                 type="button" class="p-1.5 rounded-lg text-text-muted hover:text-primary hover:bg-primary-muted transition-colors disabled:opacity-50"
@@ -247,5 +306,64 @@ function statusVariant(status: string) {
         </AppCard>
       </div>
     </div>
+
+    <!-- Invoice detail modal -->
+    <AppModal :model-value="!!selectedInvoice" title="Invoice detail" size="lg" @update:model-value="closeDetail">
+      <div v-if="detailLoading" class="py-8 text-center text-sm text-text-muted">Loading…</div>
+      <div v-else-if="selectedInvoice" class="flex flex-col gap-5">
+        <div class="flex items-start justify-between">
+          <div>
+            <div class="flex items-center gap-2">
+              <AppBadge :variant="statusVariant(selectedInvoice.status)" size="sm">{{ selectedInvoice.status }}</AppBadge>
+              <span class="text-xs font-mono text-text-muted">{{ selectedInvoice.invoice_number }}</span>
+            </div>
+            <p class="text-base font-bold text-text-primary mt-1">{{ selectedInvoice.customer_name }}</p>
+            <p class="text-xs text-text-muted mt-0.5">{{ selectedInvoice.customer_phone }}<span v-if="selectedInvoice.customer_email"> · {{ selectedInvoice.customer_email }}</span></p>
+          </div>
+          <div class="text-right">
+            <p class="text-xs text-text-muted">Due {{ formatDate(selectedInvoice.due_date) }}</p>
+            <p class="text-xs text-text-muted">Created {{ formatDate(selectedInvoice.created_at) }}</p>
+            <p v-if="selectedInvoice.paid_at" class="text-xs text-success-text">Paid {{ formatDate(selectedInvoice.paid_at) }}</p>
+          </div>
+        </div>
+
+        <div class="rounded-xl border border-border overflow-x-auto">
+          <table class="w-full min-w-125 text-sm">
+            <thead>
+              <tr class="bg-surface-2 text-left text-xs text-text-muted uppercase tracking-wide">
+                <th class="px-3 py-2 font-semibold">Item</th>
+                <th class="px-3 py-2 font-semibold text-right">Qty</th>
+                <th class="px-3 py-2 font-semibold text-right">Unit price</th>
+                <th class="px-3 py-2 font-semibold text-right">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="item in selectedInvoice.items" :key="item.id" class="border-t border-border">
+                <td class="px-3 py-2">
+                  <p class="font-medium text-text-primary">{{ item.item_name }}</p>
+                  <p v-if="item.description" class="text-xs text-text-muted">{{ item.description }}</p>
+                </td>
+                <td class="px-3 py-2 text-right text-text-secondary">{{ item.quantity }}</td>
+                <td class="px-3 py-2 text-right text-text-secondary">KES {{ formatMoney(item.unit_price_cents) }}</td>
+                <td class="px-3 py-2 text-right font-semibold text-text-primary">KES {{ formatMoney(item.total_cents) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="flex flex-col gap-1 items-end text-sm">
+          <div class="flex justify-between w-48"><span class="text-text-muted">Subtotal</span><span>KES {{ formatMoney(selectedInvoice.sub_total_cents) }}</span></div>
+          <div v-if="selectedInvoice.tax_amount_cents > 0" class="flex justify-between w-48"><span class="text-text-muted">VAT</span><span>KES {{ formatMoney(selectedInvoice.tax_amount_cents) }}</span></div>
+          <div class="flex justify-between w-48 font-bold text-text-primary border-t border-border pt-1"><span>Total</span><span>KES {{ formatMoney(selectedInvoice.total_cents) }}</span></div>
+        </div>
+
+        <p v-if="selectedInvoice.notes" class="text-xs text-text-muted bg-surface-2 rounded-lg px-3 py-2">{{ selectedInvoice.notes }}</p>
+
+        <div v-if="selectedInvoice.status !== 'PAID' && selectedInvoice.status !== 'CANCELLED'" class="flex gap-2 pt-2 border-t border-border">
+          <AppButton size="sm" :loading="actionLoading" @click="handleMarkPaid">Mark as paid</AppButton>
+          <AppButton size="sm" variant="ghost" :loading="actionLoading" @click="handleCancel">Cancel invoice</AppButton>
+        </div>
+      </div>
+    </AppModal>
   </DashboardLayout>
 </template>
