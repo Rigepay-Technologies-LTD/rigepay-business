@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { fetchBranchAnalytics, fetchOrgAnalyticsDetail, type BranchAnalytics, type AnalyticsDetail } from '@/lib/orgApi'
+import { fetchBranchAnalytics, fetchOrgAnalyticsDetail, fetchOrgInvoiceAnalytics, type BranchAnalytics, type AnalyticsDetail, type InvoiceAnalyticsSummary } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
 import { formatMoney } from '@/lib/format'
 import DashboardLayout from '@/layouts/DashboardLayout.vue'
@@ -25,6 +25,21 @@ const error = ref<string | null>(null)
 
 const detail = ref<AnalyticsDetail | null>(null)
 const detailLoading = ref(true)
+
+const invoiceSummary = ref<InvoiceAnalyticsSummary | null>(null)
+const invoiceLoading = ref(true)
+
+async function loadInvoiceAnalytics() {
+  invoiceLoading.value = true
+  try {
+    const res = await fetchOrgInvoiceAnalytics(period.value)
+    invoiceSummary.value = res.summary
+  } catch (err) {
+    showError(extractErrorMessage(err))
+  } finally {
+    invoiceLoading.value = false
+  }
+}
 
 async function load() {
   loading.value = true
@@ -56,6 +71,7 @@ async function loadDetail() {
 function loadAll() {
   load()
   loadDetail()
+  loadInvoiceAnalytics()
 }
 onMounted(loadAll)
 </script>
@@ -80,6 +96,34 @@ onMounted(loadAll)
       <div>
         <h2 class="text-sm font-bold text-text-primary mb-3">Organization-wide</h2>
         <AnalyticsDetailPanel :data="detail" :loading="detailLoading" />
+      </div>
+
+      <div>
+        <h2 class="text-sm font-bold text-text-primary mb-3">Invoices</h2>
+        <p v-if="invoiceLoading" class="text-sm text-text-muted">Loading invoice analytics…</p>
+        <div v-else-if="invoiceSummary" class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <AppCard padding="sm">
+            <p class="text-[10px] font-bold uppercase tracking-widest text-text-muted mb-1">Total invoiced</p>
+            <p class="text-lg font-bold text-text-primary">KES {{ formatMoney(invoiceSummary.total_cents) }}</p>
+            <p class="text-xs text-text-muted mt-0.5">{{ invoiceSummary.total_count }} invoice(s)</p>
+          </AppCard>
+          <AppCard padding="sm">
+            <p class="text-[10px] font-bold uppercase tracking-widest text-text-muted mb-1">Paid</p>
+            <p class="text-lg font-bold text-success">KES {{ formatMoney(invoiceSummary.paid_cents) }}</p>
+            <p class="text-xs text-text-muted mt-0.5">{{ invoiceSummary.paid_count }} invoice(s) · {{ invoiceSummary.collection_rate_pct.toFixed(0) }}% collection rate</p>
+          </AppCard>
+          <AppCard padding="sm">
+            <p class="text-[10px] font-bold uppercase tracking-widest text-text-muted mb-1">Unpaid</p>
+            <p class="text-lg font-bold text-warning">KES {{ formatMoney(invoiceSummary.unpaid_cents) }}</p>
+            <p class="text-xs text-text-muted mt-0.5">{{ invoiceSummary.unpaid_count }} invoice(s)</p>
+          </AppCard>
+          <AppCard padding="sm">
+            <p class="text-[10px] font-bold uppercase tracking-widest text-text-muted mb-1">Overdue</p>
+            <p class="text-lg font-bold text-error">KES {{ formatMoney(invoiceSummary.overdue_cents) }}</p>
+            <p class="text-xs text-text-muted mt-0.5">{{ invoiceSummary.overdue_count }} invoice(s)</p>
+          </AppCard>
+        </div>
+        <p v-else class="text-sm text-text-muted">Couldn't load invoice analytics for this period.</p>
       </div>
 
       <p v-if="loading" class="text-sm text-text-muted">Loading branch breakdown…</p>

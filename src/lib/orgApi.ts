@@ -137,9 +137,7 @@ export interface SiblingBranch {
   collection_code: string
 }
 
-// Branch-safe: reachable by a real branch_member token, unlike fetchOrgBranches
-// (org-member-only). Returns only the minimal fields needed to pick a transfer
-// destination, never balances/KYC/contact details.
+
 export async function fetchSiblingBranches(): Promise<SiblingBranch[]> {
   const res = await http.get<{ status: string; data: SiblingBranch[] }>('/org/v1/branch/sibling-branches')
   return res.data.data
@@ -224,6 +222,11 @@ export async function fetchOrgLimits(): Promise<OrgLimitsSnapshot> {
   return res.data.data
 }
 
+export async function fetchBranchLimits(): Promise<OrgLimitsSnapshot> {
+  const res = await http.get<{ status: string; data: OrgLimitsSnapshot }>('/org/v1/branch/limits')
+  return res.data.data
+}
+
 export interface LimitChangeRequestInput {
   requested_daily_payout_amount_cents?: number
   requested_daily_payout_count?: number
@@ -235,6 +238,11 @@ export interface LimitChangeRequestInput {
 
 export async function requestLimitChange(input: LimitChangeRequestInput): Promise<string> {
   const res = await http.post<{ status: string; message: string }>('/org/v1/limits/request-change', input)
+  return res.data.message
+}
+
+export async function requestBranchLimitChange(input: LimitChangeRequestInput): Promise<string> {
+  const res = await http.post<{ status: string; message: string }>('/org/v1/branch/limits/request-change', input)
   return res.data.message
 }
 
@@ -275,11 +283,15 @@ export async function fetchCollectionInstructions(
   return res.data.data
 }
 
+
+export type StkChannel = 'mpesa' | 'airtel' | 'tkash' | 'wallet'
+
 export interface StkPushInput {
   amount_cents: number
   customer_phone: string
   remarks?: string
   branch_id?: string
+  channel?: StkChannel
 }
 
 export interface StkPushResult {
@@ -289,6 +301,8 @@ export interface StkPushResult {
   provider: string
   reference: string
   wallet_id: string
+  requires_otp?: boolean
+  channel?: string
 }
 
 
@@ -296,6 +310,18 @@ export async function requestStkPush(isBranchSession: boolean, input: StkPushInp
   const path = isBranchSession ? '/org/v1/branch/collect/stk-push' : '/org/v1/collect/stk-push'
   const res = await http.post<{ status: string; data: StkPushResult }>(path, input)
   return res.data.data
+}
+
+export interface CompleteSasaPayOtpInput {
+  checkout_request_id: string
+  otp: string
+}
+
+
+export async function confirmSasaPayOtp(isBranchSession: boolean, input: CompleteSasaPayOtpInput): Promise<{ status: string; message: string }> {
+  const path = isBranchSession ? '/org/v1/branch/collect/sasapay/complete-otp' : '/org/v1/collect/sasapay/complete-otp'
+  const res = await http.post<{ status: string; message: string }>(path, input)
+  return res.data
 }
 
 export interface BranchDocument {
@@ -699,6 +725,16 @@ export async function revokeOrgCredential(id: string): Promise<void> {
   await http.delete(`/org/v1/credentials/${id}`)
 }
 
+export interface RotateCredentialResult {
+  id: string
+  client_secret: string
+}
+
+export async function rotateOrgCredential(id: string): Promise<RotateCredentialResult> {
+  const res = await http.post<{ status: string; data: RotateCredentialResult }>(`/org/v1/credentials/${id}/rotate`)
+  return res.data.data
+}
+
 export type ApiKeyAuthScheme = 'bearer' | 'hmac'
 
 export interface OrgApiKey {
@@ -727,10 +763,8 @@ export interface CreateApiKeyResult {
   auth_scheme: ApiKeyAuthScheme
   branch_id: string | null
   scopes: string[]
-  // Bearer scheme
   full_key?: string
   key_prefix?: string
-  // HMAC scheme — secret is shown exactly once, on creation
   key_id?: string
   secret?: string
 }
@@ -747,6 +781,20 @@ export async function createOrgApiKey(input: CreateApiKeyInput): Promise<CreateA
 
 export async function revokeOrgApiKey(id: string): Promise<void> {
   await http.delete(`/org/v1/api-keys/${id}`)
+}
+
+export interface RotateApiKeyResult {
+  id: string
+  auth_scheme: ApiKeyAuthScheme
+  full_key?: string
+  key_prefix?: string
+  key_id?: string
+  secret?: string
+}
+
+export async function rotateOrgApiKey(id: string): Promise<RotateApiKeyResult> {
+  const res = await http.post<{ status: string; data: RotateApiKeyResult }>(`/org/v1/api-keys/${id}/rotate`)
+  return res.data.data
 }
 
 export const WEBHOOK_EVENT_TYPES = [
@@ -810,10 +858,12 @@ export async function fetchOrgWebhookDeliveries(endpointId: string): Promise<Org
 export interface RequestPayoutInput {
   amount: number
   phone_number?: string
+  shortcode?: string
+  account_reference?: string
   recipient_name: string
   remarks: string
   branch_id?: string
-  destination_type?: 'PHONE_NUMBER' | 'BANK_ACCOUNT'
+  destination_type?: 'PHONE_NUMBER' | 'BANK_ACCOUNT' | 'PAYBILL' | 'TILL_NUMBER'
   bank_code?: string
   bank_account_number?: string
   password?: string
@@ -1082,8 +1132,9 @@ export interface BankAccountValidationResult {
   bank_code: string
 }
 
-export async function validateOrgBankAccount(accountNumber: string, bankCode: string): Promise<BankAccountValidationResult> {
-  const res = await http.post<{ status: string; data: BankAccountValidationResult }>('/org/v1/utils/validate/bank-account', {
+export async function validateOrgBankAccount(accountNumber: string, bankCode: string, isBranchSession = false): Promise<BankAccountValidationResult> {
+  const path = isBranchSession ? '/org/v1/branch/utils/validate/bank-account' : '/org/v1/utils/validate/bank-account'
+  const res = await http.post<{ status: string; data: BankAccountValidationResult }>(path, {
     account_number: accountNumber,
     bank_code: bankCode,
   })
@@ -1098,10 +1149,26 @@ export interface MobileMoneyValidationResult {
 }
 
 
-export async function validateOrgMobileMoney(phone: string, carrier?: string): Promise<MobileMoneyValidationResult> {
-  const res = await http.post<{ status: string; data: MobileMoneyValidationResult }>('/org/v1/utils/validate/mobile-money', {
+export async function validateOrgMobileMoney(phone: string, carrier?: string, isBranchSession = false): Promise<MobileMoneyValidationResult> {
+  const path = isBranchSession ? '/org/v1/branch/utils/validate/mobile-money' : '/org/v1/utils/validate/mobile-money'
+  const res = await http.post<{ status: string; data: MobileMoneyValidationResult }>(path, {
     phone,
     carrier,
+  })
+  return res.data.data
+}
+
+export interface ShortcodeValidationResult {
+  shortcode: string
+  account_name: string
+  type: string
+}
+
+export async function validateOrgShortcode(isBranchSession: boolean, shortcode: string, type: 'paybill' | 'till'): Promise<ShortcodeValidationResult> {
+  const path = isBranchSession ? '/org/v1/branch/utils/validate/shortcode' : '/org/v1/utils/validate/shortcode'
+  const res = await http.post<{ status: string; data: ShortcodeValidationResult }>(path, {
+    shortcode,
+    type,
   })
   return res.data.data
 }
@@ -1173,32 +1240,84 @@ export interface ScheduledPayout {
   bank_account_number: string | null
   recipient_name: string
   remarks: string
+  trigger_type?: 'SCHEDULE' | 'THRESHOLD'
+  threshold_cents?: number | null
+  threshold_armed?: boolean
   schedule_type: 'ONE_TIME' | 'RECURRING'
   recurrence_interval: 'DAILY' | 'WEEKLY' | 'MONTHLY' | null
-  next_run_at: string
+  recurrence_day_of_week?: number | null
+  recurrence_time_of_day?: string | null
+  next_run_at: string | null
   end_date: string | null
   status: 'ACTIVE' | 'PAUSED' | 'CANCELLED' | 'COMPLETED'
   last_run_at: string | null
   last_run_status: string | null
+  tags?: string[] | null
   created_at: string
 }
 
 export interface CreateScheduledPayoutInput {
   amount: number
   sweep_full_balance?: boolean
-  destination_type?: 'PHONE_NUMBER' | 'BANK_ACCOUNT'
+  destination_type?: 'PHONE_NUMBER' | 'BANK_ACCOUNT' | 'PAYBILL' | 'TILL_NUMBER'
   phone_number?: string
+  shortcode?: string
+  account_reference?: string
   bank_code?: string
   bank_account_number?: string
   recipient_name: string
   remarks: string
   funding_source?: 'MAIN' | 'VAULT'
   vault_id?: string
+  trigger_type?: 'SCHEDULE' | 'THRESHOLD'
+  threshold_cents?: number
   schedule_type?: 'ONE_TIME' | 'RECURRING'
   recurrence_interval?: 'DAILY' | 'WEEKLY' | 'MONTHLY'
-  start_at: string
+  recurrence_day_of_week?: number
+  recurrence_time_of_day?: string
+  start_at?: string
   end_date?: string
+  tags?: string[]
   password?: string
+  pin?: string
+}
+
+export interface SettlementPreferences {
+  destination_type: string | null
+  phone_number: string | null
+  bank_code: string | null
+  bank_account_number: string | null
+}
+
+export interface UpdateSettlementPreferencesInput {
+  destination_type: 'PHONE_NUMBER' | 'BANK_ACCOUNT' | 'PAYBILL' | 'TILL_NUMBER'
+  phone_number?: string
+  shortcode?: string
+  bank_code?: string
+  bank_account_number?: string
+  pin?: string
+  password?: string
+}
+
+export async function fetchOrgSettlementPreferences(isBranch = false): Promise<SettlementPreferences> {
+  const base = isBranch ? '/org/v1/branch/settlement-preferences' : '/org/v1/settlement-preferences'
+  const res = await http.get<{ status: string; data: SettlementPreferences }>(base)
+  return res.data.data
+}
+
+export async function updateOrgSettlementPreferences(
+  input: UpdateSettlementPreferencesInput,
+  isBranch = false,
+): Promise<{ status: string; message?: string }> {
+  const base = isBranch ? '/org/v1/branch/settlement-preferences' : '/org/v1/settlement-preferences'
+  const res = await http.put<{ status: string; message?: string }>(base, input)
+  return res.data
+}
+
+export async function confirmOrgSettlementPreferences(otp: string, isBranch = false): Promise<{ status: string; message?: string }> {
+  const base = isBranch ? '/org/v1/branch/settlement-preferences' : '/org/v1/settlement-preferences'
+  const res = await http.post<{ status: string; message?: string }>(`${base}/confirm`, { otp })
+  return res.data
 }
 
 export async function fetchScheduledPayouts(isBranch = false): Promise<ScheduledPayout[]> {
@@ -1391,8 +1510,8 @@ export interface OrgFraudBranchBreakdownRow {
 }
 
 export async function fetchFraudBranchBreakdown(): Promise<OrgFraudBranchBreakdownRow[]> {
-  const res = await http.get<{ status: string; data: OrgFraudBranchBreakdownRow[] }>('/org/v1/fraud/branch-breakdown')
-  return res.data.data
+  const res = await http.get<{ status: string; data: OrgFraudBranchBreakdownRow[] | null }>('/org/v1/fraud/branch-breakdown')
+  return res.data.data ?? []
 }
 
 export interface OrgFraudAggregateScore {
@@ -1435,9 +1554,7 @@ export async function createOrgTransfer(input: TransferInput): Promise<TransferR
   return res.data.data
 }
 
-// A branch member moves funds from their own branch to the org or a
-// sibling branch — same shape as createOrgTransfer but "from" is implicit
-// (always the caller's own branch) and confirmation is password-only.
+
 export async function createBranchTransfer(input: Omit<TransferInput, 'from' | 'pin'>): Promise<TransferResult> {
   const res = await http.post<{ status: string; data: TransferResult }>('/org/v1/branch/transfers', input)
   return res.data.data
@@ -1450,9 +1567,7 @@ export interface TransferRecipientLookup {
   collection_code: string
 }
 
-// Verifies a collection code resolves to a real organization/branch BEFORE
-// filling in amount/PIN — no money moves. Same endpoint shape for org and
-// branch sessions, just a different base path.
+
 export async function lookupTransferRecipient(code: string, isBranch = false): Promise<TransferRecipientLookup> {
   const base = isBranch ? '/org/v1/branch/transfers/lookup' : '/org/v1/transfers/lookup'
   const res = await http.get<{ status: string; data: TransferRecipientLookup }>(base, { params: { code } })
@@ -1492,9 +1607,7 @@ export async function confirmExternalTransfer(otp: string): Promise<ExternalTran
   return res.data.data
 }
 
-// Branch-initiated cross-org transfer — genuine branch members only
-// (password confirmation, no PIN tier). Same request/response shape as the
-// org version, different base path.
+
 export async function requestBranchExternalTransfer(
   input: Omit<ExternalTransferInput, 'from' | 'pin'>,
 ): Promise<ExternalTransferOtpRequired | ExternalTransferComplete> {
@@ -1623,6 +1736,35 @@ export async function fetchBranchAnalyticsDetail(period?: string): Promise<Analy
   return res.data.data
 }
 
+export interface InvoiceAnalyticsSummary {
+  total_count: number
+  total_cents: number
+  paid_count: number
+  paid_cents: number
+  unpaid_count: number
+  unpaid_cents: number
+  overdue_count: number
+  overdue_cents: number
+  cancelled_count: number
+  cancelled_cents: number
+  collection_rate_pct: number
+}
+
+export interface InvoiceAnalytics {
+  period: string
+  summary: InvoiceAnalyticsSummary
+}
+
+export async function fetchOrgInvoiceAnalytics(period?: string): Promise<InvoiceAnalytics> {
+  const res = await http.get<{ status: string; data: InvoiceAnalytics }>('/org/v1/analytics/invoices', { params: { period } })
+  return res.data.data
+}
+
+export async function fetchBranchInvoiceAnalytics(period?: string): Promise<InvoiceAnalytics> {
+  const res = await http.get<{ status: string; data: InvoiceAnalytics }>('/org/v1/branch/analytics/invoices', { params: { period } })
+  return res.data.data
+}
+
 
 
 export interface ApprovalThreshold {
@@ -1663,8 +1805,10 @@ export async function setRoleApprovalThreshold(role: string, input: { amount_cen
 
 export interface BulkPayoutBatchItemInput {
   amount_cents: number
-  destination_type: 'PHONE_NUMBER' | 'BANK_ACCOUNT'
+  destination_type: 'PHONE_NUMBER' | 'BANK_ACCOUNT' | 'PAYBILL' | 'TILL_NUMBER'
   phone_number?: string
+  shortcode?: string
+  account_reference?: string
   bank_code?: string
   bank_account_number?: string
   recipient_name: string
@@ -1676,6 +1820,8 @@ export interface CreateBulkPayoutBatchInput {
   vault_id?: string
   remarks?: string
   items: BulkPayoutBatchItemInput[]
+  pin?: string
+  password?: string
 }
 
 export interface BulkPayoutBatch {
@@ -1722,23 +1868,27 @@ export interface BulkPayoutBatchCreateResult {
   data?: { id: string; item_count: number; total_amount_cents: number; total_fee_reserve_cents: number }
 }
 
-export async function createBulkPayoutBatch(input: CreateBulkPayoutBatchInput): Promise<BulkPayoutBatchCreateResult> {
-  const res = await http.post<BulkPayoutBatchCreateResult>('/org/v1/bulk-payouts', input)
+export async function createBulkPayoutBatch(input: CreateBulkPayoutBatchInput, isBranch = false): Promise<BulkPayoutBatchCreateResult> {
+  const base = isBranch ? '/org/v1/branch/bulk-payouts' : '/org/v1/bulk-payouts'
+  const res = await http.post<BulkPayoutBatchCreateResult>(base, input)
   return res.data
 }
 
-export async function confirmBulkPayoutBatch(otp: string): Promise<BulkPayoutBatchCreateResult> {
-  const res = await http.post<BulkPayoutBatchCreateResult>('/org/v1/bulk-payouts/confirm', { otp })
+export async function confirmBulkPayoutBatch(otp: string, isBranch = false): Promise<BulkPayoutBatchCreateResult> {
+  const base = isBranch ? '/org/v1/branch/bulk-payouts' : '/org/v1/bulk-payouts'
+  const res = await http.post<BulkPayoutBatchCreateResult>(`${base}/confirm`, { otp })
   return res.data
 }
 
-export async function fetchBulkPayoutBatches(): Promise<BulkPayoutBatch[]> {
-  const res = await http.get<{ status: string; data: BulkPayoutBatch[] }>('/org/v1/bulk-payouts')
+export async function fetchBulkPayoutBatches(isBranch = false): Promise<BulkPayoutBatch[]> {
+  const base = isBranch ? '/org/v1/branch/bulk-payouts' : '/org/v1/bulk-payouts'
+  const res = await http.get<{ status: string; data: BulkPayoutBatch[] }>(base)
   return res.data.data
 }
 
-export async function fetchBulkPayoutBatch(id: string): Promise<{ batch: BulkPayoutBatch; items: BulkPayoutItem[]; escrow_balance_cents: number }> {
-  const res = await http.get<{ status: string; data: { batch: BulkPayoutBatch; items: BulkPayoutItem[]; escrow_balance_cents: number } }>(`/org/v1/bulk-payouts/${id}`)
+export async function fetchBulkPayoutBatch(id: string, isBranch = false): Promise<{ batch: BulkPayoutBatch; items: BulkPayoutItem[]; escrow_balance_cents: number }> {
+  const base = isBranch ? '/org/v1/branch/bulk-payouts' : '/org/v1/bulk-payouts'
+  const res = await http.get<{ status: string; data: { batch: BulkPayoutBatch; items: BulkPayoutItem[]; escrow_balance_cents: number } }>(`${base}/${id}`)
   return res.data.data
 }
 
@@ -1820,9 +1970,202 @@ export async function fetchBranchPaymentLink(id: string): Promise<OrgPaymentLink
   return res.data.data
 }
 
-export async function reclaimBulkPayoutResidual(id: string): Promise<{ reclaimed_cents: number }> {
-  const res = await http.post<{ status: string; data: { reclaimed_cents: number } }>(`/org/v1/bulk-payouts/${id}/reclaim`)
+export async function reclaimBulkPayoutResidual(id: string, isBranch = false): Promise<{ reclaimed_cents: number }> {
+  const base = isBranch ? '/org/v1/branch/bulk-payouts' : '/org/v1/bulk-payouts'
+  const res = await http.post<{ status: string; data: { reclaimed_cents: number } }>(`${base}/${id}/reclaim`)
   return res.data.data
+}
+
+// --- Bulk / recurring invoices ---
+
+export interface BulkInvoiceRecipientInput {
+  email: string
+  phone: string
+  name?: string
+  amount_cents: number
+  due_date: string // RFC3339
+  description?: string
+  tax_category?: string
+}
+
+export interface BulkInvoiceEstimateResult {
+  recipient_count: number
+  suppressed_count: number
+  fee_cents_per_invoice: number
+  estimated_cost_cents: number
+  wallet_balance_cents: number
+  sufficient_funds: boolean
+}
+
+export interface InvoiceBatch {
+  id: string
+  organization_id: string
+  branch_id: string | null
+  schedule_id: string | null
+  status: 'pending' | 'partially_sent' | 'sent' | 'failed'
+  recipient_count: number
+  fee_cents_per_invoice: number
+  estimated_cost_cents: number
+  actual_cost_cents: number
+  sent_count: number
+  failed_count: number
+  suppressed_count: number
+  created_at: string
+  completed_at: string | null
+}
+
+export interface InvoiceBatchItem {
+  id: string
+  batch_id: string
+  row_number: number
+  recipient_email: string
+  recipient_phone: string
+  recipient_name: string
+  amount_cents: number
+  due_date: string
+  description: string
+  invoice_id: string | null
+  send_status: 'queued' | 'processing' | 'sent' | 'failed' | 'suppressed'
+  charged: boolean
+  error_message: string | null
+}
+
+function idempotencyHeaders() {
+  const key = (crypto as { randomUUID?: () => string }).randomUUID
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  return { headers: { 'X-Idempotency-Key': key } }
+}
+
+export async function estimateBulkInvoices(
+  input: { branch_id?: string; recipients: BulkInvoiceRecipientInput[] },
+  isBranch = false,
+): Promise<BulkInvoiceEstimateResult> {
+  const base = isBranch ? '/org/v1/branch/invoices/bulk' : '/org/v1/invoices/bulk'
+  const res = await http.post<{ status: string; data: BulkInvoiceEstimateResult }>(`${base}/estimate`, input)
+  return res.data.data
+}
+
+export interface BulkInvoiceSendResult {
+  status: string
+  message?: string
+  data?: {
+    id: string
+    recipient_count: number
+    suppressed_count: number
+    estimated_cost_cents: number
+    status: string
+  }
+}
+
+export async function sendBulkInvoices(
+  input: { branch_id?: string; recipients: BulkInvoiceRecipientInput[] },
+  isBranch = false,
+): Promise<BulkInvoiceSendResult> {
+  const base = isBranch ? '/org/v1/branch/invoices/bulk' : '/org/v1/invoices/bulk'
+  const res = await http.post<BulkInvoiceSendResult>(`${base}/send`, input, idempotencyHeaders())
+  return res.data
+}
+
+export async function fetchInvoiceBatches(isBranch = false): Promise<InvoiceBatch[]> {
+  const base = isBranch ? '/org/v1/branch/invoice-batches' : '/org/v1/invoice-batches'
+  const res = await http.get<{ status: string; data: InvoiceBatch[] }>(base)
+  return res.data.data
+}
+
+export async function fetchInvoiceBatch(id: string, isBranch = false): Promise<{ batch: InvoiceBatch; items: InvoiceBatchItem[] }> {
+  const base = isBranch ? '/org/v1/branch/invoice-batches' : '/org/v1/invoice-batches'
+  const res = await http.get<{ status: string; data: { batch: InvoiceBatch; items: InvoiceBatchItem[] } }>(`${base}/${id}`)
+  return res.data.data
+}
+
+// --- Invoice schedules ---
+
+export interface InvoiceScheduleRecipientInput {
+  email: string
+  name?: string
+  amount_cents: number
+  due_offset_days?: number
+  description?: string
+  tax_category?: string
+}
+
+export interface InvoiceScheduleRecipient {
+  id: string
+  schedule_id: string
+  email: string
+  recipient_name: string
+  amount_cents: number
+  due_offset_days: number
+  description: string
+}
+
+export interface InvoiceSchedule {
+  id: string
+  organization_id: string
+  branch_id: string | null
+  name: string
+  recurrence: 'monthly'
+  next_run_date: string
+  status: 'active' | 'paused_insufficient_funds' | 'paused_manual' | 'cancelled'
+  created_at: string
+  recipients: InvoiceScheduleRecipient[]
+}
+
+export async function createInvoiceSchedule(
+  input: { branch_id?: string; name?: string; recurrence: 'monthly'; next_run_date: string; recipients: InvoiceScheduleRecipientInput[] },
+  isBranch = false,
+): Promise<InvoiceSchedule> {
+  const base = isBranch ? '/org/v1/branch/invoice-schedules' : '/org/v1/invoice-schedules'
+  const res = await http.post<{ status: string; data: InvoiceSchedule }>(base, input, idempotencyHeaders())
+  return res.data.data
+}
+
+export async function fetchInvoiceSchedules(isBranch = false): Promise<InvoiceSchedule[]> {
+  const base = isBranch ? '/org/v1/branch/invoice-schedules' : '/org/v1/invoice-schedules'
+  const res = await http.get<{ status: string; data: InvoiceSchedule[] }>(base)
+  return res.data.data
+}
+
+export async function patchInvoiceSchedule(
+  scheduleId: string,
+  input: { action?: 'pause' | 'resume' | 'cancel'; name?: string; recipients?: InvoiceScheduleRecipientInput[] },
+  isBranch = false,
+): Promise<InvoiceSchedule> {
+  const base = isBranch ? '/org/v1/branch/invoice-schedules' : '/org/v1/invoice-schedules'
+  const res = await http.patch<{ status: string; data: InvoiceSchedule }>(`${base}/${scheduleId}`, input)
+  return res.data.data
+}
+
+// --- Recipient suppressions ---
+
+export interface RecipientSuppression {
+  id: string
+  organization_id: string
+  email: string
+  revoked_by: string | null
+  revoked_at: string
+  reason: string | null
+}
+
+export async function createRecipientSuppression(
+  input: { email: string; reason?: string },
+  isBranch = false,
+): Promise<RecipientSuppression> {
+  const base = isBranch ? '/org/v1/branch/recipient-suppressions' : '/org/v1/recipient-suppressions'
+  const res = await http.post<{ status: string; data: RecipientSuppression }>(base, input)
+  return res.data.data
+}
+
+export async function fetchRecipientSuppressions(isBranch = false): Promise<RecipientSuppression[]> {
+  const base = isBranch ? '/org/v1/branch/recipient-suppressions' : '/org/v1/recipient-suppressions'
+  const res = await http.get<{ status: string; data: RecipientSuppression[] }>(base)
+  return res.data.data
+}
+
+export async function deleteRecipientSuppression(email: string, isBranch = false): Promise<void> {
+  const base = isBranch ? '/org/v1/branch/recipient-suppressions' : '/org/v1/recipient-suppressions'
+  await http.delete(`${base}/${encodeURIComponent(email)}`)
 }
 
 
@@ -1949,6 +2292,18 @@ export async function cancelOrgInvoice(id: string, isBranch = false): Promise<Or
   const base = isBranch ? '/org/v1/branch/invoices' : '/org/v1/invoices'
   const res = await http.post<{ status: string; data: OrgInvoice }>(`${base}/${id}/cancel`)
   return res.data.data
+}
+
+export interface InvoiceRecipientHistoryEntry {
+  email: string
+  name: string
+  last_sent_at: string
+}
+
+export async function fetchInvoiceRecipientHistory(isBranch = false): Promise<InvoiceRecipientHistoryEntry[]> {
+  const base = isBranch ? '/org/v1/branch/invoices' : '/org/v1/invoices'
+  const res = await http.get<{ status: string; data: InvoiceRecipientHistoryEntry[] }>(`${base}/recipients`)
+  return res.data.data ?? []
 }
 
 
@@ -2168,14 +2523,14 @@ export interface PettyCashPayoutInput {
   amount: number
   recipient_name: string
   remarks: string
-  destination_type: 'PHONE_NUMBER' | 'BANK_ACCOUNT'
+  destination_type: 'PHONE_NUMBER' | 'BANK_ACCOUNT' | 'PAYBILL' | 'TILL_NUMBER'
   phone_number?: string
+  shortcode?: string
+  account_reference?: string
   bank_code?: string
   bank_account_number?: string
   password?: string
   pin?: string
-  // What this payout was actually used for — shows up in the float's
-  // draw history instead of the generic "PAYOUT" label.
   category?: string
 }
 

@@ -5,6 +5,7 @@ import {
   fetchOrgApiKeys, createOrgApiKey, revokeOrgApiKey,
   fetchOrgBranches,
   fetchOrgWebhookEndpoints, createOrgWebhookEndpoint, deleteOrgWebhookEndpoint, fetchOrgWebhookDeliveries,
+  rotateOrgCredential, rotateOrgApiKey,
   WEBHOOK_EVENT_TYPES,
   type OrgCredential, type OrgApiKey, type ApiKeyAuthScheme, type BranchSummary, type OrgWebhookEndpoint, type OrgWebhookDelivery,
 } from '@/lib/orgApi'
@@ -121,6 +122,29 @@ async function revokeKey(id: string) {
   }
 }
 
+const rotatingKeyId = ref<string | null>(null)
+
+async function rotateKey(key: OrgApiKey) {
+  rotatingKeyId.value = key.id
+  try {
+    const result = await rotateOrgApiKey(key.id)
+    revealedKey.value = {
+      name: key.name,
+      auth_scheme: result.auth_scheme,
+      full_key: result.full_key,
+      key_id: result.key_id,
+      secret: result.secret,
+    }
+    await load()
+  } catch (err) {
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
+  } finally {
+    rotatingKeyId.value = null
+  }
+}
+
 const showCredForm = ref(false)
 const creatingCred = ref(false)
 const credError = ref<string | null>(null)
@@ -162,6 +186,23 @@ async function revokeCred(id: string) {
     const msg = extractErrorMessage(err)
     error.value = msg
     showError(msg)
+  }
+}
+
+const rotatingCredId = ref<string | null>(null)
+
+async function rotateCred(cred: OrgCredential) {
+  rotatingCredId.value = cred.id
+  try {
+    const result = await rotateOrgCredential(cred.id)
+    revealedCred.value = { client_id: cred.client_id, client_secret: result.client_secret }
+    await load()
+  } catch (err) {
+    const msg = extractErrorMessage(err)
+    error.value = msg
+    showError(msg)
+  } finally {
+    rotatingCredId.value = null
   }
 }
 
@@ -273,7 +314,7 @@ const credColumns = [
 
       <!-- API keys -->
       <div v-if="revealedKey" class="text-sm text-success-text bg-success-light rounded-xl px-4 py-3 flex flex-col gap-1">
-        <p class="font-semibold">API key "{{ revealedKey.name }}" created.</p>
+        <p class="font-semibold">API key "{{ revealedKey.name }}" — new secret ready.</p>
         <template v-if="revealedKey.auth_scheme === 'hmac'">
           <p>Key ID: <span class="font-mono font-bold break-all">{{ revealedKey.key_id }}</span></p>
           <p>Secret: <span class="font-mono font-bold break-all">{{ revealedKey.secret }}</span></p>
@@ -337,22 +378,30 @@ const credColumns = [
           </template>
           <template #cell-created_at="{ value }">{{ formatDate(value as string) }}</template>
         </AppTable>
-        <div v-if="apiKeys.length" class="flex flex-col gap-1 mt-3">
-          <button
-            v-for="k in apiKeys.filter((k) => k.status === 'active')"
-            :key="k.id"
-            type="button"
-            class="text-xs text-error-text hover:underline text-left"
-            @click="revokeKey(k.id)"
-          >
-            Revoke "{{ k.name }}"
-          </button>
+        <div v-if="apiKeys.length" class="flex flex-col gap-1.5 mt-3">
+          <div v-for="k in apiKeys.filter((k) => k.status === 'active')" :key="k.id" class="flex items-center gap-3">
+            <button
+              type="button"
+              class="text-xs text-text-secondary hover:underline"
+              :disabled="rotatingKeyId === k.id"
+              @click="rotateKey(k)"
+            >
+              {{ rotatingKeyId === k.id ? 'Rotating…' : `Rotate "${k.name}"` }}
+            </button>
+            <button
+              type="button"
+              class="text-xs text-error-text hover:underline"
+              @click="revokeKey(k.id)"
+            >
+              Revoke "{{ k.name }}"
+            </button>
+          </div>
         </div>
       </AppCard>
 
       <!-- OAuth credentials -->
       <div v-if="revealedCred" class="text-sm text-success-text bg-success-light rounded-xl px-4 py-3 flex flex-col gap-1">
-        <p class="font-semibold">Credential created.</p>
+        <p class="font-semibold">Credential — new secret ready.</p>
         <p>Client ID: <span class="font-mono font-bold">{{ revealedCred.client_id }}</span></p>
         <p>Client secret: <span class="font-mono font-bold break-all">{{ revealedCred.client_secret }}</span></p>
         <p class="text-xs">Copy the secret now — it will not be shown again.</p>
@@ -398,16 +447,24 @@ const credColumns = [
           </template>
           <template #cell-created_at="{ value }">{{ formatDate(value as string) }}</template>
         </AppTable>
-        <div v-if="credentials.length" class="flex flex-col gap-1 mt-3">
-          <button
-            v-for="c in credentials.filter((c) => c.status === 'active')"
-            :key="c.id"
-            type="button"
-            class="text-xs text-error-text hover:underline text-left"
-            @click="revokeCred(c.id)"
-          >
-            Revoke {{ c.client_id }}
-          </button>
+        <div v-if="credentials.length" class="flex flex-col gap-1.5 mt-3">
+          <div v-for="c in credentials.filter((c) => c.status === 'active')" :key="c.id" class="flex items-center gap-3">
+            <button
+              type="button"
+              class="text-xs text-text-secondary hover:underline"
+              :disabled="rotatingCredId === c.id"
+              @click="rotateCred(c)"
+            >
+              {{ rotatingCredId === c.id ? 'Rotating…' : `Rotate ${c.client_id}` }}
+            </button>
+            <button
+              type="button"
+              class="text-xs text-error-text hover:underline"
+              @click="revokeCred(c.id)"
+            >
+              Revoke {{ c.client_id }}
+            </button>
+          </div>
         </div>
       </AppCard>
 

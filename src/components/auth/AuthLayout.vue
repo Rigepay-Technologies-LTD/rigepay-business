@@ -15,7 +15,6 @@ const highlights = [
 
 <template>
   <div class="min-h-screen flex flex-col lg:flex-row">
-    <!-- Branding panel — hidden on small screens, left column on lg+ -->
     <div class="hidden lg:flex lg:w-[44%] xl:w-[40%] relative flex-col justify-between p-12 overflow-hidden bg-primary">
       <div
         class="absolute inset-0 opacity-20"
@@ -49,7 +48,6 @@ const highlights = [
       <p class="relative text-xs text-white/50">© {{ new Date().getFullYear() }} RigePay Technologies Ltd</p>
     </div>
 
-    <!-- Form panel -->
     <div class="flex-1 flex flex-col items-center justify-center px-4 py-10 gap-8">
       <div class="lg:hidden">
         <AppLogo size="md" />

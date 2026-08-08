@@ -2,7 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import {
   fetchOrgInvoices, createOrgInvoice, sendOrgInvoice, downloadOrgInvoicePdf,
-  fetchOrgInvoiceDetail, markOrgInvoicePaid, cancelOrgInvoice,
+  fetchOrgInvoiceDetail, markOrgInvoicePaid, cancelOrgInvoice, createRecipientSuppression,
   type OrgInvoice, type CreateOrgInvoiceItemInput,
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
@@ -13,16 +13,25 @@ import AppButton from '@/components/ui/AppButton.vue'
 import AppInput from '@/components/ui/AppInput.vue'
 import AppBadge from '@/components/ui/AppBadge.vue'
 import AppModal from '@/components/ui/AppModal.vue'
-import { PlusIcon, FileTextIcon, DownloadIcon, SendIcon } from 'lucide-vue-next'
+import { PlusIcon, FileTextIcon, DownloadIcon, SendIcon, BanIcon } from 'lucide-vue-next'
 import { useResponseModal } from '@/composables/useResponseModal'
+import { useConfirmModal } from '@/composables/useConfirmModal'
+import { useRecipientHistory } from '@/composables/useRecipientHistory'
 
-const { showError } = useResponseModal()
+const { showError, showSuccess } = useResponseModal()
+const { confirmAction } = useConfirmModal()
+const { recipients: recipientHistory, loadRecipientHistory } = useRecipientHistory()
 
 const props = defineProps<{ orgId: string }>()
 
 const loading = ref(true)
 const error = ref<string | null>(null)
 const invoices = ref<OrgInvoice[]>([])
+
+function pickRecipient() {
+  const match = recipientHistory.value.find((r) => r.email === customerEmail.value.trim())
+  if (match && match.name && !customerName.value.trim()) customerName.value = match.name
+}
 
 async function load() {
   loading.value = true
@@ -109,8 +118,12 @@ async function submitCreate() {
 const sendingId = ref<string | null>(null)
 async function handleSend(invoice: OrgInvoice) {
   const channels: string[] = []
-  if (invoice.customer_email && confirm('Send this invoice by email?')) channels.push('EMAIL')
-  if (confirm('Also send by SMS?')) channels.push('SMS')
+  if (invoice.customer_email) {
+    const sendEmail = await confirmAction({ message: 'Send this invoice by email?', confirmLabel: 'Send email', cancelLabel: 'Skip' })
+    if (sendEmail) channels.push('EMAIL')
+  }
+  const sendSms = await confirmAction({ message: 'Also send by SMS?', confirmLabel: 'Send SMS', cancelLabel: 'Skip' })
+  if (sendSms) channels.push('SMS')
   if (!channels.length) return
   sendingId.value = invoice.id
   try {
@@ -174,7 +187,12 @@ function closeDetail() {
 
 async function handleMarkPaid() {
   if (!selectedInvoice.value) return
-  if (!confirm('Mark this invoice as paid? This cannot be undone from here.')) return
+  const ok = await confirmAction({
+    title: 'Mark this invoice as paid?',
+    message: 'This cannot be undone from here.',
+    confirmLabel: 'Mark as paid',
+  })
+  if (!ok) return
   actionLoading.value = true
   try {
     selectedInvoice.value = await markOrgInvoicePaid(selectedInvoice.value.id)
@@ -188,7 +206,14 @@ async function handleMarkPaid() {
 
 async function handleCancel() {
   if (!selectedInvoice.value) return
-  if (!confirm('Cancel this invoice? The customer will no longer be able to pay it.')) return
+  const ok = await confirmAction({
+    title: 'Cancel this invoice?',
+    message: 'The customer will no longer be able to pay it.',
+    confirmLabel: 'Cancel invoice',
+    cancelLabel: 'Keep it',
+    danger: true,
+  })
+  if (!ok) return
   actionLoading.value = true
   try {
     selectedInvoice.value = await cancelOrgInvoice(selectedInvoice.value.id)
@@ -197,6 +222,29 @@ async function handleCancel() {
     showError(extractErrorMessage(err))
   } finally {
     actionLoading.value = false
+  }
+}
+
+const blocking = ref(false)
+async function handleBlockSender() {
+  if (!selectedInvoice.value?.customer_email) return
+  const email = selectedInvoice.value.customer_email
+  const ok = await confirmAction({
+    title: 'Block this email from future invoices?',
+    message: `${email} will never be sent another invoice from any bulk batch or recurring schedule, until you allow them again.`,
+    confirmLabel: 'Block email',
+    cancelLabel: 'Cancel',
+    danger: true,
+  })
+  if (!ok) return
+  blocking.value = true
+  try {
+    await createRecipientSuppression({ email, reason: 'Blocked from invoice detail' })
+    showSuccess(`${email} is now blocked from receiving invoices.`)
+  } catch (err) {
+    showError(extractErrorMessage(err))
+  } finally {
+    blocking.value = false
   }
 }
 </script>
@@ -209,11 +257,15 @@ async function handleCancel() {
           <h2 class="text-sm font-bold text-text-primary">Invoices</h2>
           <p class="text-xs text-text-muted mt-0.5">Professional invoices with a PDF breakdown and an embedded payment link.</p>
         </div>
-        <AppButton size="sm" @click="showCreateForm = !showCreateForm">
+        <AppButton size="sm" @click="showCreateForm = !showCreateForm; loadRecipientHistory()">
           <template #icon><PlusIcon class="w-4 h-4" /></template>
           New invoice
         </AppButton>
       </div>
+
+      <datalist id="invoice-recipient-history">
+        <option v-for="r in recipientHistory" :key="r.email" :value="r.email">{{ r.name || r.email }}</option>
+      </datalist>
 
       <AppCard v-if="showCreateForm">
         <h3 class="text-sm font-bold text-text-primary mb-3">New invoice</h3>
@@ -224,7 +276,11 @@ async function handleCancel() {
             <AppInput v-model="customerPhone" label="Customer phone" required />
           </div>
           <div class="grid grid-cols-2 gap-3">
-            <AppInput v-model="customerEmail" type="email" label="Customer email (optional)" />
+            <AppInput
+              v-model="customerEmail" type="email" label="Customer email (optional)"
+              list="invoice-recipient-history" hint="Pick from a previous recipient or type a new one"
+              @change="pickRecipient"
+            />
             <AppInput v-model="dueDate" type="date" label="Due date" required />
           </div>
 
@@ -362,6 +418,12 @@ async function handleCancel() {
         <div v-if="selectedInvoice.status !== 'PAID' && selectedInvoice.status !== 'CANCELLED'" class="flex gap-2 pt-2 border-t border-border">
           <AppButton size="sm" :loading="actionLoading" @click="handleMarkPaid">Mark as paid</AppButton>
           <AppButton size="sm" variant="ghost" :loading="actionLoading" @click="handleCancel">Cancel invoice</AppButton>
+        </div>
+        <div v-if="selectedInvoice.customer_email" class="pt-2 border-t border-border">
+          <AppButton size="sm" variant="ghost" :loading="blocking" @click="handleBlockSender">
+            <template #icon><BanIcon class="w-3.5 h-3.5" /></template>
+            Block this email from future invoices
+          </AppButton>
         </div>
       </div>
     </AppModal>

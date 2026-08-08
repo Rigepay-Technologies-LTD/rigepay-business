@@ -4,7 +4,7 @@ import {
   requestBranchPayout, confirmBranchPayout, fetchBranchPayoutFeeEstimate,
   requestOrgPayoutAsMember, confirmOrgPayoutAsMember, fetchPayoutFeeEstimate,
   fetchOrgBankCodes, fetchOrgBeneficiaries, createOrgBeneficiary, deleteOrgBeneficiary, fetchRecentSettlements,
-  validateOrgScreenName,
+  validateOrgScreenName, validateOrgShortcode, validateOrgBankAccount, validateOrgMobileMoney,
   type BankCode, type PayoutFeeEstimate, type Beneficiary, type RecentSettlement, type ScreenNameMatch,
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
@@ -85,6 +85,9 @@ function applyBeneficiary(id: string) {
     bankCode.value = ''
     bankAccountNumber.value = ''
   }
+  shortcode.value = ''
+  accountReference.value = ''
+  shortcodeValidation.value = null
 }
 
 async function removeBeneficiary(id: string) {
@@ -131,6 +134,9 @@ function repeatSettlement(s: RecentSettlement) {
     bankCode.value = ''
     bankAccountNumber.value = ''
   }
+  shortcode.value = ''
+  accountReference.value = ''
+  shortcodeValidation.value = null
 }
 
 onMounted(() => {
@@ -142,15 +148,73 @@ onMounted(() => {
 const amountKes = ref('')
 const recipientName = ref('')
 const remarks = ref('')
-const destinationType = ref<'PHONE_NUMBER' | 'BANK_ACCOUNT'>('PHONE_NUMBER')
+const destinationType = ref<'PHONE_NUMBER' | 'BANK_ACCOUNT' | 'PAYBILL' | 'TILL_NUMBER'>('PHONE_NUMBER')
 const phoneNumber = ref('')
+const shortcode = ref('')
+const accountReference = ref('')
 const bankCode = ref('')
 const bankAccountNumber = ref('')
 const confirmSecret = ref('')
 const destinationOptions = [
   { value: 'PHONE_NUMBER', label: 'Mobile money (M-Pesa)' },
+  { value: 'PAYBILL', label: 'Paybill' },
+  { value: 'TILL_NUMBER', label: 'Till number' },
   { value: 'BANK_ACCOUNT', label: 'Bank account' },
 ]
+
+const validating = ref(false)
+const shortcodeValidation = ref<{ ok: boolean; message: string } | null>(null)
+
+async function validateShortcodeRecipient() {
+  shortcodeValidation.value = null
+  if (!shortcode.value.trim()) {
+    shortcodeValidation.value = { ok: false, message: `Enter a ${destinationType.value === 'PAYBILL' ? 'paybill' : 'till'} number first.` }
+    return
+  }
+  validating.value = true
+  try {
+    const result = await validateOrgShortcode(!isOrgMemberView.value, shortcode.value.trim(), destinationType.value === 'PAYBILL' ? 'paybill' : 'till')
+    shortcodeValidation.value = { ok: true, message: `Account holder: ${result.account_name}` }
+    if (!recipientName.value.trim()) recipientName.value = result.account_name
+  } catch (err) {
+    shortcodeValidation.value = { ok: false, message: extractErrorMessage(err) }
+  } finally {
+    validating.value = false
+  }
+}
+
+// Verify recipient for phone / bank-account destinations — mirrors
+// validateShortcodeRecipient above (paybill/till already had this). Reuses
+// the same org-level validate endpoints via their branch-scoped routes.
+const recipientValidation = ref<{ ok: boolean; message: string } | null>(null)
+
+async function validateRecipient() {
+  recipientValidation.value = null
+  validating.value = true
+  try {
+    if (destinationType.value === 'BANK_ACCOUNT') {
+      if (!bankAccountNumber.value.trim() || !bankCode.value) {
+        recipientValidation.value = { ok: false, message: 'Enter a bank and account number first.' }
+        return
+      }
+      const result = await validateOrgBankAccount(bankAccountNumber.value.trim(), bankCode.value, !isOrgMemberView.value)
+      recipientValidation.value = { ok: true, message: `Account holder: ${result.account_name}` }
+      if (!recipientName.value.trim()) recipientName.value = result.account_name
+    } else {
+      if (!phoneNumber.value.trim()) {
+        recipientValidation.value = { ok: false, message: 'Enter a phone number first.' }
+        return
+      }
+      const result = await validateOrgMobileMoney(phoneNumber.value.trim(), undefined, !isOrgMemberView.value)
+      recipientValidation.value = { ok: true, message: `Account holder: ${result.account_name}` }
+      if (!recipientName.value.trim()) recipientName.value = result.account_name
+    }
+  } catch (err) {
+    recipientValidation.value = { ok: false, message: extractErrorMessage(err) }
+  } finally {
+    validating.value = false
+  }
+}
 
 const screening = ref<{ isMatch: boolean; matches: ScreenNameMatch[] } | null>(null)
 
@@ -206,6 +270,8 @@ function resetForm() {
   recipientName.value = ''
   remarks.value = ''
   phoneNumber.value = ''
+  shortcode.value = ''
+  accountReference.value = ''
   bankAccountNumber.value = ''
   confirmSecret.value = ''
   feeEstimate.value = null
@@ -213,6 +279,7 @@ function resetForm() {
   saveAsBeneficiary.value = false
   beneficiaryNickname.value = ''
   screening.value = null
+  shortcodeValidation.value = null
 }
 
 async function submitPayout() {
@@ -223,9 +290,15 @@ async function submitPayout() {
     requestError.value = 'Amount (min KES 1), recipient name, and remarks are required.'
     return
   }
+  const isShortcode = destinationType.value === 'PAYBILL' || destinationType.value === 'TILL_NUMBER'
   if (destinationType.value === 'BANK_ACCOUNT') {
     if (!bankCode.value || !bankAccountNumber.value.trim()) {
       requestError.value = 'Select a bank and enter the account number.'
+      return
+    }
+  } else if (isShortcode) {
+    if (!shortcode.value.trim()) {
+      requestError.value = `Enter the ${destinationType.value === 'PAYBILL' ? 'paybill' : 'till'} number.`
       return
     }
   } else if (!phoneNumber.value.trim()) {
@@ -246,6 +319,8 @@ async function submitPayout() {
       remarks: remarks.value.trim(),
       destination_type: destinationType.value,
       phone_number: destinationType.value === 'PHONE_NUMBER' ? phoneNumber.value.trim() : undefined,
+      shortcode: isShortcode ? shortcode.value.trim() : undefined,
+      account_reference: isShortcode ? accountReference.value.trim() || undefined : undefined,
       bank_code: destinationType.value === 'BANK_ACCOUNT' ? bankCode.value : undefined,
       bank_account_number: destinationType.value === 'BANK_ACCOUNT' ? bankAccountNumber.value.trim() : undefined,
     }
@@ -257,12 +332,12 @@ async function submitPayout() {
         })
       : await requestBranchPayout({ ...basePayload, password: confirmSecret.value })
 
-    if (saveAsBeneficiary.value && beneficiaryNickname.value.trim()) {
+    if (saveAsBeneficiary.value && beneficiaryNickname.value.trim() && !isShortcode) {
       try {
         const b = await createOrgBeneficiary({
           nickname: beneficiaryNickname.value.trim(),
           recipient_name: recipientName.value.trim(),
-          destination_type: destinationType.value,
+          destination_type: destinationType.value as 'PHONE_NUMBER' | 'BANK_ACCOUNT',
           phone_number: destinationType.value === 'PHONE_NUMBER' ? phoneNumber.value.trim() : undefined,
           bank_code: destinationType.value === 'BANK_ACCOUNT' ? bankCode.value : undefined,
           bank_account_number: destinationType.value === 'BANK_ACCOUNT' ? bankAccountNumber.value.trim() : undefined,
@@ -414,12 +489,37 @@ function cancelOtp() {
           />
 
           <AppSelect v-model="destinationType" label="Pay out via" :options="destinationOptions" />
-          <div v-if="destinationType === 'PHONE_NUMBER'">
+          <div v-if="destinationType === 'PHONE_NUMBER'" class="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
             <AppInput v-model="phoneNumber" label="Recipient phone" placeholder="+254712345678" required />
+            <AppButton type="button" variant="secondary" :loading="validating" @click="validateRecipient">Verify recipient</AppButton>
           </div>
-          <div v-else class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <AppSelect v-model="bankCode" label="Bank" placeholder="— Select bank —" :options="bankOptions" required />
-            <AppInput v-model="bankAccountNumber" label="Account number" required />
+          <p v-if="destinationType === 'PHONE_NUMBER'" class="text-[11px] text-text-muted -mt-2">
+            M-Pesa numbers can't be pre-verified — the payout itself confirms the recipient. Verification is only available for Airtel/Telkom.
+          </p>
+          <div v-else-if="destinationType === 'PAYBILL' || destinationType === 'TILL_NUMBER'" class="flex flex-col gap-3">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
+              <AppInput
+                v-model="shortcode"
+                :label="destinationType === 'PAYBILL' ? 'Paybill number' : 'Till number'"
+                :placeholder="destinationType === 'PAYBILL' ? 'e.g. 522522' : 'e.g. 123456'"
+                required
+              />
+              <AppButton type="button" variant="secondary" :loading="validating" @click="validateShortcodeRecipient">Verify recipient</AppButton>
+            </div>
+            <AppInput v-if="destinationType === 'PAYBILL'" v-model="accountReference" label="Account number / reference (optional)" placeholder="e.g. invoice or account number" />
+            <div v-if="shortcodeValidation" :class="['text-xs rounded-lg px-3 py-2', shortcodeValidation.ok ? 'bg-success-light text-success-text' : 'bg-error-light text-error-text']">
+              {{ shortcodeValidation.message }}
+            </div>
+          </div>
+          <div v-else class="flex flex-col gap-3">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <AppSelect v-model="bankCode" label="Bank" placeholder="— Select bank —" :options="bankOptions" required />
+              <AppInput v-model="bankAccountNumber" label="Account number" required />
+            </div>
+            <AppButton type="button" variant="secondary" class="self-start" :loading="validating" @click="validateRecipient">Verify recipient</AppButton>
+          </div>
+          <div v-if="recipientValidation" :class="['text-xs rounded-lg px-3 py-2', recipientValidation.ok ? 'bg-success-light text-success-text' : 'bg-error-light text-error-text']">
+            {{ recipientValidation.message }}
           </div>
 
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -449,7 +549,7 @@ function cancelOtp() {
 
           <AppInput v-model="remarks" label="Remarks" placeholder="Reason for this payout" required />
 
-          <div class="flex flex-col gap-2">
+          <div v-if="destinationType !== 'PAYBILL' && destinationType !== 'TILL_NUMBER'" class="flex flex-col gap-2">
             <label class="flex items-center gap-2 text-xs font-medium text-text-secondary cursor-pointer">
               <input v-model="saveAsBeneficiary" type="checkbox" class="rounded border-input-border" />
               Save this recipient as a beneficiary for next time

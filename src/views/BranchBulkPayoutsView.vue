@@ -1,13 +1,12 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import {
-  fetchOrgVaults, fetchOrgBankCodes, createBulkPayoutBatch, confirmBulkPayoutBatch, fetchBulkPayoutBatches, fetchBulkPayoutBatch, reclaimBulkPayoutResidual,
+  fetchOrgBankCodes, createBulkPayoutBatch, confirmBulkPayoutBatch, fetchBulkPayoutBatches, fetchBulkPayoutBatch, reclaimBulkPayoutResidual,
   fetchTags, fetchTagsForSubject, assignTag, unassignTag, validateOrgShortcode, validateOrgBankAccount, validateOrgMobileMoney,
-  type OrgVault, type BankCode, type BulkPayoutBatch, type BulkPayoutItem, type OrgTag,
+  type BankCode, type BulkPayoutBatch, type BulkPayoutItem, type OrgTag,
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
 import { formatMoney, formatDate } from '@/lib/format'
-import { useAuthStore } from '@/stores/auth'
 import DashboardLayout from '@/layouts/DashboardLayout.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppButton from '@/components/ui/AppButton.vue'
@@ -20,23 +19,18 @@ import { useResponseModal } from '@/composables/useResponseModal'
 
 const { showError, showSuccess } = useResponseModal()
 
-const props = defineProps<{ orgId: string }>()
-const auth = useAuthStore()
-const isOwner = auth.meta?.role === 'owner'
+const props = defineProps<{ orgId: string; branchId: string }>()
 
 const error = ref<string | null>(null)
 const loading = ref(true)
 const batches = ref<BulkPayoutBatch[]>([])
-const vaults = ref<OrgVault[]>([])
 const bankOptions = ref<{ value: string; label: string }[]>([])
 
 async function load() {
   loading.value = true
   error.value = null
   try {
-    const [b, v] = await Promise.all([fetchBulkPayoutBatches(), fetchOrgVaults()])
-    batches.value = b
-    vaults.value = v
+    batches.value = await fetchBulkPayoutBatches(true)
   } catch (err) {
     const msg = extractErrorMessage(err)
     error.value = msg
@@ -47,7 +41,7 @@ async function load() {
 }
 async function loadBankCodes() {
   try {
-    const codes: BankCode[] = await fetchOrgBankCodes(false)
+    const codes: BankCode[] = await fetchOrgBankCodes(true)
     bankOptions.value = codes.map((c) => ({ value: c.code, label: c.name }))
   } catch (err) {
     const msg = extractErrorMessage(err)
@@ -62,25 +56,7 @@ onMounted(() => {
 
 const showCreateForm = ref(false)
 const remarks = ref('')
-const pin = ref('')
-const fundingSource = ref<'MAIN' | 'VAULT'>('MAIN')
-const vaultId = ref('')
-const fundingSourceOptions = computed(() => [
-  { value: 'MAIN', label: 'Organization MAIN wallet' },
-  ...vaults.value.map((v) => ({ value: `VAULT:${v.id}`, label: `Vault — ${v.name} (KES ${formatMoney(v.balance_cents)})` })),
-])
-const fundingSourceCombined = computed({
-  get: () => (fundingSource.value === 'VAULT' ? `VAULT:${vaultId.value}` : 'MAIN'),
-  set: (v: string) => {
-    if (v === 'MAIN') {
-      fundingSource.value = 'MAIN'
-      vaultId.value = ''
-    } else {
-      fundingSource.value = 'VAULT'
-      vaultId.value = v.replace('VAULT:', '')
-    }
-  },
-})
+const password = ref('')
 
 interface EditableRow {
   key: number
@@ -123,7 +99,7 @@ async function verifyRowShortcode(r: EditableRow) {
   }
   r.verifying = true
   try {
-    const result = await validateOrgShortcode(false, r.shortcode.trim(), r.destination_type === 'PAYBILL' ? 'paybill' : 'till')
+    const result = await validateOrgShortcode(true, r.shortcode.trim(), r.destination_type === 'PAYBILL' ? 'paybill' : 'till')
     r.verifyResult = { ok: true, message: `Account holder: ${result.account_name}` }
     if (!r.recipient_name.trim()) r.recipient_name = result.account_name
   } catch (err) {
@@ -144,7 +120,7 @@ async function verifyRowRecipient(r: EditableRow) {
         r.verifyResult = { ok: false, message: 'Enter a bank and account number first.' }
         return
       }
-      const result = await validateOrgBankAccount(r.bank_account_number.trim(), r.bank_code)
+      const result = await validateOrgBankAccount(r.bank_account_number.trim(), r.bank_code, true)
       r.verifyResult = { ok: true, message: `Account holder: ${result.account_name}` }
       if (!r.recipient_name.trim()) r.recipient_name = result.account_name
     } else {
@@ -152,7 +128,7 @@ async function verifyRowRecipient(r: EditableRow) {
         r.verifyResult = { ok: false, message: 'Enter a phone number first.' }
         return
       }
-      const result = await validateOrgMobileMoney(r.phone_number.trim())
+      const result = await validateOrgMobileMoney(r.phone_number.trim(), undefined, true)
       r.verifyResult = { ok: true, message: `Account holder: ${result.account_name}` }
       if (!r.recipient_name.trim()) r.recipient_name = result.account_name
     }
@@ -198,7 +174,7 @@ async function submitBatch() {
   for (let i = 0; i < rows.value.length; i++) {
     const r = rows.value[i]
     const isBlank = !r.recipient_name.trim() && !r.amount_kes && !r.phone_number && !r.bank_account_number
-    if (isBlank) continue 
+    if (isBlank) continue
 
     const amountCents = Math.round(Number(r.amount_kes) * 100)
     if (!amountCents || amountCents < 100) {
@@ -241,25 +217,19 @@ async function submitBatch() {
     submitError.value = 'A batch needs at least 2 payees — use a single payout for one recipient.'
     return
   }
-  if (fundingSource.value === 'VAULT' && !vaultId.value) {
-    submitError.value = 'Select a vault to fund this batch from.'
-    return
-  }
-  if (!/^\d{4}$/.test(pin.value)) {
-    submitError.value = 'Enter your 4-digit transaction PIN to confirm this batch.'
+  if (!password.value) {
+    submitError.value = 'Enter your account password to confirm this batch.'
     return
   }
 
   submitting.value = true
   try {
     const result = await createBulkPayoutBatch({
-      funding_source: fundingSource.value,
-      vault_id: fundingSource.value === 'VAULT' ? vaultId.value : undefined,
       remarks: remarks.value.trim() || undefined,
       items,
-      pin: pin.value,
-    })
-    pin.value = ''
+      password: password.value,
+    }, true)
+    password.value = ''
     if (result.status === 'otp_required') {
       otp.value = ''
       otpError.value = null
@@ -298,7 +268,7 @@ async function submitOtp() {
   }
   otpConfirming.value = true
   try {
-    const result = await confirmBulkPayoutBatch(otp.value)
+    const result = await confirmBulkPayoutBatch(otp.value, true)
     const itemCount = result.data?.item_count ?? 0
     const totalAmount = result.data?.total_amount_cents ?? 0
     const totalFeeReserve = result.data?.total_fee_reserve_cents ?? 0
@@ -341,7 +311,7 @@ async function toggleExpand(batchId: string) {
   reclaimMessage.value = null
   detailLoading.value = true
   try {
-    batchDetail.value = await fetchBulkPayoutBatch(batchId)
+    batchDetail.value = await fetchBulkPayoutBatch(batchId, true)
   } catch (err) {
     const msg = extractErrorMessage(err)
     error.value = msg
@@ -355,13 +325,13 @@ async function handleReclaim(batchId: string) {
   reclaiming.value = true
   reclaimMessage.value = null
   try {
-    const result = await reclaimBulkPayoutResidual(batchId)
+    const result = await reclaimBulkPayoutResidual(batchId, true)
     const successMsg = result.reclaimed_cents > 0
       ? `Reclaimed KES ${formatMoney(result.reclaimed_cents)} back to the funding wallet.`
       : 'Nothing left to reclaim.'
     reclaimMessage.value = successMsg
     showSuccess(successMsg)
-    batchDetail.value = await fetchBulkPayoutBatch(batchId)
+    batchDetail.value = await fetchBulkPayoutBatch(batchId, true)
   } catch (err) {
     const msg = extractErrorMessage(err)
     reclaimMessage.value = msg
@@ -396,8 +366,8 @@ async function openItemTags(item: BulkPayoutItem) {
   tagToAssign.value = ''
   try {
     const [tags, assigned] = await Promise.all([
-      allTags.value.length ? Promise.resolve(allTags.value) : fetchTags(),
-      fetchTagsForSubject('payout', item.payout_id),
+      allTags.value.length ? Promise.resolve(allTags.value) : fetchTags(true),
+      fetchTagsForSubject('payout', item.payout_id, true),
     ])
     allTags.value = tags
     assignedTags.value = assigned
@@ -410,8 +380,8 @@ async function handleAssignTag() {
   if (!tagToAssign.value || !selectedItem.value?.payout_id) return
   assigningTag.value = true
   try {
-    await assignTag(tagToAssign.value, 'payout', selectedItem.value.payout_id)
-    assignedTags.value = await fetchTagsForSubject('payout', selectedItem.value.payout_id)
+    await assignTag(tagToAssign.value, 'payout', selectedItem.value.payout_id, true)
+    assignedTags.value = await fetchTagsForSubject('payout', selectedItem.value.payout_id, true)
     tagToAssign.value = ''
   } catch (err) {
     const msg = extractErrorMessage(err)
@@ -425,7 +395,7 @@ async function handleAssignTag() {
 async function handleUnassignTag(tag: OrgTag) {
   if (!selectedItem.value?.payout_id) return
   try {
-    await unassignTag(tag.id, 'payout', selectedItem.value.payout_id)
+    await unassignTag(tag.id, 'payout', selectedItem.value.payout_id, true)
     assignedTags.value = assignedTags.value.filter((t) => t.id !== tag.id)
   } catch (err) {
     const msg = extractErrorMessage(err)
@@ -438,17 +408,17 @@ const availableTagsToAssign = () => allTags.value.filter((t) => !assignedTags.va
 </script>
 
 <template>
-  <DashboardLayout :org-id="props.orgId" title="Bulk payouts">
+  <DashboardLayout :org-id="props.orgId" :branch-id="props.branchId" title="Bulk payouts">
     <div class="flex flex-col gap-6">
       <div class="flex items-center justify-between">
         <div>
           <h2 class="text-sm font-bold text-text-primary">Payroll & supplier runs</h2>
           <p class="text-xs text-text-muted mt-0.5">
-            Paste a payee list — the full batch amount is escrowed immediately, then each payee is paid out
-            independently. Owner only.
+            Paste a payee list — the full batch amount is escrowed immediately from this branch's own MAIN wallet,
+            then each payee is paid out independently.
           </p>
         </div>
-        <AppButton v-if="isOwner" size="sm" @click="showCreateForm = !showCreateForm">
+        <AppButton size="sm" @click="showCreateForm = !showCreateForm">
           <template #icon><PlusIcon class="w-4 h-4" /></template>
           New batch
         </AppButton>
@@ -473,10 +443,9 @@ const availableTagsToAssign = () => allTags.value.filter((t) => !assignedTags.va
         <div class="px-5 pt-5">
           <h3 class="text-sm font-bold text-text-primary mb-1">New bulk payout batch</h3>
           <p class="text-xs text-text-muted mb-4">
-            Add one row per payee. Choose M-Pesa or Bank per row — bank rows fetch your bank list, M-Pesa rows just need a phone number.
+            Add one row per payee. Choose M-Pesa, paybill, till, or bank per row.
           </p>
           <div v-if="submitError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ submitError }}</div>
-          <AppSelect v-model="fundingSourceCombined" label="Funded from" :options="fundingSourceOptions" class="max-w-sm mb-4" />
         </div>
 
         <div class="overflow-x-auto">
@@ -565,7 +534,7 @@ const availableTagsToAssign = () => allTags.value.filter((t) => !assignedTags.va
 
           <AppInput v-model="remarks" label="Batch remarks (optional)" placeholder="e.g. October commission run" />
 
-          <AppInput v-model="pin" type="password" inputmode="numeric" maxlength="4" label="Transaction PIN" placeholder="••••" required />
+          <AppInput v-model="password" type="password" label="Account password" required />
 
           <div class="flex gap-2">
             <AppButton type="button" :loading="submitting" @click="submitBatch">Escrow & submit batch</AppButton>
@@ -606,7 +575,7 @@ const availableTagsToAssign = () => allTags.value.filter((t) => !assignedTags.va
                   Dispatched {{ batchDetail.batch.dispatched_count }} · Rejected {{ batchDetail.batch.rejected_count }}
                   · Escrow balance KES {{ formatMoney(batchDetail.escrow_balance_cents) }}
                 </p>
-                <AppButton v-if="isOwner && batchDetail.escrow_balance_cents > 0" size="sm" variant="secondary" :loading="reclaiming" @click="handleReclaim(b.id)">
+                <AppButton v-if="batchDetail.escrow_balance_cents > 0" size="sm" variant="secondary" :loading="reclaiming" @click="handleReclaim(b.id)">
                   Reclaim residual
                 </AppButton>
               </div>
@@ -653,7 +622,7 @@ const availableTagsToAssign = () => allTags.value.filter((t) => !assignedTags.va
           <AppButton size="sm" variant="ghost" :loading="assigningTag" :disabled="!tagToAssign" @click="handleAssignTag">Add</AppButton>
         </div>
         <p v-else-if="!allTags.length" class="text-xs text-text-muted">
-          No tags exist yet — create one on the <RouterLink :to="{ name: 'org-tags', params: { orgId: props.orgId } }" class="text-primary underline">Tags page</RouterLink> first.
+          No tags exist yet — create one on the <RouterLink :to="{ name: 'branch-tags', params: { orgId: props.orgId, branchId: props.branchId } }" class="text-primary underline">Tags page</RouterLink> first.
         </p>
       </div>
     </AppModal>

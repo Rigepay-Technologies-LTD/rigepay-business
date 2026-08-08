@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import {
-  fetchCollectionInstructions, requestStkPush,
+  fetchCollectionInstructions, requestStkPush, confirmSasaPayOtp,
   type CollectionInstructions,
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
@@ -10,6 +10,8 @@ import DashboardLayout from '@/layouts/DashboardLayout.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppInput from '@/components/ui/AppInput.vue'
+import AppSelect from '@/components/ui/AppSelect.vue'
+import AppModal from '@/components/ui/AppModal.vue'
 import { SmartphoneIcon, LandmarkIcon, CopyIcon, CheckIcon } from 'lucide-vue-next'
 
 
@@ -47,12 +49,27 @@ async function copy(field: string, value: string) {
 
 onMounted(loadInstructions)
 
+const CHANNEL_OPTIONS = [
+  { value: 'auto', label: 'Auto (best available)' },
+  { value: 'mpesa', label: 'M-Pesa' },
+  { value: 'airtel', label: 'Airtel Money' },
+  { value: 'tkash', label: 'T-Kash' },
+  { value: 'wallet', label: 'SasaPay Wallet' },
+]
+
 const stkAmountKes = ref('')
 const stkPhone = ref('')
 const stkRemarks = ref('')
+const stkChannel = ref('auto')
 const stkSending = ref(false)
 const stkError = ref<string | null>(null)
 const stkResult = ref<string | null>(null)
+
+const otpModalOpen = ref(false)
+const otp = ref('')
+const otpCheckoutRequestId = ref('')
+const otpSubmitting = ref(false)
+const otpError = ref<string | null>(null)
 
 async function sendStkPush() {
   stkError.value = null
@@ -68,10 +85,19 @@ async function sendStkPush() {
       amount_cents: amountCents,
       customer_phone: stkPhone.value.trim(),
       remarks: stkRemarks.value.trim() || undefined,
+      channel: stkChannel.value === 'auto' ? undefined : (stkChannel.value as 'mpesa' | 'airtel' | 'tkash' | 'wallet'),
     })
-    const msg = result.customer_message || 'STK push sent — ask the customer to check their phone and enter their M-Pesa PIN.'
-    stkResult.value = msg
-    showSuccess(msg)
+
+    if (result.requires_otp) {
+      otpCheckoutRequestId.value = result.checkout_request_id
+      otp.value = ''
+      otpError.value = null
+      otpModalOpen.value = true
+    } else {
+      const msg = result.customer_message || 'STK push sent — ask the customer to check their phone and enter their PIN.'
+      stkResult.value = msg
+      showSuccess(msg)
+    }
     stkAmountKes.value = ''
     stkPhone.value = ''
     stkRemarks.value = ''
@@ -81,6 +107,27 @@ async function sendStkPush() {
     showError(errMsg)
   } finally {
     stkSending.value = false
+  }
+}
+
+async function submitOtp() {
+  otpError.value = null
+  if (otp.value.length !== 6) {
+    otpError.value = 'Enter the 6-digit code the customer received.'
+    return
+  }
+  otpSubmitting.value = true
+  try {
+    await confirmSasaPayOtp(true, {
+      checkout_request_id: otpCheckoutRequestId.value,
+      otp: otp.value,
+    })
+    otpModalOpen.value = false
+    showSuccess('OTP accepted. Waiting for SasaPay to confirm the payment.')
+  } catch (err) {
+    otpError.value = extractErrorMessage(err)
+  } finally {
+    otpSubmitting.value = false
   }
 }
 </script>
@@ -96,8 +143,9 @@ async function sendStkPush() {
           <SmartphoneIcon class="w-4 h-4 text-primary" />
           <h2 class="text-sm font-bold text-text-primary">Send an STK push</h2>
         </div>
-        <p class="text-xs text-text-muted mb-5">Prompts the customer's phone to enter their M-Pesa PIN and pay instantly.</p>
+        <p class="text-xs text-text-muted mb-5">Prompts the customer's phone to enter their PIN and pay instantly — or send them a SasaPay OTP prompt.</p>
         <form class="flex flex-col gap-4" @submit.prevent="sendStkPush">
+          <AppSelect v-model="stkChannel" label="Collecting via" :options="CHANNEL_OPTIONS" />
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <AppInput v-model="stkAmountKes" type="number" label="Amount (KES)" placeholder="Min 10" required />
             <AppInput v-model="stkPhone" label="Customer phone" placeholder="+254712345678" required />
@@ -239,5 +287,14 @@ async function sendStkPush() {
         </AppCard>
       </template>
     </div>
+
+    <AppModal v-model="otpModalOpen" title="Enter SasaPay OTP" size="sm">
+      <p class="text-xs text-text-muted mb-4">Ask the customer for the 6-digit code SasaPay sent them, then enter it below to complete the payment.</p>
+      <div v-if="otpError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-4">{{ otpError }}</div>
+      <form class="flex flex-col gap-4" @submit.prevent="submitOtp">
+        <AppInput v-model="otp" label="6-digit OTP" placeholder="123456" required />
+        <AppButton type="submit" :loading="otpSubmitting" class="self-start">Confirm payment</AppButton>
+      </form>
+    </AppModal>
   </DashboardLayout>
 </template>

@@ -4,6 +4,7 @@ import { createTag, fetchTags, deleteTag, fetchTagBreakdown, type OrgTag, type T
 import { extractErrorMessage } from '@/lib/errors'
 import { formatMoney } from '@/lib/format'
 import { useResponseModal } from '@/composables/useResponseModal'
+import { useConfirmModal } from '@/composables/useConfirmModal'
 import DashboardLayout from '@/layouts/DashboardLayout.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppButton from '@/components/ui/AppButton.vue'
@@ -12,6 +13,7 @@ import { PlusIcon, TagIcon, TrashIcon } from 'lucide-vue-next'
 
 const props = defineProps<{ orgId: string; branchId: string }>()
 const { showError } = useResponseModal()
+const { confirmAction } = useConfirmModal()
 
 const loading = ref(true)
 const error = ref<string | null>(null)
@@ -82,7 +84,14 @@ async function submitCreate() {
 
 const deletingId = ref<string | null>(null)
 async function handleDelete(tag: OrgTag) {
-  if (!confirm(`Delete the "${tag.name}" tag? Existing assignments will be removed.`)) return
+  const ok = await confirmAction({
+    title: 'Delete this tag?',
+    message: `"${tag.name}" will be deleted and existing assignments will be removed.`,
+    confirmLabel: 'Delete tag',
+    cancelLabel: 'Keep it',
+    danger: true,
+  })
+  if (!ok) return
   deletingId.value = tag.id
   try {
     await deleteTag(tag.id, true)

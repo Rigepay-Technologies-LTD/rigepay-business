@@ -192,6 +192,27 @@ const router = createRouter({
       meta: { requiresAuth: true },
       props: true,
     },
+    {
+      path: '/org/:orgId/branch/:branchId/bulk-invoices',
+      name: 'branch-bulk-invoices',
+      component: () => import('@/views/BranchBulkInvoicesView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/branch/:branchId/invoice-schedules',
+      name: 'branch-invoice-schedules',
+      component: () => import('@/views/BranchInvoiceSchedulesView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/branch/:branchId/recipient-suppressions',
+      name: 'branch-recipient-suppressions',
+      component: () => import('@/views/BranchRecipientSuppressionsView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
 
     {
       path: '/org/:orgId/documents',
@@ -263,6 +284,13 @@ const router = createRouter({
       props: true,
     },
     {
+      path: '/org/:orgId/branch/:branchId/limits',
+      name: 'branch-limits',
+      component: () => import('@/views/BranchLimitsView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
       path: '/org/:orgId/vaults',
       name: 'org-vaults',
       component: () => import('@/views/OrgVaultsView.vue'),
@@ -281,6 +309,20 @@ const router = createRouter({
       path: '/org/:orgId/branch/:branchId/scheduled-payouts',
       name: 'branch-scheduled-payouts',
       component: () => import('@/views/BranchScheduledPayoutsView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/settlement-preferences',
+      name: 'org-settlement-preferences',
+      component: () => import('@/views/OrgSettlementPreferencesView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/branch/:branchId/settlement-preferences',
+      name: 'branch-settlement-preferences',
+      component: () => import('@/views/BranchSettlementPreferencesView.vue'),
       meta: { requiresAuth: true },
       props: true,
     },
@@ -349,6 +391,34 @@ const router = createRouter({
       path: '/org/:orgId/bulk-payouts',
       name: 'org-bulk-payouts',
       component: () => import('@/views/OrgBulkPayoutsView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/branch/:branchId/bulk-payouts',
+      name: 'branch-bulk-payouts',
+      component: () => import('@/views/BranchBulkPayoutsView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/bulk-invoices',
+      name: 'org-bulk-invoices',
+      component: () => import('@/views/OrgBulkInvoicesView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/invoice-schedules',
+      name: 'org-invoice-schedules',
+      component: () => import('@/views/OrgInvoiceSchedulesView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/recipient-suppressions',
+      name: 'org-recipient-suppressions',
+      component: () => import('@/views/OrgRecipientSuppressionsView.vue'),
       meta: { requiresAuth: true },
       props: true,
     },
@@ -425,7 +495,9 @@ router.beforeEach((to) => {
     'branch-collect', 'branch-profile', 'branch-security', 'branch-transactions', 'branch-documents',
     'branch-payouts', 'branch-fraud', 'branch-payment-links', 'branch-invoices',
     'branch-expenses', 'branch-tags', 'branch-petty-cash', 'branch-analytics',
-    'branch-scheduled-payouts', 'branch-support',
+    'branch-scheduled-payouts', 'branch-bulk-payouts', 'branch-support',
+    'branch-bulk-invoices', 'branch-invoice-schedules', 'branch-recipient-suppressions',
+    'branch-settlement-preferences', 'branch-limits',
   ]
   if (typeof to.name === 'string' && branchOperatorRoutes.includes(to.name)) {
     if (to.params.orgId !== auth.meta.organizationId) {
@@ -445,7 +517,8 @@ router.beforeEach((to) => {
     to.name === 'org-transfers' || to.name === 'org-statements' || to.name === 'org-analytics' ||
     to.name === 'org-bulk-payouts' || to.name === 'org-petty-cash' || to.name === 'org-payment-links' ||
     to.name === 'org-invoices' || to.name === 'org-expenses' || to.name === 'org-tags' ||
-    to.name === 'org-support'
+    to.name === 'org-support' || to.name === 'org-bulk-invoices' || to.name === 'org-invoice-schedules' ||
+    to.name === 'org-recipient-suppressions' || to.name === 'org-settlement-preferences'
   ) {
     if (to.params.orgId !== auth.meta.organizationId || auth.meta.memberType !== 'org_member') {
       return resolveLandingRoute(auth.meta)

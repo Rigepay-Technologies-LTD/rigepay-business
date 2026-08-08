@@ -2,7 +2,8 @@
 import { ref, computed, onMounted } from 'vue'
 import {
   createPettyCashFloat, fetchPettyCashFloats, fundPettyCashFloat, fetchPettyCashHistory,
-  fetchOrgBranches, requestPettyCashPayout, confirmPettyCashPayout, fetchOrgBankCodes,
+  fetchOrgBranches, requestPettyCashPayout, confirmPettyCashPayout, fetchOrgBankCodes, validateOrgShortcode,
+  validateOrgBankAccount, validateOrgMobileMoney,
   type PettyCashFloat, type PettyCashDraw, type BranchSummary, type BankCode,
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
@@ -166,11 +167,64 @@ const pettyCashCategoryOptions = [
 const resolvedPayoutCategory = computed(() =>
   payoutCategory.value === 'Other' ? payoutCategoryOther.value.trim() : payoutCategory.value
 )
-const payoutDestinationType = ref<'PHONE_NUMBER' | 'BANK_ACCOUNT'>('PHONE_NUMBER')
+const payoutDestinationType = ref<'PHONE_NUMBER' | 'BANK_ACCOUNT' | 'PAYBILL' | 'TILL_NUMBER'>('PHONE_NUMBER')
 const payoutPhoneNumber = ref('')
+const payoutShortcode = ref('')
+const payoutAccountReference = ref('')
 const payoutBankCode = ref('')
 const payoutBankAccountNumber = ref('')
 const payoutConfirmSecret = ref('')
+
+const payoutVerifying = ref(false)
+const payoutShortcodeValidation = ref<{ ok: boolean; message: string } | null>(null)
+async function verifyPayoutShortcode() {
+  payoutShortcodeValidation.value = null
+  if (!payoutShortcode.value.trim()) {
+    payoutShortcodeValidation.value = { ok: false, message: `Enter a ${payoutDestinationType.value === 'PAYBILL' ? 'paybill' : 'till'} number first.` }
+    return
+  }
+  payoutVerifying.value = true
+  try {
+    const result = await validateOrgShortcode(false, payoutShortcode.value.trim(), payoutDestinationType.value === 'PAYBILL' ? 'paybill' : 'till')
+    payoutShortcodeValidation.value = { ok: true, message: `Account holder: ${result.account_name}` }
+    if (!payoutRecipientName.value.trim()) payoutRecipientName.value = result.account_name
+  } catch (err) {
+    payoutShortcodeValidation.value = { ok: false, message: extractErrorMessage(err) }
+  } finally {
+    payoutVerifying.value = false
+  }
+}
+
+// Verify recipient for phone / bank-account destinations — mirrors
+// verifyPayoutShortcode above (paybill/till already had this).
+const payoutRecipientValidation = ref<{ ok: boolean; message: string } | null>(null)
+async function verifyPayoutRecipient() {
+  payoutRecipientValidation.value = null
+  payoutVerifying.value = true
+  try {
+    if (payoutDestinationType.value === 'BANK_ACCOUNT') {
+      if (!payoutBankAccountNumber.value.trim() || !payoutBankCode.value) {
+        payoutRecipientValidation.value = { ok: false, message: 'Enter a bank and account number first.' }
+        return
+      }
+      const result = await validateOrgBankAccount(payoutBankAccountNumber.value.trim(), payoutBankCode.value)
+      payoutRecipientValidation.value = { ok: true, message: `Account holder: ${result.account_name}` }
+      if (!payoutRecipientName.value.trim()) payoutRecipientName.value = result.account_name
+    } else {
+      if (!payoutPhoneNumber.value.trim()) {
+        payoutRecipientValidation.value = { ok: false, message: 'Enter a phone number first.' }
+        return
+      }
+      const result = await validateOrgMobileMoney(payoutPhoneNumber.value.trim())
+      payoutRecipientValidation.value = { ok: true, message: `Account holder: ${result.account_name}` }
+      if (!payoutRecipientName.value.trim()) payoutRecipientName.value = result.account_name
+    }
+  } catch (err) {
+    payoutRecipientValidation.value = { ok: false, message: extractErrorMessage(err) }
+  } finally {
+    payoutVerifying.value = false
+  }
+}
 
 const payoutOtpStep = ref(false)
 const payoutOtp = ref('')
@@ -186,6 +240,9 @@ function resetPayoutForm() {
   payoutCategoryOther.value = ''
   payoutDestinationType.value = 'PHONE_NUMBER'
   payoutPhoneNumber.value = ''
+  payoutShortcode.value = ''
+  payoutAccountReference.value = ''
+  payoutShortcodeValidation.value = null
   payoutBankCode.value = ''
   payoutBankAccountNumber.value = ''
   payoutConfirmSecret.value = ''
@@ -217,9 +274,15 @@ async function submitPayout() {
     payoutError.value = `This float only has KES ${formatMoney(payoutFloat.value.balance_cents)} available.`
     return
   }
+  const isShortcode = payoutDestinationType.value === 'PAYBILL' || payoutDestinationType.value === 'TILL_NUMBER'
   if (payoutDestinationType.value === 'BANK_ACCOUNT') {
     if (!payoutBankCode.value || !payoutBankAccountNumber.value.trim()) {
       payoutError.value = 'Select a bank and enter the account number.'
+      return
+    }
+  } else if (isShortcode) {
+    if (!payoutShortcode.value.trim()) {
+      payoutError.value = `Enter the ${payoutDestinationType.value === 'PAYBILL' ? 'paybill' : 'till'} number.`
       return
     }
   } else if (!payoutPhoneNumber.value.trim()) {
@@ -240,6 +303,8 @@ async function submitPayout() {
       category: resolvedPayoutCategory.value || undefined,
       destination_type: payoutDestinationType.value,
       phone_number: payoutDestinationType.value === 'PHONE_NUMBER' ? payoutPhoneNumber.value.trim() : undefined,
+      shortcode: isShortcode ? payoutShortcode.value.trim() : undefined,
+      account_reference: isShortcode ? payoutAccountReference.value.trim() || undefined : undefined,
       bank_code: payoutDestinationType.value === 'BANK_ACCOUNT' ? payoutBankCode.value : undefined,
       bank_account_number: payoutDestinationType.value === 'BANK_ACCOUNT' ? payoutBankAccountNumber.value.trim() : undefined,
       ...(isOwner ? { pin: payoutConfirmSecret.value } : { password: payoutConfirmSecret.value }),
@@ -430,11 +495,35 @@ function cancelPayoutOtp() {
 
           <div class="flex flex-col gap-3">
             <p class="text-[11px] font-bold text-text-muted uppercase tracking-wide">1. Where's it going</p>
-            <AppSelect v-model="payoutDestinationType" label="Pay out via" :options="[{ value: 'PHONE_NUMBER', label: 'Mobile money (M-Pesa)' }, { value: 'BANK_ACCOUNT', label: 'Bank account' }]" />
-            <AppInput v-if="payoutDestinationType === 'PHONE_NUMBER'" v-model="payoutPhoneNumber" label="Recipient phone" placeholder="+254712345678" required />
-            <div v-else class="grid grid-cols-2 gap-3">
-              <AppSelect v-model="payoutBankCode" label="Bank" placeholder="— Select bank —" :options="bankOptions" required />
-              <AppInput v-model="payoutBankAccountNumber" label="Account number" required />
+            <AppSelect v-model="payoutDestinationType" label="Pay out via" :options="[{ value: 'PHONE_NUMBER', label: 'Mobile money (M-Pesa)' }, { value: 'PAYBILL', label: 'Paybill' }, { value: 'TILL_NUMBER', label: 'Till number' }, { value: 'BANK_ACCOUNT', label: 'Bank account' }]" />
+            <div v-if="payoutDestinationType === 'PHONE_NUMBER'" class="grid grid-cols-2 gap-3 items-end">
+              <AppInput v-model="payoutPhoneNumber" label="Recipient phone" placeholder="+254712345678" required />
+              <AppButton type="button" variant="secondary" :loading="payoutVerifying" @click="verifyPayoutRecipient">Verify recipient</AppButton>
+            </div>
+            <div v-else-if="payoutDestinationType === 'PAYBILL' || payoutDestinationType === 'TILL_NUMBER'" class="flex flex-col gap-3">
+              <div class="grid grid-cols-2 gap-3 items-end">
+                <AppInput
+                  v-model="payoutShortcode"
+                  :label="payoutDestinationType === 'PAYBILL' ? 'Paybill number' : 'Till number'"
+                  :placeholder="payoutDestinationType === 'PAYBILL' ? 'e.g. 522522' : 'e.g. 123456'"
+                  required
+                />
+                <AppButton type="button" variant="secondary" :loading="payoutVerifying" @click="verifyPayoutShortcode">Verify recipient</AppButton>
+              </div>
+              <AppInput v-if="payoutDestinationType === 'PAYBILL'" v-model="payoutAccountReference" label="Account number / reference (optional)" placeholder="e.g. invoice or account number" />
+              <div v-if="payoutShortcodeValidation" :class="['text-xs rounded-lg px-3 py-2', payoutShortcodeValidation.ok ? 'bg-success-light text-success-text' : 'bg-error-light text-error-text']">
+                {{ payoutShortcodeValidation.message }}
+              </div>
+            </div>
+            <div v-else class="flex flex-col gap-3">
+              <div class="grid grid-cols-2 gap-3">
+                <AppSelect v-model="payoutBankCode" label="Bank" placeholder="— Select bank —" :options="bankOptions" required />
+                <AppInput v-model="payoutBankAccountNumber" label="Account number" required />
+              </div>
+              <AppButton type="button" variant="secondary" class="self-start" :loading="payoutVerifying" @click="verifyPayoutRecipient">Verify recipient</AppButton>
+            </div>
+            <div v-if="payoutRecipientValidation" :class="['text-xs rounded-lg px-3 py-2', payoutRecipientValidation.ok ? 'bg-success-light text-success-text' : 'bg-error-light text-error-text']">
+              {{ payoutRecipientValidation.message }}
             </div>
           </div>
 

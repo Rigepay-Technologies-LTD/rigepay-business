@@ -12,6 +12,7 @@ defineProps<{
   readonly?: boolean
   required?: boolean
   tooltip?: string
+  list?: string
 }>()
 
 defineEmits<{ (e: 'update:modelValue', v: string): void }>()
@@ -36,6 +37,7 @@ defineEmits<{ (e: 'update:modelValue', v: string): void }>()
         :disabled="disabled"
         :readonly="readonly"
         :required="required"
+        :list="list"
         :class="[
           'w-full h-10 rounded-xl border text-sm font-medium text-text-primary placeholder:text-input-placeholder',
           'bg-input-bg outline-none transition-all duration-200',

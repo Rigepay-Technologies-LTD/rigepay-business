@@ -9,6 +9,7 @@ import {
 import { extractErrorMessage } from '@/lib/errors'
 import { formatDate } from '@/lib/format'
 import { useResponseModal } from '@/composables/useResponseModal'
+import { useConfirmModal } from '@/composables/useConfirmModal'
 import DashboardLayout from '@/layouts/DashboardLayout.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppButton from '@/components/ui/AppButton.vue'
@@ -22,6 +23,7 @@ import { PlusIcon, ChevronDownIcon, ChevronUpIcon, UserIcon, PencilIcon } from '
 const props = defineProps<{ orgId: string }>()
 const auth = useAuthStore()
 const { showError, showSuccess } = useResponseModal()
+const { confirmAction } = useConfirmModal()
 
 const loading = ref(true)
 const error = ref<string | null>(null)
@@ -264,7 +266,14 @@ const actionError = ref<Record<string, string>>({})
 const actionLoading = ref<string | null>(null)
 
 async function handleSuspend(memberId: string) {
-  if (!confirm('Suspend this member? They will immediately lose access.')) return
+  const ok = await confirmAction({
+    title: 'Suspend this member?',
+    message: 'They will immediately lose access.',
+    confirmLabel: 'Suspend',
+    cancelLabel: 'Cancel',
+    danger: true,
+  })
+  if (!ok) return
   actionError.value = { ...actionError.value, [memberId]: '' }
   actionLoading.value = memberId
   try {
@@ -297,7 +306,14 @@ async function handleReactivate(memberId: string) {
 const resetResult = ref<Record<string, string>>({})
 
 async function handleResetPassword(memberId: string) {
-  if (!confirm("Reset this member's password? They will be emailed a new temporary password and any active session will be logged out.")) return
+  const ok = await confirmAction({
+    title: "Reset this member's password?",
+    message: 'They will be emailed a new temporary password and any active session will be logged out.',
+    confirmLabel: 'Reset password',
+    cancelLabel: 'Cancel',
+    danger: true,
+  })
+  if (!ok) return
   actionError.value = { ...actionError.value, [memberId]: '' }
   actionLoading.value = memberId
   try {

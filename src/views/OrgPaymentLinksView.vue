@@ -7,6 +7,7 @@ import {
 import { extractErrorMessage } from '@/lib/errors'
 import { formatMoney, formatDate } from '@/lib/format'
 import { useResponseModal } from '@/composables/useResponseModal'
+import { useConfirmModal } from '@/composables/useConfirmModal'
 import DashboardLayout from '@/layouts/DashboardLayout.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppButton from '@/components/ui/AppButton.vue'
@@ -17,6 +18,7 @@ import { PlusIcon, LinkIcon, CopyIcon, CheckIcon } from 'lucide-vue-next'
 
 const props = defineProps<{ orgId: string }>()
 const { showError } = useResponseModal()
+const { confirmAction } = useConfirmModal()
 
 const loading = ref(true)
 const error = ref<string | null>(null)
@@ -93,7 +95,14 @@ function linkUrl(link: OrgPaymentLink): string {
 
 const closingId = ref<string | null>(null)
 async function handleClose(link: OrgPaymentLink) {
-  if (!confirm('Close this payment link? It will no longer accept payments.')) return
+  const ok = await confirmAction({
+    title: 'Close this payment link?',
+    message: 'It will no longer accept payments.',
+    confirmLabel: 'Close link',
+    cancelLabel: 'Keep it',
+    danger: true,
+  })
+  if (!ok) return
   closingId.value = link.id
   try {
     await closeOrgPaymentLink(link.id)

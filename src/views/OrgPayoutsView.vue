@@ -4,7 +4,7 @@ import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import {
   requestOrgPayoutAsMember, confirmOrgPayoutAsMember, fetchPendingPayoutApprovals, approvePayoutRequest, rejectPayoutRequest,
-  fetchOrgBranches, validateOrgBankAccount, validateOrgMobileMoney, validateOrgScreenName, fetchOrgBankCodes,
+  fetchOrgBranches, validateOrgBankAccount, validateOrgMobileMoney, validateOrgShortcode, validateOrgScreenName, fetchOrgBankCodes,
   fetchOrgProfile, fetchOrgBeneficiaries, createOrgBeneficiary, deleteOrgBeneficiary, fetchRecentSettlements,
   fetchApprovalThreshold, setApprovalThreshold, fetchPayoutFeeEstimate,
   fetchRoleApprovalThresholds, setRoleApprovalThreshold,
@@ -69,13 +69,15 @@ const feeEstimate = ref<PayoutFeeEstimate | null>(null)
 const feeEstimateLoading = ref(false)
 let feeEstimateTimer: ReturnType<typeof setTimeout> | null = null
 const phoneNumber = ref('')
+const shortcode = ref('')
+const accountReference = ref('')
 const bankCode = ref('')
 const bankAccountNumber = ref('')
 const recipientName = ref('')
 const remarks = ref('')
 const branchId = ref('')
 const confirmSecret = ref('')
-const destinationType = ref<'PHONE_NUMBER' | 'BANK_ACCOUNT'>('PHONE_NUMBER')
+const destinationType = ref<'PHONE_NUMBER' | 'BANK_ACCOUNT' | 'PAYBILL' | 'TILL_NUMBER'>('PHONE_NUMBER')
 
 const branchOptions = computed(() => {
   const options = branches.value.map((b) => ({ value: b.id, label: `${b.name} (KES ${formatMoney(b.main_cents)} available)` }))
@@ -90,6 +92,8 @@ const branchOptions = computed(() => {
 
 const destinationOptions = [
   { value: 'PHONE_NUMBER', label: 'Mobile money (M-Pesa)' },
+  { value: 'PAYBILL', label: 'Paybill' },
+  { value: 'TILL_NUMBER', label: 'Till number' },
   { value: 'BANK_ACCOUNT', label: 'Bank account' },
 ]
 
@@ -152,6 +156,8 @@ function applyBeneficiary(id: string) {
     bankCode.value = ''
     bankAccountNumber.value = ''
   }
+  shortcode.value = ''
+  accountReference.value = ''
   validationResult.value = null
   screening.value = null
 }
@@ -201,6 +207,8 @@ function repeatSettlement(s: RecentSettlement) {
     bankCode.value = ''
     bankAccountNumber.value = ''
   }
+  shortcode.value = ''
+  accountReference.value = ''
   branchId.value = s.branch_id ?? 'org'
   validationResult.value = null
   screening.value = null
@@ -220,6 +228,14 @@ async function validateRecipient() {
         return
       }
       const result = await validateOrgBankAccount(bankAccountNumber.value.trim(), bankCode.value)
+      validationResult.value = { ok: true, message: `Account holder: ${result.account_name}` }
+      if (!recipientName.value.trim()) recipientName.value = result.account_name
+    } else if (destinationType.value === 'PAYBILL' || destinationType.value === 'TILL_NUMBER') {
+      if (!shortcode.value.trim()) {
+        validationResult.value = { ok: false, message: `Enter a ${destinationType.value === 'PAYBILL' ? 'paybill' : 'till'} number first.` }
+        return
+      }
+      const result = await validateOrgShortcode(isBranchSession, shortcode.value.trim(), destinationType.value === 'PAYBILL' ? 'paybill' : 'till')
       validationResult.value = { ok: true, message: `Account holder: ${result.account_name}` }
       if (!recipientName.value.trim()) recipientName.value = result.account_name
     } else {
@@ -261,6 +277,8 @@ function resetPayoutForm() {
   amountKes.value = ''
   feeEstimate.value = null
   phoneNumber.value = ''
+  shortcode.value = ''
+  accountReference.value = ''
   bankCode.value = ''
   bankAccountNumber.value = ''
   recipientName.value = ''
@@ -287,6 +305,11 @@ async function submitPayout() {
       requestError.value = 'Select a bank and enter the account number.'
       return
     }
+  } else if (destinationType.value === 'PAYBILL' || destinationType.value === 'TILL_NUMBER') {
+    if (!shortcode.value.trim()) {
+      requestError.value = `Enter the ${destinationType.value === 'PAYBILL' ? 'paybill' : 'till'} number.`
+      return
+    }
   } else if (!phoneNumber.value.trim()) {
     requestError.value = 'Recipient phone number is required.'
     return
@@ -297,6 +320,7 @@ async function submitPayout() {
   }
   requesting.value = true
   try {
+    const isShortcode = destinationType.value === 'PAYBILL' || destinationType.value === 'TILL_NUMBER'
     const result = await requestOrgPayoutAsMember({
       amount: amountCents,
       recipient_name: recipientName.value.trim(),
@@ -304,19 +328,21 @@ async function submitPayout() {
       branch_id: branchId.value,
       destination_type: destinationType.value,
       phone_number: destinationType.value === 'PHONE_NUMBER' ? phoneNumber.value.trim() : undefined,
+      shortcode: isShortcode ? shortcode.value.trim() : undefined,
+      account_reference: isShortcode ? accountReference.value.trim() || undefined : undefined,
       bank_code: destinationType.value === 'BANK_ACCOUNT' ? bankCode.value : undefined,
       bank_account_number: destinationType.value === 'BANK_ACCOUNT' ? bankAccountNumber.value.trim() : undefined,
       password: isOwner ? undefined : confirmSecret.value,
       pin: isOwner ? confirmSecret.value : undefined,
     })
 
-    if (saveAsBeneficiary.value && beneficiaryNickname.value.trim() && !isBranchSession) {
+    if (saveAsBeneficiary.value && beneficiaryNickname.value.trim() && !isBranchSession && !isShortcode) {
       savingBeneficiary.value = true
       try {
         const b = await createOrgBeneficiary({
           nickname: beneficiaryNickname.value.trim(),
           recipient_name: recipientName.value.trim(),
-          destination_type: destinationType.value,
+          destination_type: destinationType.value as 'PHONE_NUMBER' | 'BANK_ACCOUNT',
           phone_number: destinationType.value === 'PHONE_NUMBER' ? phoneNumber.value.trim() : undefined,
           bank_code: destinationType.value === 'BANK_ACCOUNT' ? bankCode.value : undefined,
           bank_account_number: destinationType.value === 'BANK_ACCOUNT' ? bankAccountNumber.value.trim() : undefined,
@@ -654,6 +680,18 @@ watch([amountKes, destinationType], () => {
             <AppInput v-model="phoneNumber" label="Recipient phone" placeholder="+254712345678" required />
             <AppButton type="button" variant="secondary" :loading="validating" @click="validateRecipient">Verify recipient</AppButton>
           </div>
+          <div v-else-if="destinationType === 'PAYBILL' || destinationType === 'TILL_NUMBER'" class="flex flex-col gap-3">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
+              <AppInput
+                v-model="shortcode"
+                :label="destinationType === 'PAYBILL' ? 'Paybill number' : 'Till number'"
+                :placeholder="destinationType === 'PAYBILL' ? 'e.g. 522522' : 'e.g. 123456'"
+                required
+              />
+              <AppButton type="button" variant="secondary" :loading="validating" @click="validateRecipient">Verify recipient</AppButton>
+            </div>
+            <AppInput v-if="destinationType === 'PAYBILL'" v-model="accountReference" label="Account number / reference (optional)" placeholder="e.g. invoice or account number" />
+          </div>
           <div v-else class="flex flex-col gap-3">
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <AppSelect v-model="bankCode" label="Bank" placeholder="— Select bank —" :options="bankOptions" required />
@@ -698,7 +736,7 @@ watch([amountKes, destinationType], () => {
 
           <AppInput v-model="remarks" label="Remarks" placeholder="Reason for this payout" required />
 
-          <div v-if="!isBranchSession" class="flex flex-col gap-2">
+          <div v-if="!isBranchSession && destinationType !== 'PAYBILL' && destinationType !== 'TILL_NUMBER'" class="flex flex-col gap-2">
             <label class="flex items-center gap-2 text-xs font-medium text-text-secondary cursor-pointer">
               <input v-model="saveAsBeneficiary" type="checkbox" class="rounded border-input-border" />
               Save this recipient as a beneficiary for next time

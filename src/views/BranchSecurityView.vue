@@ -11,6 +11,7 @@ import { formatDate } from '@/lib/format'
 import { decodeCreationOptions, encodeAttestationResponse, isWebAuthnSupported } from '@/lib/webauthn'
 import { useAuthStore } from '@/stores/auth'
 import { useResponseModal } from '@/composables/useResponseModal'
+import { useConfirmModal } from '@/composables/useConfirmModal'
 import DashboardLayout from '@/layouts/DashboardLayout.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppButton from '@/components/ui/AppButton.vue'
@@ -21,6 +22,7 @@ const props = defineProps<{ orgId: string; branchId: string }>()
 const auth = useAuthStore()
 const isBranchSession = computed(() => auth.meta?.memberType === 'branch_member')
 const { showError } = useResponseModal()
+const { confirmAction } = useConfirmModal()
 
 const methods = ref<Enrolled2FAMethods | null>(null)
 const methodsLoading = ref(true)
@@ -146,7 +148,14 @@ const removeError = ref<string | null>(null)
 
 async function handleDisableTotp() {
   removeError.value = null
-  if (!confirm('Remove your authenticator app? You will need to use another 2FA method to log in.')) return
+  const ok = await confirmAction({
+    title: 'Remove your authenticator app?',
+    message: 'You will need to use another 2FA method to log in.',
+    confirmLabel: 'Remove',
+    cancelLabel: 'Keep it',
+    danger: true,
+  })
+  if (!ok) return
   removingTotp.value = true
   try {
     await disableTotp(isBranchSession.value)
@@ -162,7 +171,14 @@ async function handleDisableTotp() {
 
 async function handleDeletePasskey(id: string) {
   removeError.value = null
-  if (!confirm('Remove this passkey? It will no longer work for signing in.')) return
+  const ok = await confirmAction({
+    title: 'Remove this passkey?',
+    message: 'It will no longer work for signing in.',
+    confirmLabel: 'Remove',
+    cancelLabel: 'Keep it',
+    danger: true,
+  })
+  if (!ok) return
   removingPasskeyId.value = id
   try {
     await deletePasskey(isBranchSession.value, id)

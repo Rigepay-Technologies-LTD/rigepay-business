@@ -73,36 +73,42 @@ const navItems = computed(() => [
   { name: 'Payouts', group: 'Money movement', icon: BanknoteIcon, active: isOrgWide.value || !!props.branchId, to: isOrgWide.value && !isBranchMode.value
       ? { name: 'org-payouts', params: { orgId: props.orgId } }
       : { name: 'branch-payouts', params: { orgId: props.orgId, branchId: props.branchId } } },
-  { name: 'Bulk payouts', group: 'Money movement', icon: LayersIcon, active: orgOnly.value, to: { name: 'org-bulk-payouts', params: { orgId: props.orgId } } },
+  { name: 'Bulk payouts', group: 'Money movement', icon: LayersIcon, active: isOrgWide.value || !!props.branchId, to: isOrgWide.value && !isBranchMode.value
+      ? { name: 'org-bulk-payouts', params: { orgId: props.orgId } }
+      : { name: 'branch-bulk-payouts', params: { orgId: props.orgId, branchId: props.branchId } } },
   { name: 'Payment links', group: 'Money movement', icon: LinkIcon, active: isOrgWide.value || !!props.branchId, to: isOrgWide.value && !isBranchMode.value
       ? { name: 'org-payment-links', params: { orgId: props.orgId } }
       : { name: 'branch-payment-links', params: { orgId: props.orgId, branchId: props.branchId } } },
   { name: 'Invoices', group: 'Money movement', icon: ClipboardListIcon, active: isOrgWide.value || !!props.branchId, to: isOrgWide.value && !isBranchMode.value
       ? { name: 'org-invoices', params: { orgId: props.orgId } }
       : { name: 'branch-invoices', params: { orgId: props.orgId, branchId: props.branchId } } },
+  { name: 'Bulk invoices', group: 'Money movement', icon: LayersIcon, active: isOrgWide.value || !!props.branchId, to: isOrgWide.value && !isBranchMode.value
+      ? { name: 'org-bulk-invoices', params: { orgId: props.orgId } }
+      : { name: 'branch-bulk-invoices', params: { orgId: props.orgId, branchId: props.branchId } } },
+  { name: 'Invoice schedules', group: 'Money movement', icon: CalendarClockIcon, active: isOrgWide.value || !!props.branchId, to: isOrgWide.value && !isBranchMode.value
+      ? { name: 'org-invoice-schedules', params: { orgId: props.orgId } }
+      : { name: 'branch-invoice-schedules', params: { orgId: props.orgId, branchId: props.branchId } } },
+  { name: 'Recipient suppressions', group: 'Money movement', icon: ShieldAlertIcon, active: isOrgWide.value || !!props.branchId, to: isOrgWide.value && !isBranchMode.value
+      ? { name: 'org-recipient-suppressions', params: { orgId: props.orgId } }
+      : { name: 'branch-recipient-suppressions', params: { orgId: props.orgId, branchId: props.branchId } } },
   { name: 'Expenses', group: 'Money movement', icon: ReceiptIcon, active: isOrgWide.value || !!props.branchId, to: isOrgWide.value && !isBranchMode.value
       ? { name: 'org-expenses', params: { orgId: props.orgId } }
       : { name: 'branch-expenses', params: { orgId: props.orgId, branchId: props.branchId } } },
   { name: 'Petty cash', group: 'Money movement', icon: CoinsIcon, active: isOrgWide.value || !!props.branchId, to: isOrgWide.value && !isBranchMode.value
       ? { name: 'org-petty-cash', params: { orgId: props.orgId } }
       : { name: 'branch-petty-cash', params: { orgId: props.orgId, branchId: props.branchId } } },
-  // Visible org-wide, and for a genuine branch member (their own branch to
-  // org/sibling branches) — but NOT for an org member viewing a branch via
-  // the switcher, since the branch-scoped transfer endpoints reject that
-  // impersonation (no branch_member row to confirm against). That case
-  // just uses the org-wide Transfers page directly instead.
-  { name: 'Transfers', group: 'Money movement', icon: ArrowLeftRightIcon, active: orgOnly.value || (!isOrgWide.value && !!props.branchId), to: isOrgWide.value
+
+  { name: 'Transfers', group: 'Money movement', icon: ArrowLeftRightIcon, active: isOrgWide.value || !!props.branchId, to: isOrgWide.value && !isBranchMode.value
       ? { name: 'org-transfers', params: { orgId: props.orgId } }
       : { name: 'branch-transfers', params: { orgId: props.orgId, branchId: props.branchId } } },
   { name: 'Vaults', group: 'Money movement', icon: VaultIcon, active: orgOnly.value, to: { name: 'org-vaults', params: { orgId: props.orgId } } },
-  // Visible org-wide and for a genuine branch member — same
-  // impersonation-rejection reasoning as Transfers: the branch-scoped
-  // create/confirm/pause endpoints reject org-member-as-branch sessions (no
-  // real branch identity to attribute the schedule to), so that case just
-  // uses the org-wide page instead.
-  { name: 'Scheduled payouts', group: 'Money movement', icon: CalendarClockIcon, active: orgOnly.value || (!isOrgWide.value && !!props.branchId), to: isOrgWide.value
+
+  { name: 'Scheduled payouts', group: 'Money movement', icon: CalendarClockIcon, active: isOrgWide.value || !!props.branchId, to: isOrgWide.value && !isBranchMode.value
       ? { name: 'org-scheduled-payouts', params: { orgId: props.orgId } }
       : { name: 'branch-scheduled-payouts', params: { orgId: props.orgId, branchId: props.branchId } } },
+  { name: 'Settlement preferences', group: 'Money movement', icon: WalletIcon, active: isOrgWide.value || !!props.branchId, to: isOrgWide.value && !isBranchMode.value
+      ? { name: 'org-settlement-preferences', params: { orgId: props.orgId } }
+      : { name: 'branch-settlement-preferences', params: { orgId: props.orgId, branchId: props.branchId } } },
 
   { name: 'Analytics', group: 'Insights', icon: BarChart3Icon, active: isOrgWide.value || !!props.branchId, to: isOrgWide.value && !isBranchMode.value
       ? { name: 'org-analytics', params: { orgId: props.orgId } }
@@ -120,7 +126,9 @@ const navItems = computed(() => [
   { name: 'Documents', group: 'Organization', icon: FileTextIcon, active: orgOnly.value, to: { name: 'org-documents', params: { orgId: props.orgId } } },
   { name: 'Directors', group: 'Organization', icon: UserCheckIcon, active: orgOnly.value && isOwner.value, to: { name: 'org-directors', params: { orgId: props.orgId } } },
   { name: 'Credentials', group: 'Organization', icon: KeyIcon, active: orgOnly.value, to: { name: 'org-credentials', params: { orgId: props.orgId } } },
-  { name: 'Limits', group: 'Organization', icon: GaugeIcon, active: orgOnly.value, to: { name: 'org-limits', params: { orgId: props.orgId } } },
+  { name: 'Limits', group: 'Organization', icon: GaugeIcon, active: isOrgWide.value || !!props.branchId, to: isOrgWide.value && !isBranchMode.value
+      ? { name: 'org-limits', params: { orgId: props.orgId } }
+      : { name: 'branch-limits', params: { orgId: props.orgId, branchId: props.branchId } } },
   { name: 'Audit log', group: 'Organization', icon: ScrollTextIcon, active: orgOnly.value, to: { name: 'org-audit-log', params: { orgId: props.orgId } } },
 
 
@@ -156,9 +164,12 @@ function isCurrent(itemName: string) {
   if (itemName === 'Profile') return route.name === 'org-profile' || route.name === 'branch-profile'
   if (itemName === 'Members') return route.name === 'org-members'
   if (itemName === 'Payouts') return route.name === 'org-payouts' || route.name === 'branch-payouts'
-  if (itemName === 'Bulk payouts') return route.name === 'org-bulk-payouts'
+  if (itemName === 'Bulk payouts') return route.name === 'org-bulk-payouts' || route.name === 'branch-bulk-payouts'
   if (itemName === 'Payment links') return route.name === 'org-payment-links' || route.name === 'branch-payment-links'
   if (itemName === 'Invoices') return route.name === 'org-invoices' || route.name === 'branch-invoices'
+  if (itemName === 'Bulk invoices') return route.name === 'org-bulk-invoices' || route.name === 'branch-bulk-invoices'
+  if (itemName === 'Invoice schedules') return route.name === 'org-invoice-schedules' || route.name === 'branch-invoice-schedules'
+  if (itemName === 'Recipient suppressions') return route.name === 'org-recipient-suppressions' || route.name === 'branch-recipient-suppressions'
   if (itemName === 'Expenses') return route.name === 'org-expenses' || route.name === 'branch-expenses'
   if (itemName === 'Tags') return route.name === 'org-tags' || route.name === 'branch-tags'
   if (itemName === 'Petty cash') return route.name === 'org-petty-cash' || route.name === 'branch-petty-cash'
@@ -169,9 +180,10 @@ function isCurrent(itemName: string) {
   if (itemName === 'Transactions') return route.name === 'org-transactions' || route.name === 'branch-transactions'
   if (itemName === 'Statements') return route.name === 'org-statements'
   if (itemName === 'Analytics') return route.name === 'org-analytics' || route.name === 'branch-analytics'
-  if (itemName === 'Limits') return route.name === 'org-limits'
+  if (itemName === 'Limits') return route.name === 'org-limits' || route.name === 'branch-limits'
   if (itemName === 'Vaults') return route.name === 'org-vaults'
   if (itemName === 'Scheduled payouts') return route.name === 'org-scheduled-payouts' || route.name === 'branch-scheduled-payouts'
+  if (itemName === 'Settlement preferences') return route.name === 'org-settlement-preferences' || route.name === 'branch-settlement-preferences'
   if (itemName === 'Collect') return route.name === 'org-collect' || route.name === 'branch-collect'
   if (itemName === 'Security') return route.name === 'org-security' || route.name === 'branch-security'
   if (itemName === 'My KYC documents') return route.name === 'branch-documents'

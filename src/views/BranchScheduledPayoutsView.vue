@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import {
   fetchScheduledPayouts, createScheduledPayout, confirmScheduledPayout, pauseScheduledPayout, resumeScheduledPayout, cancelScheduledPayout,
-  fetchOrgBankCodes, fetchBranchPayoutFeeEstimate,
+  fetchOrgBankCodes, fetchBranchPayoutFeeEstimate, validateOrgShortcode,
   type ScheduledPayout, type BankCode, type PayoutFeeEstimate,
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
 import { formatMoney, formatDate } from '@/lib/format'
 import { useResponseModal } from '@/composables/useResponseModal'
+import { useConfirmModal } from '@/composables/useConfirmModal'
 import DashboardLayout from '@/layouts/DashboardLayout.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppButton from '@/components/ui/AppButton.vue'
@@ -21,6 +22,7 @@ import { PlusIcon } from 'lucide-vue-next'
 
 const props = defineProps<{ orgId: string; branchId: string }>()
 const { showError } = useResponseModal()
+const { confirmAction } = useConfirmModal()
 
 const loading = ref(true)
 const error = ref<string | null>(null)
@@ -62,7 +64,7 @@ const creating = ref(false)
 const createError = ref<string | null>(null)
 
 const amountKes = ref('')
-const destinationType = ref<'PHONE_NUMBER' | 'BANK_ACCOUNT'>('PHONE_NUMBER')
+const destinationType = ref<'PHONE_NUMBER' | 'BANK_ACCOUNT' | 'PAYBILL' | 'TILL_NUMBER'>('PHONE_NUMBER')
 const feeEstimate = ref<PayoutFeeEstimate | null>(null)
 const feeEstimateLoading = ref(false)
 let feeEstimateTimer: ReturnType<typeof setTimeout> | null = null
@@ -84,18 +86,45 @@ watch([amountKes, destinationType], () => {
   }, 400)
 })
 const phoneNumber = ref('')
+const shortcode = ref('')
+const accountReference = ref('')
 const bankCode = ref('')
 const bankAccountNumber = ref('')
 const recipientName = ref('')
+
+const validating = ref(false)
+const shortcodeValidation = ref<{ ok: boolean; message: string } | null>(null)
+async function validateShortcodeRecipient() {
+  shortcodeValidation.value = null
+  if (!shortcode.value.trim()) {
+    shortcodeValidation.value = { ok: false, message: `Enter a ${destinationType.value === 'PAYBILL' ? 'paybill' : 'till'} number first.` }
+    return
+  }
+  validating.value = true
+  try {
+    const result = await validateOrgShortcode(true, shortcode.value.trim(), destinationType.value === 'PAYBILL' ? 'paybill' : 'till')
+    shortcodeValidation.value = { ok: true, message: `Account holder: ${result.account_name}` }
+    if (!recipientName.value.trim()) recipientName.value = result.account_name
+  } catch (err) {
+    shortcodeValidation.value = { ok: false, message: extractErrorMessage(err) }
+  } finally {
+    validating.value = false
+  }
+}
 const remarks = ref('')
+const triggerType = ref<'SCHEDULE' | 'THRESHOLD'>('SCHEDULE')
+const thresholdKes = ref('')
 const scheduleType = ref<'ONE_TIME' | 'RECURRING'>('ONE_TIME')
 const recurrenceInterval = ref<'DAILY' | 'WEEKLY' | 'MONTHLY'>('MONTHLY')
+const recurrenceDayOfWeek = ref<number | null>(null)
+const recurrenceTimeOfDay = ref('')
+const tagsInput = ref('')
 const sweepFullBalance = ref(false)
 const confirmPassword = ref('')
 
 function onToggleSweep(checked: boolean) {
   sweepFullBalance.value = checked
-  if (checked) {
+  if (checked && triggerType.value === 'SCHEDULE') {
     scheduleType.value = 'RECURRING'
   }
 }
@@ -105,7 +134,13 @@ const endDate = ref('')
 
 const destinationOptions = [
   { value: 'PHONE_NUMBER', label: 'Mobile money (M-Pesa)' },
+  { value: 'PAYBILL', label: 'Paybill' },
+  { value: 'TILL_NUMBER', label: 'Till number' },
   { value: 'BANK_ACCOUNT', label: 'Bank account' },
+]
+const triggerTypeOptions = [
+  { value: 'SCHEDULE', label: 'Schedule (date/recurring)' },
+  { value: 'THRESHOLD', label: 'Threshold (balance reaches an amount)' },
 ]
 const scheduleTypeOptions = [
   { value: 'ONE_TIME', label: 'One-time (specific date)' },
@@ -116,17 +151,38 @@ const recurrenceOptions = [
   { value: 'WEEKLY', label: 'Weekly' },
   { value: 'MONTHLY', label: 'Monthly' },
 ]
+const dayOfWeekOptions = [
+  { value: '0', label: 'Sunday' },
+  { value: '1', label: 'Monday' },
+  { value: '2', label: 'Tuesday' },
+  { value: '3', label: 'Wednesday' },
+  { value: '4', label: 'Thursday' },
+  { value: '5', label: 'Friday' },
+  { value: '6', label: 'Saturday' },
+]
+const dayOfWeekModel = computed({
+  get: () => (recurrenceDayOfWeek.value === null ? '' : String(recurrenceDayOfWeek.value)),
+  set: (v: string) => { recurrenceDayOfWeek.value = v === '' ? null : Number(v) },
+})
 
 function resetCreateForm() {
   amountKes.value = ''
   feeEstimate.value = null
   phoneNumber.value = ''
+  shortcode.value = ''
+  accountReference.value = ''
+  shortcodeValidation.value = null
   bankCode.value = ''
   bankAccountNumber.value = ''
   recipientName.value = ''
   remarks.value = ''
+  triggerType.value = 'SCHEDULE'
+  thresholdKes.value = ''
   scheduleType.value = 'ONE_TIME'
   recurrenceInterval.value = 'MONTHLY'
+  recurrenceDayOfWeek.value = null
+  recurrenceTimeOfDay.value = ''
+  tagsInput.value = ''
   sweepFullBalance.value = false
   startAtDate.value = ''
   startAtTime.value = '09:00'
@@ -138,7 +194,7 @@ async function submitCreate() {
   createError.value = null
   const amountCents = Math.round(Number(amountKes.value) * 100)
   if (sweepFullBalance.value) {
-    if (scheduleType.value !== 'RECURRING') {
+    if (triggerType.value === 'SCHEDULE' && scheduleType.value !== 'RECURRING') {
       createError.value = 'Auto-settlement (sweep full balance) requires a recurring schedule.'
       return
     }
@@ -146,13 +202,29 @@ async function submitCreate() {
     createError.value = 'Enter a valid amount (min KES 1), or turn on "Sweep entire balance" for auto-settlement.'
     return
   }
-  if (!recipientName.value.trim() || !remarks.value.trim() || !startAtDate.value) {
-    createError.value = 'Recipient name, remarks, and a start date are all required.'
+  if (!recipientName.value.trim() || !remarks.value.trim()) {
+    createError.value = 'Recipient name and remarks are required.'
     return
   }
+  if (triggerType.value === 'THRESHOLD') {
+    const thresholdCents = Math.round(Number(thresholdKes.value) * 100)
+    if (!thresholdCents || thresholdCents <= 0) {
+      createError.value = 'Enter the wallet balance (KES) that should trigger this settlement.'
+      return
+    }
+  } else if (!startAtDate.value) {
+    createError.value = 'A start date is required for a scheduled rule.'
+    return
+  }
+  const isShortcode = destinationType.value === 'PAYBILL' || destinationType.value === 'TILL_NUMBER'
   if (destinationType.value === 'BANK_ACCOUNT') {
     if (!bankCode.value || !bankAccountNumber.value.trim()) {
       createError.value = 'Select a bank and enter the account number.'
+      return
+    }
+  } else if (isShortcode) {
+    if (!shortcode.value.trim()) {
+      createError.value = `Enter the ${destinationType.value === 'PAYBILL' ? 'paybill' : 'till'} number.`
       return
     }
   } else if (!phoneNumber.value.trim()) {
@@ -164,11 +236,18 @@ async function submitCreate() {
     return
   }
 
-  const startAt = new Date(`${startAtDate.value}T${startAtTime.value || '09:00'}:00`)
-  if (isNaN(startAt.getTime()) || startAt.getTime() <= Date.now()) {
-    createError.value = 'Start date/time must be in the future.'
-    return
+  let startAtIso: string | undefined
+  if (triggerType.value === 'SCHEDULE') {
+    const startAt = new Date(`${startAtDate.value}T${startAtTime.value || '09:00'}:00`)
+    if (isNaN(startAt.getTime()) || startAt.getTime() <= Date.now()) {
+      createError.value = 'Start date/time must be in the future.'
+      return
+    }
+    startAtIso = startAt.toISOString()
   }
+
+  const tags = tagsInput.value.split(',').map((t) => t.trim()).filter(Boolean)
+  const isWeeklyRecurring = triggerType.value === 'SCHEDULE' && scheduleType.value === 'RECURRING' && recurrenceInterval.value === 'WEEKLY'
 
   creating.value = true
   try {
@@ -177,15 +256,22 @@ async function submitCreate() {
       sweep_full_balance: sweepFullBalance.value || undefined,
       destination_type: destinationType.value,
       phone_number: destinationType.value === 'PHONE_NUMBER' ? phoneNumber.value.trim() : undefined,
+      shortcode: (destinationType.value === 'PAYBILL' || destinationType.value === 'TILL_NUMBER') ? shortcode.value.trim() : undefined,
+      account_reference: (destinationType.value === 'PAYBILL' || destinationType.value === 'TILL_NUMBER') ? accountReference.value.trim() || undefined : undefined,
       bank_code: destinationType.value === 'BANK_ACCOUNT' ? bankCode.value : undefined,
       bank_account_number: destinationType.value === 'BANK_ACCOUNT' ? bankAccountNumber.value.trim() : undefined,
       recipient_name: recipientName.value.trim(),
       remarks: remarks.value.trim(),
       funding_source: 'MAIN',
-      schedule_type: scheduleType.value,
-      recurrence_interval: scheduleType.value === 'RECURRING' ? recurrenceInterval.value : undefined,
-      start_at: startAt.toISOString(),
-      end_date: scheduleType.value === 'RECURRING' && endDate.value ? new Date(`${endDate.value}T23:59:59`).toISOString() : undefined,
+      trigger_type: triggerType.value,
+      threshold_cents: triggerType.value === 'THRESHOLD' ? Math.round(Number(thresholdKes.value) * 100) : undefined,
+      schedule_type: triggerType.value === 'SCHEDULE' ? scheduleType.value : undefined,
+      recurrence_interval: triggerType.value === 'SCHEDULE' && scheduleType.value === 'RECURRING' ? recurrenceInterval.value : undefined,
+      recurrence_day_of_week: isWeeklyRecurring && recurrenceDayOfWeek.value !== null ? recurrenceDayOfWeek.value : undefined,
+      recurrence_time_of_day: isWeeklyRecurring && recurrenceTimeOfDay.value ? recurrenceTimeOfDay.value : undefined,
+      start_at: startAtIso,
+      end_date: triggerType.value === 'SCHEDULE' && scheduleType.value === 'RECURRING' && endDate.value ? new Date(`${endDate.value}T23:59:59`).toISOString() : undefined,
+      tags: tags.length ? tags : undefined,
       password: confirmPassword.value,
     }, true)
     if (result.status === 'otp_required') {
@@ -267,7 +353,14 @@ async function handleResume(id: string) {
   }
 }
 async function handleCancel(id: string) {
-  if (!confirm('Cancel this scheduled payout? This cannot be undone.')) return
+  const ok = await confirmAction({
+    title: 'Cancel this scheduled payout?',
+    message: 'This cannot be undone.',
+    confirmLabel: 'Cancel payout',
+    cancelLabel: 'Keep it',
+    danger: true,
+  })
+  if (!ok) return
   actionLoading.value = id
   actionError.value = { ...actionError.value, [id]: '' }
   try {
@@ -345,6 +438,21 @@ function statusVariant(status: string) {
           <div v-if="destinationType === 'PHONE_NUMBER'">
             <AppInput v-model="phoneNumber" label="Recipient phone" placeholder="+254712345678" required />
           </div>
+          <div v-else-if="destinationType === 'PAYBILL' || destinationType === 'TILL_NUMBER'" class="flex flex-col gap-3">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
+              <AppInput
+                v-model="shortcode"
+                :label="destinationType === 'PAYBILL' ? 'Paybill number' : 'Till number'"
+                :placeholder="destinationType === 'PAYBILL' ? 'e.g. 522522' : 'e.g. 123456'"
+                required
+              />
+              <AppButton type="button" variant="secondary" :loading="validating" @click="validateShortcodeRecipient">Verify recipient</AppButton>
+            </div>
+            <AppInput v-if="destinationType === 'PAYBILL'" v-model="accountReference" label="Account number / reference (optional)" placeholder="e.g. invoice or account number" />
+            <div v-if="shortcodeValidation" :class="['text-xs rounded-lg px-3 py-2', shortcodeValidation.ok ? 'bg-success-light text-success-text' : 'bg-error-light text-error-text']">
+              {{ shortcodeValidation.message }}
+            </div>
+          </div>
           <div v-else class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <AppSelect v-model="bankCode" label="Bank" placeholder="— Select bank —" :options="bankOptions" required />
             <AppInput v-model="bankAccountNumber" label="Account number" required />
@@ -360,17 +468,40 @@ function statusVariant(status: string) {
             <span>Total debited per run: <span class="font-semibold text-text-primary">KES {{ formatMoney(feeEstimate.total_cents) }}</span></span>
           </div>
           <AppInput v-model="remarks" label="Remarks" placeholder="e.g. Monthly branch rent" required />
+          <AppInput v-model="tagsInput" label="Tags (optional)" placeholder="comma-separated, e.g. rent, ops" />
 
           <div class="border-t border-border pt-4 flex flex-col gap-4">
-            <p class="text-xs font-bold text-text-muted uppercase tracking-wider">Timing</p>
-            <AppSelect v-model="scheduleType" label="Schedule type" :options="scheduleTypeOptions" class="max-w-sm" />
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <AppInput v-model="startAtDate" type="date" :label="scheduleType === 'ONE_TIME' ? 'Run on' : 'First run on'" required />
-              <AppInput v-model="startAtTime" type="time" label="Time" />
-            </div>
-            <template v-if="scheduleType === 'RECURRING'">
-              <AppSelect v-model="recurrenceInterval" label="Repeats" :options="recurrenceOptions" class="max-w-sm" />
-              <AppInput v-model="endDate" type="date" label="End date (optional)" />
+            <p class="text-xs font-bold text-text-muted uppercase tracking-wider">Trigger</p>
+            <AppSelect v-model="triggerType" label="Run this rule based on" :options="triggerTypeOptions" class="max-w-sm" />
+
+            <template v-if="triggerType === 'THRESHOLD'">
+              <AppInput
+                v-model="thresholdKes" type="number" label="Trigger when wallet balance reaches (KES)"
+                placeholder="e.g. 50000" required
+              />
+              <p class="text-xs text-text-muted -mt-2">
+                Fires automatically once this branch's wallet balance reaches this amount, then re-arms only after
+                the balance drops back below it and rises again.
+              </p>
+            </template>
+
+            <template v-else>
+              <p class="text-xs font-bold text-text-muted uppercase tracking-wider">Timing</p>
+              <AppSelect v-model="scheduleType" label="Schedule type" :options="scheduleTypeOptions" class="max-w-sm" />
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <AppInput v-model="startAtDate" type="date" :label="scheduleType === 'ONE_TIME' ? 'Run on' : 'First run on'" required />
+                <AppInput v-model="startAtTime" type="time" label="Time" />
+              </div>
+              <template v-if="scheduleType === 'RECURRING'">
+                <AppSelect v-model="recurrenceInterval" label="Repeats" :options="recurrenceOptions" class="max-w-sm" />
+                <template v-if="recurrenceInterval === 'WEEKLY'">
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <AppSelect v-model="dayOfWeekModel" label="Day of week (optional)" placeholder="— Same weekday as first run —" :options="dayOfWeekOptions" />
+                    <AppInput v-model="recurrenceTimeOfDay" type="time" label="Time of day (optional)" />
+                  </div>
+                </template>
+                <AppInput v-model="endDate" type="date" label="End date (optional)" />
+              </template>
             </template>
           </div>
 
@@ -392,10 +523,20 @@ function statusVariant(status: string) {
             {{ (row as unknown as ScheduledPayout).sweep_full_balance ? 'Full balance' : `KES ${formatMoney(value as number)}` }}
           </template>
           <template #cell-schedule_type="{ row }">
-            {{ row.schedule_type === 'RECURRING' ? `Recurring (${(row as unknown as ScheduledPayout).recurrence_interval?.toLowerCase()})` : 'One-time' }}
+            <template v-if="(row as unknown as ScheduledPayout).trigger_type === 'THRESHOLD'">
+              Threshold (KES {{ formatMoney((row as unknown as ScheduledPayout).threshold_cents || 0) }})
+            </template>
+            <template v-else>
+              {{ row.schedule_type === 'RECURRING' ? `Recurring (${(row as unknown as ScheduledPayout).recurrence_interval?.toLowerCase()})` : 'One-time' }}
+            </template>
           </template>
           <template #cell-next_run_at="{ value, row }">
-            {{ row.status === 'COMPLETED' || row.status === 'CANCELLED' ? '—' : formatDate(value as string) }}
+            <template v-if="(row as unknown as ScheduledPayout).trigger_type === 'THRESHOLD'">
+              {{ (row as unknown as ScheduledPayout).threshold_armed === false ? 'Waiting to re-arm' : 'Armed' }}
+            </template>
+            <template v-else>
+              {{ row.status === 'COMPLETED' || row.status === 'CANCELLED' ? '—' : formatDate(value as string) }}
+            </template>
           </template>
           <template #cell-status="{ value }">
             <AppBadge :variant="statusVariant(value as string)" size="sm">{{ value }}</AppBadge>
@@ -413,7 +554,8 @@ function statusVariant(status: string) {
                   {{ sp.recipient_name }} — {{ sp.sweep_full_balance ? 'Full balance' : `KES ${formatMoney(sp.amount_cents)}` }}
                 </p>
                 <p class="text-xs text-text-muted mt-0.5">
-                  {{ sp.schedule_type === 'RECURRING' ? `Recurring (${sp.recurrence_interval?.toLowerCase()})` : 'One-time' }}
+                  <template v-if="sp.trigger_type === 'THRESHOLD'">Threshold (KES {{ formatMoney(sp.threshold_cents || 0) }})</template>
+                  <template v-else>{{ sp.schedule_type === 'RECURRING' ? `Recurring (${sp.recurrence_interval?.toLowerCase()})` : 'One-time' }}</template>
                   <template v-if="sp.last_run_status"> · last run: {{ sp.last_run_status }}</template>
                 </p>
               </div>
