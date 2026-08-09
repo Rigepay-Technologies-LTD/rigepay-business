@@ -1033,6 +1033,53 @@ export async function setTransactionPin(currentPassword: string, pin: string): P
   await http.post('/org/v1/security/transaction-pin', { current_password: currentPassword, pin })
 }
 
+// --- Panic PIN (org owner) / panic password (branch member) — duress
+// protection: entering this instead of the real secret during a payout
+// silently freezes the account and alerts security. Mirrors the merchant
+// panic-PIN flow (set once, then a 24h-cooldown + OTP change/removal flow). ---
+
+export async function setOrgPanicPin(currentPassword: string, panicPin: string): Promise<void> {
+  await http.post('/org/v1/security/panic-pin', {
+    current_password: currentPassword, panic_pin: panicPin, panic_pin_confirm: panicPin,
+  })
+}
+export async function requestOrgPanicPinChange(currentPassword: string, action: 'change' | 'remove'): Promise<{ available_at: string }> {
+  const res = await http.post<{ status: string; available_at: string }>('/org/v1/security/panic-pin/request-change', {
+    current_password: currentPassword, action,
+  })
+  return { available_at: res.data.available_at }
+}
+export async function requestOrgPanicPinChangeOtp(currentPassword: string): Promise<void> {
+  await http.post('/org/v1/security/panic-pin/request-otp', { current_password: currentPassword })
+}
+export async function finalizeOrgPanicPinChange(currentPassword: string, otp: string, panicPin?: string): Promise<void> {
+  await http.post('/org/v1/security/panic-pin/finalize', {
+    current_password: currentPassword, otp,
+    ...(panicPin ? { panic_pin: panicPin, panic_pin_confirm: panicPin } : {}),
+  })
+}
+
+export async function setBranchPanicPassword(currentPassword: string, panicPassword: string): Promise<void> {
+  await http.post('/org/v1/branch/security/panic-password', {
+    current_password: currentPassword, panic_password: panicPassword, panic_password_confirm: panicPassword,
+  })
+}
+export async function requestBranchPanicPasswordChange(currentPassword: string, action: 'change' | 'remove'): Promise<{ available_at: string }> {
+  const res = await http.post<{ status: string; available_at: string }>('/org/v1/branch/security/panic-password/request-change', {
+    current_password: currentPassword, action,
+  })
+  return { available_at: res.data.available_at }
+}
+export async function requestBranchPanicPasswordChangeOtp(currentPassword: string): Promise<void> {
+  await http.post('/org/v1/branch/security/panic-password/request-otp', { current_password: currentPassword })
+}
+export async function finalizeBranchPanicPasswordChange(currentPassword: string, otp: string, panicPassword?: string): Promise<void> {
+  await http.post('/org/v1/branch/security/panic-password/finalize', {
+    current_password: currentPassword, otp,
+    ...(panicPassword ? { panic_password: panicPassword, panic_password_confirm: panicPassword } : {}),
+  })
+}
+
 
 export interface EnrolledPasskey {
   id: string
@@ -2622,15 +2669,44 @@ export interface OrgMemberLoginHistoryRow {
   created_at: string
 }
 
-export async function fetchLoginHistory(isBranchSession: boolean): Promise<OrgMemberLoginHistoryRow[]> {
-  const path = isBranchSession ? '/org/v1/branch/security/login-history' : '/org/v1/security/login-history'
-  const res = await http.get<{ status: string; data: OrgMemberLoginHistoryRow[] }>(path)
-  return res.data.data
+export interface PagedLoginHistory {
+  rows: OrgMemberLoginHistoryRow[]
+  page: number
+  pageSize: number
+  totalCount: number
+  totalPages: number
 }
 
-export async function fetchOrganizationLoginHistory(): Promise<OrgMemberLoginHistoryRow[]> {
-  const res = await http.get<{ status: string; data: OrgMemberLoginHistoryRow[] }>('/org/v1/security/login-history/organization')
-  return res.data.data
+interface LoginHistoryApiResponse {
+  status: string
+  data: OrgMemberLoginHistoryRow[]
+  page: number
+  page_size: number
+  total_count: number
+  total_pages: number
+}
+
+export async function fetchLoginHistory(isBranchSession: boolean, page = 1, pageSize = 20, search = ''): Promise<PagedLoginHistory> {
+  const path = isBranchSession ? '/org/v1/branch/security/login-history' : '/org/v1/security/login-history'
+  const res = await http.get<LoginHistoryApiResponse>(path, { params: { page, page_size: pageSize, search: search || undefined } })
+  return {
+    rows: res.data.data,
+    page: res.data.page,
+    pageSize: res.data.page_size,
+    totalCount: res.data.total_count,
+    totalPages: res.data.total_pages,
+  }
+}
+
+export async function fetchOrganizationLoginHistory(page = 1, pageSize = 20, search = ''): Promise<PagedLoginHistory> {
+  const res = await http.get<LoginHistoryApiResponse>('/org/v1/security/login-history/organization', { params: { page, page_size: pageSize, search: search || undefined } })
+  return {
+    rows: res.data.data,
+    page: res.data.page,
+    pageSize: res.data.page_size,
+    totalCount: res.data.total_count,
+    totalPages: res.data.total_pages,
+  }
 }
 
 export interface OrgSupportContact {

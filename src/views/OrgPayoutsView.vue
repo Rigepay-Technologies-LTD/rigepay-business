@@ -595,161 +595,192 @@ watch([amountKes, destinationType], () => {
 
 <template>
   <DashboardLayout :org-id="props.orgId" title="Payouts">
-    <div class="flex flex-col gap-6">
+    <div class="flex flex-col gap-6 page-in">
       <p class="text-xs text-text-muted -mt-2">Send money out via M-Pesa or bank transfer, straight from the organization's own wallet.</p>
-      <AppCard v-if="!isBranchSession && recentSettlements.length">
-        <h2 class="text-sm font-bold text-text-primary mb-1">Recent settlements</h2>
-        <p class="text-xs text-text-muted mb-4">Click one to repeat it — prefills the form below.</p>
-        <p v-if="recentSettlementsLoading" class="text-sm text-text-muted">Loading…</p>
-        <div v-else class="flex flex-wrap gap-2">
-          <button
-            v-for="(s, i) in recentSettlements"
-            :key="i"
-            type="button"
-            class="flex items-center gap-2 rounded-xl bg-surface-2 hover:bg-surface-3 px-3 py-2 text-left transition-colors"
-            @click="repeatSettlement(s)"
-          >
-            <RepeatIcon class="w-3.5 h-3.5 text-text-muted shrink-0" />
-            <span>
-              <span class="text-sm font-semibold text-text-primary block">{{ s.recipient_name || s.recipient_info }}</span>
-              <span class="text-xs text-text-muted">KES {{ formatMoney(s.amount_cents) }} · {{ formatDate(s.last_paid_at) }}</span>
-            </span>
-          </button>
+
+      <!-- Primary action + sidebar -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+        <!-- Sidebar: recent settlements + saved payees -->
+        <div class="order-2 lg:order-1 lg:col-span-1 flex flex-col gap-6">
+          <AppCard v-if="!isBranchSession && recentSettlements.length">
+            <h2 class="text-sm font-bold text-text-primary mb-1">Recent settlements</h2>
+            <p class="text-xs text-text-muted mb-4">Click one to repeat it — prefills the form.</p>
+            <p v-if="recentSettlementsLoading" class="text-sm text-text-muted">Loading…</p>
+            <TransitionGroup v-else tag="div" name="list" class="flex flex-col gap-2">
+              <button
+                v-for="(s, i) in recentSettlements"
+                :key="i"
+                type="button"
+                class="row-hover flex items-center gap-2 rounded-xl bg-surface-2 hover:bg-surface-3 px-3 py-2 text-left"
+                @click="repeatSettlement(s)"
+              >
+                <RepeatIcon class="w-3.5 h-3.5 text-text-muted shrink-0" />
+                <span class="min-w-0">
+                  <span class="text-sm font-semibold text-text-primary block truncate">{{ s.recipient_name || s.recipient_info }}</span>
+                  <span class="text-xs text-text-muted">KES {{ formatMoney(s.amount_cents) }} · {{ formatDate(s.last_paid_at) }}</span>
+                </span>
+              </button>
+            </TransitionGroup>
+          </AppCard>
+
+          <AppCard v-if="!isBranchSession && beneficiaries.length">
+            <h2 class="text-sm font-bold text-text-primary mb-1">Saved payees</h2>
+            <p class="text-xs text-text-muted mb-4">Pick one below to autofill the payout form.</p>
+            <p v-if="beneficiariesLoading" class="text-sm text-text-muted">Loading…</p>
+            <TransitionGroup v-else tag="div" name="list" class="flex flex-col gap-2">
+              <div v-for="b in beneficiaries" :key="b.id" class="row-hover flex items-center justify-between gap-2 rounded-xl bg-surface-2 px-4 py-2.5">
+                <div class="min-w-0">
+                  <span class="text-sm font-semibold text-text-primary">{{ b.nickname }}</span>
+                  <span class="text-xs text-text-muted ml-2">
+                    {{ b.recipient_name }} — {{ b.destination_type === 'BANK_ACCOUNT' ? b.bank_account_number : b.phone_number }}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  class="text-text-muted hover:text-error-text shrink-0 transition-colors"
+                  :disabled="removingBeneficiaryId === b.id"
+                  @click="removeBeneficiary(b.id)"
+                >
+                  <XIcon class="w-4 h-4" />
+                </button>
+              </div>
+            </TransitionGroup>
+          </AppCard>
         </div>
-      </AppCard>
 
-      <AppCard v-if="!isBranchSession && beneficiaries.length">
-        <h2 class="text-sm font-bold text-text-primary mb-1">Saved payees</h2>
-        <p class="text-xs text-text-muted mb-4">Manage your saved beneficiaries — pick one below to autofill the payout form.</p>
-        <p v-if="beneficiariesLoading" class="text-sm text-text-muted">Loading…</p>
-        <div v-else class="flex flex-col gap-2">
-          <div v-for="b in beneficiaries" :key="b.id" class="flex items-center justify-between gap-2 rounded-xl bg-surface-2 px-4 py-2.5">
-            <div class="min-w-0">
-              <span class="text-sm font-semibold text-text-primary">{{ b.nickname }}</span>
-              <span class="text-xs text-text-muted ml-2">
-                {{ b.recipient_name }} — {{ b.destination_type === 'BANK_ACCOUNT' ? b.bank_account_number : b.phone_number }}
-              </span>
-            </div>
-            <button
-              type="button"
-              class="text-text-muted hover:text-error-text shrink-0"
-              :disabled="removingBeneficiaryId === b.id"
-              @click="removeBeneficiary(b.id)"
-            >
-              <XIcon class="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      </AppCard>
-
-      <OtpConfirmCard
-        v-if="otpStep"
-        v-model="otp"
-        subject="payout"
-        :fee-cents="pendingFeeCents"
-        :confirming="otpConfirming"
-        :error="otpError"
-        @confirm="submitOtp"
-        @cancel="cancelOtp"
-      />
-
-      <AppCard v-else>
-        <h2 class="text-sm font-bold text-text-primary mb-1">Request a payout</h2>
-        <p v-if="isOwner" class="text-xs text-text-muted mb-4">
-          As the owner, confirm with your 4-digit transaction PIN — your payouts execute immediately, no second approval needed.
-        </p>
-        <p v-else class="text-xs text-text-muted mb-4">
-          Every payout you initiate requires the owner's approval before it executes, and you'll need to confirm
-          with your account password below — you cannot approve your own request.
-        </p>
-        <div v-if="requestError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ requestError }}</div>
-        <form class="flex flex-col gap-4" @submit.prevent="submitPayout">
-          <AppSelect
-            v-if="!isBranchSession && beneficiaries.length"
-            v-model="selectedBeneficiaryId"
-            label="Pay a saved payee"
-            :options="beneficiaryOptions"
-            @update:modelValue="(v: string) => v && applyBeneficiary(v)"
+        <!-- Main: OTP step or payout request form -->
+        <div class="order-1 lg:order-2 lg:col-span-2">
+          <OtpConfirmCard
+            v-if="otpStep"
+            v-model="otp"
+            subject="payout"
+            :fee-cents="pendingFeeCents"
+            :confirming="otpConfirming"
+            :error="otpError"
+            @confirm="submitOtp"
+            @cancel="cancelOtp"
           />
 
-          <AppSelect v-model="branchId" label="Pay out from" placeholder="— Select wallet —" :options="branchOptions" required />
+          <AppCard v-else>
+            <h2 class="text-sm font-bold text-text-primary mb-1">Request a payout</h2>
+            <p v-if="isOwner" class="text-xs text-text-muted mb-4">
+              As the owner, confirm with your 4-digit transaction PIN — your payouts execute immediately, no second approval needed.
+            </p>
+            <p v-else class="text-xs text-text-muted mb-4">
+              Every payout you initiate requires the owner's approval before it executes, and you'll need to confirm
+              with your account password below — you cannot approve your own request.
+            </p>
+            <div v-if="requestError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ requestError }}</div>
 
-          <AppSelect v-model="destinationType" label="Pay out via" :options="destinationOptions" />
+            <form class="flex flex-col gap-4" @submit.prevent="submitPayout">
+              <!-- Group 1: who / where -->
+              <div class="flex flex-col gap-4">
+                <AppSelect
+                  v-if="!isBranchSession && beneficiaries.length"
+                  v-model="selectedBeneficiaryId"
+                  label="Pay a saved payee"
+                  :options="beneficiaryOptions"
+                  @update:modelValue="(v: string) => v && applyBeneficiary(v)"
+                />
 
-          <div v-if="destinationType === 'PHONE_NUMBER'" class="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
-            <AppInput v-model="phoneNumber" label="Recipient phone" placeholder="+254712345678" required />
-            <AppButton type="button" variant="secondary" :loading="validating" @click="validateRecipient">Verify recipient</AppButton>
-          </div>
-          <div v-else-if="destinationType === 'PAYBILL' || destinationType === 'TILL_NUMBER'" class="flex flex-col gap-3">
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
-              <AppInput
-                v-model="shortcode"
-                :label="destinationType === 'PAYBILL' ? 'Paybill number' : 'Till number'"
-                :placeholder="destinationType === 'PAYBILL' ? 'e.g. 522522' : 'e.g. 123456'"
-                required
-              />
-              <AppButton type="button" variant="secondary" :loading="validating" @click="validateRecipient">Verify recipient</AppButton>
-            </div>
-            <AppInput v-if="destinationType === 'PAYBILL'" v-model="accountReference" label="Account number / reference (optional)" placeholder="e.g. invoice or account number" />
-          </div>
-          <div v-else class="flex flex-col gap-3">
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <AppSelect v-model="bankCode" label="Bank" placeholder="— Select bank —" :options="bankOptions" required />
-              <AppInput v-model="bankAccountNumber" label="Account number" required />
-            </div>
-            <AppButton type="button" variant="secondary" class="self-start" :loading="validating" @click="validateRecipient">Verify recipient</AppButton>
-          </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <AppSelect v-model="branchId" label="Pay out from" placeholder="— Select wallet —" :options="branchOptions" required />
+                  <AppSelect v-model="destinationType" label="Pay out via" :options="destinationOptions" />
+                </div>
 
-          <p v-if="destinationType === 'PHONE_NUMBER'" class="text-[11px] text-text-muted -mt-2">
-            M-Pesa numbers can't be pre-verified — the payout itself confirms the recipient. Verification is only available for Airtel/Telkom.
-          </p>
-          <div v-if="validationResult" :class="['text-xs rounded-lg px-3 py-2 flex items-center gap-2', validationResult.ok ? 'bg-success-light text-success-text' : 'bg-error-light text-error-text']">
-            <CheckIcon v-if="validationResult.ok" class="w-3.5 h-3.5 shrink-0" />
-            <AlertTriangleIcon v-else class="w-3.5 h-3.5 shrink-0" />
-            {{ validationResult.message }}
-          </div>
+                <div v-if="destinationType === 'PHONE_NUMBER'" class="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
+                  <AppInput v-model="phoneNumber" label="Recipient phone" placeholder="+254712345678" required />
+                  <AppButton type="button" variant="secondary" :loading="validating" @click="validateRecipient">Verify recipient</AppButton>
+                </div>
+                <div v-else-if="destinationType === 'PAYBILL' || destinationType === 'TILL_NUMBER'" class="flex flex-col gap-3">
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
+                    <AppInput
+                      v-model="shortcode"
+                      :label="destinationType === 'PAYBILL' ? 'Paybill number' : 'Till number'"
+                      :placeholder="destinationType === 'PAYBILL' ? 'e.g. 522522' : 'e.g. 123456'"
+                      required
+                    />
+                    <AppButton type="button" variant="secondary" :loading="validating" @click="validateRecipient">Verify recipient</AppButton>
+                  </div>
+                  <AppInput v-if="destinationType === 'PAYBILL'" v-model="accountReference" label="Account number / reference (optional)" placeholder="e.g. invoice or account number" />
+                </div>
+                <div v-else class="flex flex-col gap-3">
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <AppSelect v-model="bankCode" label="Bank" placeholder="— Select bank —" :options="bankOptions" required />
+                    <AppInput v-model="bankAccountNumber" label="Account number" required />
+                  </div>
+                  <AppButton type="button" variant="secondary" class="self-start" :loading="validating" @click="validateRecipient">Verify recipient</AppButton>
+                </div>
 
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <AppInput v-model="amountKes" type="number" label="Amount (KES)" placeholder="Min 1" required />
-            <AppInput v-model="recipientName" label="Recipient name" required @blur="screenRecipientName" />
-          </div>
-          <p v-if="feeEstimateLoading" class="text-xs text-text-muted">Estimating fee…</p>
-          <div v-else-if="feeEstimate" class="text-xs text-text-secondary bg-surface-2 rounded-lg px-3 py-2 flex items-center justify-between">
-            <span>Estimated fee: <span class="font-semibold text-text-primary">KES {{ formatMoney(feeEstimate.fee_cents) }}</span></span>
-            <span>Total to be debited: <span class="font-semibold text-text-primary">KES {{ formatMoney(feeEstimate.total_cents) }}</span></span>
-          </div>
-          <div v-if="screening?.isMatch" class="text-xs bg-warning-light text-warning-text rounded-lg px-3 py-2.5 flex flex-col gap-2">
-            <div class="flex items-center gap-2 font-semibold">
-              <AlertTriangleIcon class="w-3.5 h-3.5 shrink-0" />
-              Possible sanctions/PEP watchlist match — this payout will be held for compliance review if you continue.
-            </div>
-            <div class="flex flex-col gap-1.5 pl-5.5">
-              <div v-for="(m, idx) in screening.matches" :key="idx" class="border-l-2 border-warning/40 pl-2">
-                <p>Match confidence: <span class="font-semibold">{{ Math.round(m.score * 100) }}%</span> on {{ m.matched_field }}</p>
-                <p v-if="m.list_names?.length">Watchlist: {{ m.list_names.join(', ') }}</p>
-                <p v-if="m.entity_type || m.country">
-                  <span v-if="m.entity_type">{{ m.entity_type }}</span><span v-if="m.entity_type && m.country"> · </span><span v-if="m.country">{{ m.country }}</span>
+                <p v-if="destinationType === 'PHONE_NUMBER'" class="text-[11px] text-text-muted -mt-2">
+                  M-Pesa numbers can't be pre-verified — the payout itself confirms the recipient. Verification is only available for Airtel/Telkom.
                 </p>
+
+                <Transition name="fade">
+                  <div v-if="validationResult" :class="['text-xs rounded-lg px-3 py-2 flex items-center gap-2', validationResult.ok ? 'bg-success-light text-success-text' : 'bg-error-light text-error-text']">
+                    <CheckIcon v-if="validationResult.ok" class="w-3.5 h-3.5 shrink-0" />
+                    <AlertTriangleIcon v-else class="w-3.5 h-3.5 shrink-0" />
+                    {{ validationResult.message }}
+                  </div>
+                </Transition>
               </div>
-            </div>
-          </div>
 
-          <AppInput v-model="remarks" label="Remarks" placeholder="Reason for this payout" required />
+              <!-- Group 2: amount / recipient -->
+              <div class="flex flex-col gap-4 border-t border-input-border pt-4">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <AppInput v-model="amountKes" type="number" label="Amount (KES)" placeholder="Min 1" required />
+                  <AppInput v-model="recipientName" label="Recipient name" required @blur="screenRecipientName" />
+                </div>
 
-          <div v-if="!isBranchSession && destinationType !== 'PAYBILL' && destinationType !== 'TILL_NUMBER'" class="flex flex-col gap-2">
-            <label class="flex items-center gap-2 text-xs font-medium text-text-secondary cursor-pointer">
-              <input v-model="saveAsBeneficiary" type="checkbox" class="rounded border-input-border" />
-              Save this recipient as a beneficiary for next time
-            </label>
-            <AppInput v-if="saveAsBeneficiary" v-model="beneficiaryNickname" label="Beneficiary nickname" placeholder="e.g. Weekly supplier" required />
-          </div>
+                <Transition name="fade" mode="out-in">
+                  <p v-if="feeEstimateLoading" key="loading" class="text-xs text-text-muted">Estimating fee…</p>
+                  <div v-else-if="feeEstimate" key="estimate" class="text-xs text-text-secondary bg-surface-2 rounded-lg px-3 py-2 flex items-center justify-between">
+                    <span>Estimated fee: <span class="font-semibold text-text-primary">KES {{ formatMoney(feeEstimate.fee_cents) }}</span></span>
+                    <span>Total to be debited: <span class="font-semibold text-text-primary">KES {{ formatMoney(feeEstimate.total_cents) }}</span></span>
+                  </div>
+                </Transition>
 
-          <ConfirmSecretInput v-model="confirmSecret" :is-pin="isOwner" />
+                <Transition name="fade">
+                  <div v-if="screening?.isMatch" class="text-xs bg-warning-light text-warning-text rounded-lg px-3 py-2.5 flex flex-col gap-2">
+                    <div class="flex items-center gap-2 font-semibold">
+                      <AlertTriangleIcon class="w-3.5 h-3.5 shrink-0" />
+                      Possible sanctions/PEP watchlist match — this payout will be held for compliance review if you continue.
+                    </div>
+                    <div class="flex flex-col gap-1.5 pl-5.5">
+                      <div v-for="(m, idx) in screening.matches" :key="idx" class="border-l-2 border-warning/40 pl-2">
+                        <p>Match confidence: <span class="font-semibold">{{ Math.round(m.score * 100) }}%</span> on {{ m.matched_field }}</p>
+                        <p v-if="m.list_names?.length">Watchlist: {{ m.list_names.join(', ') }}</p>
+                        <p v-if="m.entity_type || m.country">
+                          <span v-if="m.entity_type">{{ m.entity_type }}</span><span v-if="m.entity_type && m.country"> · </span><span v-if="m.country">{{ m.country }}</span>
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </Transition>
+              </div>
 
-          <AppButton type="submit" :loading="requesting" class="self-start">Request payout</AppButton>
-        </form>
-      </AppCard>
+              <!-- Group 3: remarks / confirm / submit -->
+              <div class="flex flex-col gap-4 border-t border-input-border pt-4">
+                <AppInput v-model="remarks" label="Remarks" placeholder="Reason for this payout" required />
 
+                <div v-if="!isBranchSession && destinationType !== 'PAYBILL' && destinationType !== 'TILL_NUMBER'" class="flex flex-col gap-2">
+                  <label class="flex items-center gap-2 text-xs font-medium text-text-secondary cursor-pointer">
+                    <input v-model="saveAsBeneficiary" type="checkbox" class="rounded border-input-border" />
+                    Save this recipient as a beneficiary for next time
+                  </label>
+                  <AppInput v-if="saveAsBeneficiary" v-model="beneficiaryNickname" label="Beneficiary nickname" placeholder="e.g. Weekly supplier" required />
+                </div>
+
+                <ConfirmSecretInput v-model="confirmSecret" :is-pin="isOwner" />
+
+                <AppButton type="submit" :loading="requesting" class="self-start">Request payout</AppButton>
+              </div>
+            </form>
+          </AppCard>
+        </div>
+      </div>
+
+      <!-- Pending approvals: full width -->
       <AppCard v-if="isOwner">
         <h2 class="text-sm font-bold text-text-primary mb-1">Pending approvals</h2>
         <p class="text-xs text-text-muted mb-4">
@@ -757,8 +788,8 @@ watch([amountKes, destinationType], () => {
         </p>
         <p v-if="approvalsLoading" class="text-sm text-text-muted">Loading approvals…</p>
         <p v-else-if="!approvals.length" class="text-sm text-text-muted">No pending approvals.</p>
-        <div v-else class="flex flex-col gap-3">
-          <div v-for="a in approvals" :key="a.id" class="flex flex-col sm:flex-row sm:items-center gap-2 rounded-xl bg-surface-2 px-4 py-3">
+        <TransitionGroup v-else tag="div" name="list" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div v-for="a in approvals" :key="a.id" class="row-hover flex flex-col gap-2 rounded-xl bg-surface-2 px-4 py-3">
             <div class="min-w-0 flex-1">
               <div class="flex items-center gap-2">
                 <AppBadge variant="warning" size="sm">Pending</AppBadge>
@@ -773,66 +804,115 @@ watch([amountKes, destinationType], () => {
               <AppButton size="sm" variant="secondary" :loading="decidingId === a.id" @click="reject(a.id)">Reject</AppButton>
             </div>
           </div>
-        </div>
+        </TransitionGroup>
       </AppCard>
 
-      <AppCard v-if="isOwner && !isBranchSession">
-        <h2 class="text-sm font-bold text-text-primary mb-1">High-value approval ceiling (dual control)</h2>
-        <p class="text-xs text-text-muted mb-4">
-          When active, any payout at or above this amount — dashboard or API — needs a second owner's approval
-          before it executes, even if the initiating owner could otherwise self-approve.
-        </p>
-        <div v-if="thresholdError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ thresholdError }}</div>
-        <p v-if="thresholdLoading" class="text-sm text-text-muted">Loading…</p>
-        <template v-else>
-          <p v-if="threshold" class="text-xs text-text-muted mb-3">
-            Active owners: {{ threshold.active_owner_count }} —
-            <span v-if="threshold.active_owner_count < 2" class="text-warning">
-              enforcement needs a second owner to approve owner-initiated payouts; machine/API payouts are still gated.
-            </span>
-            <span v-else class="text-success">ceiling is enforceable.</span>
-          </p>
-          <form class="flex flex-col gap-4 max-w-sm" @submit.prevent="saveThreshold">
-            <label class="flex items-center gap-2 text-sm font-medium text-text-primary">
-              <input type="checkbox" v-model="thresholdActive" class="w-4 h-4 rounded" />
-              Require a second owner's approval above a threshold
-            </label>
-            <AppInput
-              v-model="thresholdAmountKes" type="number" label="Ceiling amount (KES)"
-              placeholder="e.g. 250000" :disabled="!thresholdActive" required
-            />
-            <AppButton type="submit" size="sm" :loading="thresholdSaving" class="self-start">Save</AppButton>
-          </form>
-        </template>
-      </AppCard>
+      <!-- Payout controls: demoted admin settings, side by side -->
+      <div v-if="isOwner && !isBranchSession" class="flex flex-col gap-3">
+        <p class="text-[11px] font-semibold uppercase tracking-wide text-text-muted">Payout controls</p>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <AppCard>
+            <h2 class="text-sm font-bold text-text-primary mb-1">High-value approval ceiling (dual control)</h2>
+            <p class="text-xs text-text-muted mb-4">
+              When active, any payout at or above this amount — dashboard or API — needs a second owner's approval
+              before it executes, even if the initiating owner could otherwise self-approve.
+            </p>
+            <div v-if="thresholdError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ thresholdError }}</div>
+            <p v-if="thresholdLoading" class="text-sm text-text-muted">Loading…</p>
+            <template v-else>
+              <p v-if="threshold" class="text-xs text-text-muted mb-3">
+                Active owners: {{ threshold.active_owner_count }} —
+                <span v-if="threshold.active_owner_count < 2" class="text-warning">
+                  enforcement needs a second owner to approve owner-initiated payouts; machine/API payouts are still gated.
+                </span>
+                <span v-else class="text-success">ceiling is enforceable.</span>
+              </p>
+              <form class="flex flex-col gap-4" @submit.prevent="saveThreshold">
+                <label class="flex items-center gap-2 text-sm font-medium text-text-primary">
+                  <input type="checkbox" v-model="thresholdActive" class="w-4 h-4 rounded" />
+                  Require a second owner's approval above a threshold
+                </label>
+                <AppInput
+                  v-model="thresholdAmountKes" type="number" label="Ceiling amount (KES)"
+                  placeholder="e.g. 250000" :disabled="!thresholdActive" required
+                />
+                <AppButton type="submit" size="sm" :loading="thresholdSaving" class="self-start">Save</AppButton>
+              </form>
+            </template>
+          </AppCard>
 
-      <AppCard v-if="isOwner && !isBranchSession">
-        <h2 class="text-sm font-bold text-text-primary mb-1">Per-role self-execution ceilings</h2>
-        <p class="text-xs text-text-muted mb-4">
-          By default, every non-owner payout requires your approval, regardless of amount. Setting an active
-          ceiling here lets that role's payouts execute immediately — still confirmed by password and a one-time
-          code — as long as they stay below the amount. Anything at or above it still comes to you for approval.
-        </p>
-        <div v-if="roleCeilingError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ roleCeilingError }}</div>
-        <p v-if="roleCeilingLoading" class="text-sm text-text-muted">Loading…</p>
-        <div v-else class="flex flex-col gap-6">
-          <form
-            v-for="role in roleCeilingRoles" :key="role"
-            class="flex flex-col gap-3 max-w-sm rounded-xl bg-surface-2 px-4 py-3"
-            @submit.prevent="saveRoleCeiling(role)"
-          >
-            <label class="flex items-center gap-2 text-sm font-medium text-text-primary capitalize">
-              <input type="checkbox" v-model="roleCeilingActive[role]" class="w-4 h-4 rounded" />
-              Allow {{ role }}s to self-execute below a ceiling
-            </label>
-            <AppInput
-              v-model="roleCeilingAmountKes[role]" type="number" label="Ceiling amount (KES)"
-              placeholder="e.g. 50000" :disabled="!roleCeilingActive[role]" required
-            />
-            <AppButton type="submit" size="sm" :loading="roleCeilingSaving === role" class="self-start">Save</AppButton>
-          </form>
+          <AppCard>
+            <h2 class="text-sm font-bold text-text-primary mb-1">Per-role self-execution ceilings</h2>
+            <p class="text-xs text-text-muted mb-4">
+              By default, every non-owner payout requires your approval, regardless of amount. Setting an active
+              ceiling here lets that role's payouts execute immediately — still confirmed by password and a
+              one-time code — as long as they stay below the amount. Anything at or above it still comes to
+              you for approval.
+            </p>
+            <div v-if="roleCeilingError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ roleCeilingError }}</div>
+            <p v-if="roleCeilingLoading" class="text-sm text-text-muted">Loading…</p>
+            <div v-else class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <form
+                v-for="role in roleCeilingRoles" :key="role"
+                class="flex flex-col gap-3 rounded-xl bg-surface-2 px-4 py-3"
+                @submit.prevent="saveRoleCeiling(role)"
+              >
+                <label class="flex items-center gap-2 text-sm font-medium text-text-primary capitalize">
+                  <input type="checkbox" v-model="roleCeilingActive[role]" class="w-4 h-4 rounded" />
+                  Allow {{ role }}s to self-execute below a ceiling
+                </label>
+                <AppInput
+                  v-model="roleCeilingAmountKes[role]" type="number" label="Ceiling amount (KES)"
+                  placeholder="e.g. 50000" :disabled="!roleCeilingActive[role]" required
+                />
+                <AppButton type="submit" size="sm" :loading="roleCeilingSaving === role" class="self-start">Save</AppButton>
+              </form>
+            </div>
+          </AppCard>
         </div>
-      </AppCard>
+      </div>
     </div>
   </DashboardLayout>
 </template>
+
+<style scoped>
+.page-in {
+  animation: page-in 0.35s ease-out;
+}
+@keyframes page-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.row-hover {
+  transition: transform 0.15s ease, background-color 0.15s ease;
+}
+.row-hover:hover {
+  transform: translateY(-1px);
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+.list-enter-active,
+.list-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.list-enter-from {
+  opacity: 0;
+  transform: translateY(6px);
+}
+.list-leave-to {
+  opacity: 0;
+}
+.list-leave-active {
+  position: absolute;
+}
+</style>

@@ -439,7 +439,7 @@ const availableTagsToAssign = () => allTags.value.filter((t) => !assignedTags.va
 
 <template>
   <DashboardLayout :org-id="props.orgId" title="Bulk payouts">
-    <div class="flex flex-col gap-6">
+    <div class="flex flex-col gap-6 page-in">
       <div class="flex items-center justify-between">
         <div>
           <h2 class="text-sm font-bold text-text-primary">Payroll & supplier runs</h2>
@@ -492,8 +492,8 @@ const availableTagsToAssign = () => allTags.value.filter((t) => !assignedTags.va
                 <th class="px-3 py-2 w-10"></th>
               </tr>
             </thead>
-            <tbody>
-              <tr v-for="(r, i) in rows" :key="r.key" class="border-b border-border last:border-0 align-top">
+            <TransitionGroup tag="tbody" name="list">
+              <tr v-for="(r, i) in rows" :key="r.key" class="row-hover border-b border-border last:border-0 align-top hover:bg-surface-2/60">
                 <td class="px-3 py-2.5 text-text-muted">{{ i + 1 }}</td>
                 <td class="px-3 py-2.5 min-w-27.5">
                   <AppSelect v-model="r.destination_type" :options="destinationOptions" />
@@ -507,9 +507,11 @@ const availableTagsToAssign = () => allTags.value.filter((t) => !assignedTags.va
                       <AppInput v-model="r.phone_number" placeholder="+254712345678" />
                       <AppButton type="button" size="sm" variant="secondary" :loading="r.verifying" @click="verifyRowRecipient(r)">Verify</AppButton>
                     </div>
-                    <div v-if="r.verifyResult" :class="['text-xs rounded-lg px-2 py-1', r.verifyResult.ok ? 'bg-success-light text-success-text' : 'bg-error-light text-error-text']">
-                      {{ r.verifyResult.message }}
-                    </div>
+                    <Transition name="fade">
+                      <div v-if="r.verifyResult" :class="['text-xs rounded-lg px-2 py-1', r.verifyResult.ok ? 'bg-success-light text-success-text' : 'bg-error-light text-error-text']">
+                        {{ r.verifyResult.message }}
+                      </div>
+                    </Transition>
                   </div>
                   <div v-else-if="r.destination_type === 'PAYBILL' || r.destination_type === 'TILL_NUMBER'" class="flex flex-col gap-1.5">
                     <div class="flex gap-2">
@@ -517,9 +519,11 @@ const availableTagsToAssign = () => allTags.value.filter((t) => !assignedTags.va
                       <AppButton type="button" size="sm" variant="secondary" :loading="r.verifying" @click="verifyRowShortcode(r)">Verify</AppButton>
                     </div>
                     <AppInput v-if="r.destination_type === 'PAYBILL'" v-model="r.account_reference" placeholder="Account ref (optional)" />
-                    <div v-if="r.verifyResult" :class="['text-xs rounded-lg px-2 py-1', r.verifyResult.ok ? 'bg-success-light text-success-text' : 'bg-error-light text-error-text']">
-                      {{ r.verifyResult.message }}
-                    </div>
+                    <Transition name="fade">
+                      <div v-if="r.verifyResult" :class="['text-xs rounded-lg px-2 py-1', r.verifyResult.ok ? 'bg-success-light text-success-text' : 'bg-error-light text-error-text']">
+                        {{ r.verifyResult.message }}
+                      </div>
+                    </Transition>
                   </div>
                   <div v-else class="flex flex-col gap-1.5">
                     <div class="flex gap-2">
@@ -527,9 +531,11 @@ const availableTagsToAssign = () => allTags.value.filter((t) => !assignedTags.va
                       <AppInput v-model="r.bank_account_number" placeholder="Account no." />
                     </div>
                     <AppButton type="button" size="sm" variant="secondary" class="self-start" :loading="r.verifying" @click="verifyRowRecipient(r)">Verify</AppButton>
-                    <div v-if="r.verifyResult" :class="['text-xs rounded-lg px-2 py-1', r.verifyResult.ok ? 'bg-success-light text-success-text' : 'bg-error-light text-error-text']">
-                      {{ r.verifyResult.message }}
-                    </div>
+                    <Transition name="fade">
+                      <div v-if="r.verifyResult" :class="['text-xs rounded-lg px-2 py-1', r.verifyResult.ok ? 'bg-success-light text-success-text' : 'bg-error-light text-error-text']">
+                        {{ r.verifyResult.message }}
+                      </div>
+                    </Transition>
                   </div>
                 </td>
                 <td class="px-3 py-2.5 min-w-27.5">
@@ -547,7 +553,7 @@ const availableTagsToAssign = () => allTags.value.filter((t) => !assignedTags.va
                   </button>
                 </td>
               </tr>
-            </tbody>
+            </TransitionGroup>
           </table>
         </div>
 
@@ -563,9 +569,10 @@ const availableTagsToAssign = () => allTags.value.filter((t) => !assignedTags.va
             reserved amount (including fees) is shown after submission.
           </p>
 
-          <AppInput v-model="remarks" label="Batch remarks (optional)" placeholder="e.g. October commission run" />
-
-          <AppInput v-model="pin" type="password" inputmode="numeric" maxlength="4" label="Transaction PIN" placeholder="••••" required />
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <AppInput v-model="remarks" label="Batch remarks (optional)" placeholder="e.g. October commission run" />
+            <AppInput v-model="pin" type="password" inputmode="numeric" maxlength="4" label="Transaction PIN" placeholder="••••" required />
+          </div>
 
           <div class="flex gap-2">
             <AppButton type="button" :loading="submitting" @click="submitBatch">Escrow & submit batch</AppButton>
@@ -582,8 +589,8 @@ const availableTagsToAssign = () => allTags.value.filter((t) => !assignedTags.va
         </div>
       </AppCard>
 
-      <div v-else class="flex flex-col gap-3">
-        <AppCard v-for="b in batches" :key="b.id" padding="none">
+      <TransitionGroup v-else tag="div" name="list" class="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
+        <AppCard v-for="b in batches" :key="b.id" padding="none" :class="expandedBatchId === b.id ? 'lg:col-span-2' : ''">
           <button
             type="button" class="w-full flex items-center gap-3 px-5 py-3.5 text-left hover:bg-surface-2 transition-colors"
             @click="toggleExpand(b.id)"
@@ -594,41 +601,45 @@ const availableTagsToAssign = () => allTags.value.filter((t) => !assignedTags.va
             </span>
             <AppBadge :variant="b.status === 'DISPATCHED' ? 'success' : 'warning'" size="sm">{{ b.status }}</AppBadge>
             <span class="text-xs text-text-muted">{{ formatDate(b.created_at) }}</span>
-            <ChevronUpIcon v-if="expandedBatchId === b.id" class="w-4 h-4 text-text-muted" />
-            <ChevronDownIcon v-else class="w-4 h-4 text-text-muted" />
+            <Transition name="fade" mode="out-in">
+              <ChevronUpIcon v-if="expandedBatchId === b.id" key="up" class="w-4 h-4 text-text-muted" />
+              <ChevronDownIcon v-else key="down" class="w-4 h-4 text-text-muted" />
+            </Transition>
           </button>
 
-          <div v-if="expandedBatchId === b.id" class="border-t border-border px-5 py-5">
-            <p v-if="detailLoading" class="text-sm text-text-muted">Loading…</p>
-            <template v-else-if="batchDetail">
-              <div class="flex items-center justify-between mb-3">
-                <p class="text-xs text-text-muted">
-                  Dispatched {{ batchDetail.batch.dispatched_count }} · Rejected {{ batchDetail.batch.rejected_count }}
-                  · Escrow balance KES {{ formatMoney(batchDetail.escrow_balance_cents) }}
-                </p>
-                <AppButton v-if="isOwner && batchDetail.escrow_balance_cents > 0" size="sm" variant="secondary" :loading="reclaiming" @click="handleReclaim(b.id)">
-                  Reclaim residual
-                </AppButton>
-              </div>
-              <div v-if="reclaimMessage" class="text-xs text-text-secondary bg-surface-2 rounded-lg px-3 py-2 mb-3">{{ reclaimMessage }}</div>
-              <div class="flex flex-col gap-2">
-                <div v-for="it in batchDetail.items" :key="it.id" class="flex items-center justify-between gap-3 rounded-xl bg-surface-2 px-4 py-2.5">
-                  <div class="min-w-0 flex-1">
-                    <p class="text-sm font-medium text-text-primary truncate">{{ it.row_number }}. {{ it.recipient_name }} — KES {{ formatMoney(it.amount_cents) }}</p>
-                    <p class="text-xs text-text-muted">{{ itemStatusLabel(it) }}</p>
-                  </div>
-                  <button
-                    v-if="it.payout_id" type="button"
-                    class="p-1.5 rounded-lg text-text-muted hover:text-primary hover:bg-primary-muted transition-colors"
-                    title="Tag this payout" @click="openItemTags(it)"
-                  ><TagIcon class="w-4 h-4" /></button>
-                  <AppBadge :variant="itemStatusVariant(it)" size="sm">{{ it.status }}</AppBadge>
+          <Transition name="expand">
+            <div v-if="expandedBatchId === b.id" class="border-t border-border px-5 py-5">
+              <p v-if="detailLoading" class="text-sm text-text-muted">Loading…</p>
+              <template v-else-if="batchDetail">
+                <div class="flex items-center justify-between mb-3">
+                  <p class="text-xs text-text-muted">
+                    Dispatched {{ batchDetail.batch.dispatched_count }} · Rejected {{ batchDetail.batch.rejected_count }}
+                    · Escrow balance KES {{ formatMoney(batchDetail.escrow_balance_cents) }}
+                  </p>
+                  <AppButton v-if="isOwner && batchDetail.escrow_balance_cents > 0" size="sm" variant="secondary" :loading="reclaiming" @click="handleReclaim(b.id)">
+                    Reclaim residual
+                  </AppButton>
                 </div>
-              </div>
-            </template>
-          </div>
+                <div v-if="reclaimMessage" class="text-xs text-text-secondary bg-surface-2 rounded-lg px-3 py-2 mb-3">{{ reclaimMessage }}</div>
+                <TransitionGroup tag="div" name="list" class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div v-for="it in batchDetail.items" :key="it.id" class="row-hover flex items-center justify-between gap-3 rounded-xl bg-surface-2 px-4 py-2.5">
+                    <div class="min-w-0 flex-1">
+                      <p class="text-sm font-medium text-text-primary truncate">{{ it.row_number }}. {{ it.recipient_name }} — KES {{ formatMoney(it.amount_cents) }}</p>
+                      <p class="text-xs text-text-muted">{{ itemStatusLabel(it) }}</p>
+                    </div>
+                    <button
+                      v-if="it.payout_id" type="button"
+                      class="p-1.5 rounded-lg text-text-muted hover:text-primary hover:bg-primary-muted transition-colors"
+                      title="Tag this payout" @click="openItemTags(it)"
+                    ><TagIcon class="w-4 h-4" /></button>
+                    <AppBadge :variant="itemStatusVariant(it)" size="sm">{{ it.status }}</AppBadge>
+                  </div>
+                </TransitionGroup>
+              </template>
+            </div>
+          </Transition>
         </AppCard>
-      </div>
+      </TransitionGroup>
     </div>
 
     <AppModal :model-value="!!selectedItem" title="Tag payout" size="sm" @update:model-value="selectedItem = null">
@@ -659,3 +670,55 @@ const availableTagsToAssign = () => allTags.value.filter((t) => !assignedTags.va
     </AppModal>
   </DashboardLayout>
 </template>
+
+<style scoped>
+.page-in {
+  animation: page-in 0.35s ease-out;
+}
+@keyframes page-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.row-hover {
+  transition: transform 0.15s ease, background-color 0.15s ease;
+}
+.row-hover:hover {
+  transform: translateY(-1px);
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+.list-enter-active,
+.list-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.list-enter-from {
+  opacity: 0;
+  transform: translateY(6px);
+}
+.list-leave-to {
+  opacity: 0;
+}
+.list-leave-active {
+  position: absolute;
+}
+
+.expand-enter-active,
+.expand-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.expand-enter-from,
+.expand-leave-to {
+  opacity: 0;
+  transform: translateY(-6px);
+}
+</style>

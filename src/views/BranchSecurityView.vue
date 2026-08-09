@@ -5,6 +5,7 @@ import {
   fetchEnrolled2FAMethods, addTotpSetup, addTotpVerify, regenerateBackupCodes,
   addPasskeyBegin, addPasskeyFinish, disableTotp, deletePasskey, type Enrolled2FAMethods,
   fetchLoginHistory, type OrgMemberLoginHistoryRow,
+  setBranchPanicPassword, requestBranchPanicPasswordChange, requestBranchPanicPasswordChangeOtp, finalizeBranchPanicPasswordChange,
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
 import { formatDate } from '@/lib/format'
@@ -21,8 +22,121 @@ import AppBadge from '@/components/ui/AppBadge.vue'
 const props = defineProps<{ orgId: string; branchId: string }>()
 const auth = useAuthStore()
 const isBranchSession = computed(() => auth.meta?.memberType === 'branch_member')
-const { showError } = useResponseModal()
+const { showError, showSuccess } = useResponseModal()
 const { confirmAction } = useConfirmModal()
+
+// --- Panic password (duress protection) ---
+// Entering this instead of your real account password when confirming a
+// payout silently freezes the account and alerts RigePay security.
+const panicPassword = ref('')
+const panicNewPassword = ref('')
+const panicNewPasswordConfirm = ref('')
+const panicSaving = ref(false)
+const panicError = ref<string | null>(null)
+
+async function savePanicPassword() {
+  panicError.value = null
+  if (!panicPassword.value) {
+    panicError.value = 'Enter your account password to confirm this change.'
+    return
+  }
+  if (panicNewPassword.value.length < 8) {
+    panicError.value = 'Panic password must be at least 8 characters.'
+    return
+  }
+  if (panicNewPassword.value !== panicNewPasswordConfirm.value) {
+    panicError.value = 'Passwords do not match.'
+    return
+  }
+  panicSaving.value = true
+  try {
+    await setBranchPanicPassword(panicPassword.value, panicNewPassword.value)
+    showSuccess('Panic password set. Entering it instead of your real password during a payout will silently freeze your account and alert our security team.')
+    panicPassword.value = ''
+    panicNewPassword.value = ''
+    panicNewPasswordConfirm.value = ''
+  } catch (err) {
+    const msg = extractErrorMessage(err)
+    panicError.value = msg
+    showError(msg)
+  } finally {
+    panicSaving.value = false
+  }
+}
+
+const panicChangeStep = ref<'idle' | 'requested' | 'otp_sent'>('idle')
+const panicChangeAction = ref<'change' | 'remove'>('change')
+const panicChangePassword = ref('')
+const panicChangeAvailableAt = ref<string | null>(null)
+const panicChangeOtp = ref('')
+const panicChangeNewPassword = ref('')
+const panicChangeNewPasswordConfirm = ref('')
+const panicChangeBusy = ref(false)
+const panicChangeError = ref<string | null>(null)
+
+async function startPanicChange(action: 'change' | 'remove') {
+  panicChangeError.value = null
+  panicChangeAction.value = action
+  if (!panicChangePassword.value) {
+    panicChangeError.value = 'Enter your account password to confirm this request.'
+    return
+  }
+  panicChangeBusy.value = true
+  try {
+    const { available_at } = await requestBranchPanicPasswordChange(panicChangePassword.value, action)
+    panicChangeAvailableAt.value = available_at
+    panicChangeStep.value = 'requested'
+    showSuccess('Request received — a 24-hour cooldown applies before this can be confirmed.')
+  } catch (err) {
+    const msg = extractErrorMessage(err)
+    panicChangeError.value = msg
+    showError(msg)
+  } finally {
+    panicChangeBusy.value = false
+  }
+}
+
+async function sendPanicChangeOtp() {
+  panicChangeError.value = null
+  panicChangeBusy.value = true
+  try {
+    await requestBranchPanicPasswordChangeOtp(panicChangePassword.value)
+    panicChangeStep.value = 'otp_sent'
+    showSuccess('Confirmation code sent to your registered phone number.')
+  } catch (err) {
+    const msg = extractErrorMessage(err)
+    panicChangeError.value = msg
+    showError(msg)
+  } finally {
+    panicChangeBusy.value = false
+  }
+}
+
+async function finalizePanicChange() {
+  panicChangeError.value = null
+  if (panicChangeAction.value === 'change') {
+    if (panicChangeNewPassword.value.length < 8 || panicChangeNewPassword.value !== panicChangeNewPasswordConfirm.value) {
+      panicChangeError.value = 'Enter matching passwords, at least 8 characters.'
+      return
+    }
+  }
+  panicChangeBusy.value = true
+  try {
+    await finalizeBranchPanicPasswordChange(panicChangePassword.value, panicChangeOtp.value, panicChangeAction.value === 'change' ? panicChangeNewPassword.value : undefined)
+    showSuccess(panicChangeAction.value === 'remove' ? 'Panic password removed.' : 'Panic password changed.')
+    panicChangeStep.value = 'idle'
+    panicChangePassword.value = ''
+    panicChangeOtp.value = ''
+    panicChangeNewPassword.value = ''
+    panicChangeNewPasswordConfirm.value = ''
+  } catch (err) {
+    const msg = extractErrorMessage(err)
+    panicChangeError.value = msg
+    showError(msg)
+  } finally {
+    panicChangeBusy.value = false
+  }
+}
 
 const methods = ref<Enrolled2FAMethods | null>(null)
 const methodsLoading = ref(true)
@@ -195,12 +309,20 @@ async function handleDeletePasskey(id: string) {
 const loginHistory = ref<OrgMemberLoginHistoryRow[]>([])
 const loginHistoryLoading = ref(true)
 const loginHistoryError = ref<string | null>(null)
+const loginHistoryPage = ref(1)
+const loginHistoryTotalPages = ref(1)
+const loginHistoryPageSize = 20
+const loginHistorySearch = ref('')
+let loginHistorySearchTimer: ReturnType<typeof setTimeout> | undefined
 
-async function loadLoginHistory() {
+async function loadLoginHistory(page = 1) {
   loginHistoryLoading.value = true
   loginHistoryError.value = null
   try {
-    loginHistory.value = await fetchLoginHistory(isBranchSession.value)
+    const result = await fetchLoginHistory(isBranchSession.value, page, loginHistoryPageSize, loginHistorySearch.value)
+    loginHistory.value = result.rows
+    loginHistoryPage.value = result.page
+    loginHistoryTotalPages.value = result.totalPages
   } catch (err) {
     const msg = extractErrorMessage(err)
     loginHistoryError.value = msg
@@ -210,6 +332,11 @@ async function loadLoginHistory() {
   }
 }
 onMounted(loadLoginHistory)
+
+function onLoginHistorySearchInput() {
+  if (loginHistorySearchTimer) clearTimeout(loginHistorySearchTimer)
+  loginHistorySearchTimer = setTimeout(() => loadLoginHistory(1), 350)
+}
 
 function locationLabel(row: OrgMemberLoginHistoryRow) {
   const parts = [row.city, row.country].filter(Boolean)
@@ -235,6 +362,61 @@ function methodLabel(method: string) {
         </div>
         <button type="button" class="text-xs font-semibold self-start hover:underline" @click="revealedBackupCodes = null">Dismiss</button>
       </div>
+
+      <AppCard>
+        <h2 class="text-sm font-bold text-text-primary mb-1">Panic password</h2>
+        <p class="text-xs text-text-muted mb-5">
+          A second, secret password for emergencies. If someone forces you to authorize a payout, enter this
+          instead of your real account password — the payout is silently blocked, all further payouts are frozen,
+          and RigePay security is alerted immediately. It must be different from your real password.
+        </p>
+        <div v-if="panicChangeStep === 'idle'">
+          <div v-if="panicError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-4">{{ panicError }}</div>
+          <form class="flex flex-col gap-4 max-w-sm mb-6" @submit.prevent="savePanicPassword">
+            <AppInput v-model="panicPassword" type="password" label="Current account password" required />
+            <div class="grid grid-cols-2 gap-4">
+              <AppInput v-model="panicNewPassword" type="password" label="New panic password" required />
+              <AppInput v-model="panicNewPasswordConfirm" type="password" label="Confirm" required />
+            </div>
+            <AppButton type="submit" :loading="panicSaving" class="self-start">Set panic password</AppButton>
+          </form>
+
+          <div class="border-t border-border pt-4">
+            <p class="text-xs text-text-muted mb-3">Already have a panic password set? Changing or removing it requires a 24-hour cooldown plus a confirmation code, so it can't be disabled under duress.</p>
+            <div v-if="panicChangeError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ panicChangeError }}</div>
+            <div class="flex items-end gap-2 flex-wrap">
+              <AppInput v-model="panicChangePassword" type="password" label="Current account password" class="max-w-xs" />
+              <AppButton size="sm" variant="secondary" :loading="panicChangeBusy" @click="startPanicChange('change')">Request password change</AppButton>
+              <AppButton size="sm" variant="ghost" :loading="panicChangeBusy" @click="startPanicChange('remove')">Request removal</AppButton>
+            </div>
+          </div>
+        </div>
+
+        <div v-else-if="panicChangeStep === 'requested'" class="text-sm">
+          <p class="text-text-primary mb-2">Cooldown started — you can request a confirmation code after:</p>
+          <p class="font-mono text-xs bg-surface-2 rounded-lg px-3 py-2 inline-block mb-4">{{ panicChangeAvailableAt }}</p>
+          <div v-if="panicChangeError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ panicChangeError }}</div>
+          <div class="flex gap-2">
+            <AppButton size="sm" :loading="panicChangeBusy" @click="sendPanicChangeOtp">Send confirmation code</AppButton>
+            <AppButton size="sm" variant="ghost" @click="panicChangeStep = 'idle'">Cancel</AppButton>
+          </div>
+        </div>
+
+        <div v-else-if="panicChangeStep === 'otp_sent'" class="flex flex-col gap-4 max-w-sm">
+          <div v-if="panicChangeError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2">{{ panicChangeError }}</div>
+          <AppInput v-model="panicChangeOtp" label="6-digit confirmation code" placeholder="000000" />
+          <template v-if="panicChangeAction === 'change'">
+            <div class="grid grid-cols-2 gap-4">
+              <AppInput v-model="panicChangeNewPassword" type="password" label="New panic password" />
+              <AppInput v-model="panicChangeNewPasswordConfirm" type="password" label="Confirm" />
+            </div>
+          </template>
+          <div class="flex gap-2">
+            <AppButton size="sm" :loading="panicChangeBusy" @click="finalizePanicChange">Confirm {{ panicChangeAction === 'remove' ? 'removal' : 'change' }}</AppButton>
+            <AppButton size="sm" variant="ghost" @click="panicChangeStep = 'idle'">Cancel</AppButton>
+          </div>
+        </div>
+      </AppCard>
 
       <AppCard>
         <h2 class="text-sm font-bold text-text-primary mb-1">Two-factor authentication</h2>
@@ -303,7 +485,13 @@ function methodLabel(method: string) {
 
       <AppCard>
         <h2 class="text-sm font-bold text-text-primary mb-1">Login activity</h2>
-        <p class="text-xs text-text-muted mb-5">Recent sign-ins to your account, with approximate location.</p>
+        <p class="text-xs text-text-muted mb-3">Recent sign-ins to your account, with approximate location.</p>
+        <AppInput
+          v-model="loginHistorySearch"
+          placeholder="Search by IP, city, country, or method"
+          class="max-w-xs mb-4"
+          @update:model-value="onLoginHistorySearchInput"
+        />
         <p v-if="loginHistoryLoading" class="text-sm text-text-muted">Loading…</p>
         <p v-else-if="!loginHistory.length" class="text-sm text-text-muted">No login activity recorded yet.</p>
         <div v-else class="overflow-x-auto">
@@ -327,6 +515,11 @@ function methodLabel(method: string) {
               </tr>
             </tbody>
           </table>
+        </div>
+        <div v-if="loginHistoryTotalPages > 1" class="flex items-center justify-between mt-4 pt-3 border-t border-border">
+          <AppButton size="sm" variant="ghost" :disabled="loginHistoryPage <= 1 || loginHistoryLoading" @click="loadLoginHistory(loginHistoryPage - 1)">Previous</AppButton>
+          <span class="text-xs text-text-muted">Page {{ loginHistoryPage }} of {{ loginHistoryTotalPages }}</span>
+          <AppButton size="sm" variant="ghost" :disabled="loginHistoryPage >= loginHistoryTotalPages || loginHistoryLoading" @click="loadLoginHistory(loginHistoryPage + 1)">Next</AppButton>
         </div>
       </AppCard>
     </div>

@@ -6,6 +6,7 @@ import {
   setTransactionPin, fetchEnrolled2FAMethods, addTotpSetup, addTotpVerify, regenerateBackupCodes,
   addPasskeyBegin, addPasskeyFinish, disableTotp, deletePasskey, type Enrolled2FAMethods,
   fetchLoginHistory, fetchOrganizationLoginHistory, type OrgMemberLoginHistoryRow,
+  setOrgPanicPin, requestOrgPanicPinChange, requestOrgPanicPinChangeOtp, finalizeOrgPanicPinChange,
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
 import { formatDate } from '@/lib/format'
@@ -61,6 +62,124 @@ async function save() {
     showError(msg)
   } finally {
     saving.value = false
+  }
+}
+
+// --- Panic PIN (duress protection) ---
+// Entering this instead of the real transaction PIN during a payout
+// silently freezes the account and alerts RigePay security — nothing in
+// the UI response reveals that a panic PIN was entered.
+const panicHasPin = ref(false) // best-effort local flag; server is the source of truth
+const panicPassword = ref('')
+const panicPin = ref('')
+const panicPinConfirm = ref('')
+const panicSaving = ref(false)
+const panicError = ref<string | null>(null)
+
+async function savePanicPin() {
+  panicError.value = null
+  if (!panicPassword.value) {
+    panicError.value = 'Enter your account password to confirm this change.'
+    return
+  }
+  if (!/^\d{4}$/.test(panicPin.value)) {
+    panicError.value = 'Panic PIN must be exactly 4 digits.'
+    return
+  }
+  if (panicPin.value !== panicPinConfirm.value) {
+    panicError.value = 'PINs do not match.'
+    return
+  }
+  panicSaving.value = true
+  try {
+    await setOrgPanicPin(panicPassword.value, panicPin.value)
+    panicHasPin.value = true
+    showSuccess('Panic PIN set. Entering it instead of your real PIN during a payout will silently freeze your account and alert our security team.')
+    panicPassword.value = ''
+    panicPin.value = ''
+    panicPinConfirm.value = ''
+  } catch (err) {
+    const msg = extractErrorMessage(err)
+    panicError.value = msg
+    showError(msg)
+  } finally {
+    panicSaving.value = false
+  }
+}
+
+// Change/removal flow: request (24h cooldown) -> request OTP -> finalize.
+const panicChangeStep = ref<'idle' | 'requested' | 'otp_sent'>('idle')
+const panicChangeAction = ref<'change' | 'remove'>('change')
+const panicChangePassword = ref('')
+const panicChangeAvailableAt = ref<string | null>(null)
+const panicChangeOtp = ref('')
+const panicChangeNewPin = ref('')
+const panicChangeNewPinConfirm = ref('')
+const panicChangeBusy = ref(false)
+const panicChangeError = ref<string | null>(null)
+
+async function startPanicChange(action: 'change' | 'remove') {
+  panicChangeError.value = null
+  panicChangeAction.value = action
+  if (!panicChangePassword.value) {
+    panicChangeError.value = 'Enter your account password to confirm this request.'
+    return
+  }
+  panicChangeBusy.value = true
+  try {
+    const { available_at } = await requestOrgPanicPinChange(panicChangePassword.value, action)
+    panicChangeAvailableAt.value = available_at
+    panicChangeStep.value = 'requested'
+    showSuccess('Request received — a 24-hour cooldown applies before this can be confirmed.')
+  } catch (err) {
+    const msg = extractErrorMessage(err)
+    panicChangeError.value = msg
+    showError(msg)
+  } finally {
+    panicChangeBusy.value = false
+  }
+}
+
+async function sendPanicChangeOtp() {
+  panicChangeError.value = null
+  panicChangeBusy.value = true
+  try {
+    await requestOrgPanicPinChangeOtp(panicChangePassword.value)
+    panicChangeStep.value = 'otp_sent'
+    showSuccess('Confirmation code sent to your registered phone number.')
+  } catch (err) {
+    const msg = extractErrorMessage(err)
+    panicChangeError.value = msg
+    showError(msg)
+  } finally {
+    panicChangeBusy.value = false
+  }
+}
+
+async function finalizePanicChange() {
+  panicChangeError.value = null
+  if (panicChangeAction.value === 'change') {
+    if (!/^\d{4}$/.test(panicChangeNewPin.value) || panicChangeNewPin.value !== panicChangeNewPinConfirm.value) {
+      panicChangeError.value = 'Enter matching 4-digit PINs.'
+      return
+    }
+  }
+  panicChangeBusy.value = true
+  try {
+    await finalizeOrgPanicPinChange(panicChangePassword.value, panicChangeOtp.value, panicChangeAction.value === 'change' ? panicChangeNewPin.value : undefined)
+    showSuccess(panicChangeAction.value === 'remove' ? 'Panic PIN removed.' : 'Panic PIN changed.')
+    panicChangeStep.value = 'idle'
+    panicChangePassword.value = ''
+    panicChangeOtp.value = ''
+    panicChangeNewPin.value = ''
+    panicChangeNewPinConfirm.value = ''
+    panicHasPin.value = panicChangeAction.value === 'change'
+  } catch (err) {
+    const msg = extractErrorMessage(err)
+    panicChangeError.value = msg
+    showError(msg)
+  } finally {
+    panicChangeBusy.value = false
   }
 }
 
@@ -234,14 +353,22 @@ const loginHistory = ref<OrgMemberLoginHistoryRow[]>([])
 const loginHistoryLoading = ref(true)
 const loginHistoryError = ref<string | null>(null)
 const showOrgWideHistory = ref(false)
+const loginHistoryPage = ref(1)
+const loginHistoryTotalPages = ref(1)
+const loginHistoryPageSize = 20
+const loginHistorySearch = ref('')
+let loginHistorySearchTimer: ReturnType<typeof setTimeout> | undefined
 
-async function loadLoginHistory() {
+async function loadLoginHistory(page = 1) {
   loginHistoryLoading.value = true
   loginHistoryError.value = null
   try {
-    loginHistory.value = showOrgWideHistory.value
-      ? await fetchOrganizationLoginHistory()
-      : await fetchLoginHistory(isBranchSession)
+    const result = showOrgWideHistory.value
+      ? await fetchOrganizationLoginHistory(page, loginHistoryPageSize, loginHistorySearch.value)
+      : await fetchLoginHistory(isBranchSession, page, loginHistoryPageSize, loginHistorySearch.value)
+    loginHistory.value = result.rows
+    loginHistoryPage.value = result.page
+    loginHistoryTotalPages.value = result.totalPages
   } catch (err) {
     const msg = extractErrorMessage(err)
     loginHistoryError.value = msg
@@ -250,11 +377,16 @@ async function loadLoginHistory() {
     loginHistoryLoading.value = false
   }
 }
-onMounted(loadLoginHistory)
+onMounted(() => loadLoginHistory())
 
 function toggleOrgWideHistory() {
   showOrgWideHistory.value = !showOrgWideHistory.value
-  loadLoginHistory()
+  loadLoginHistory(1)
+}
+
+function onLoginHistorySearchInput() {
+  if (loginHistorySearchTimer) clearTimeout(loginHistorySearchTimer)
+  loginHistorySearchTimer = setTimeout(() => loadLoginHistory(1), 350)
 }
 
 function locationLabel(row: OrgMemberLoginHistoryRow) {
@@ -301,6 +433,61 @@ function methodLabel(method: string) {
           </div>
           <AppButton type="submit" :loading="saving" class="self-start">Save PIN</AppButton>
         </form>
+      </AppCard>
+
+      <AppCard v-if="isOwner">
+        <h2 class="text-sm font-bold text-text-primary mb-1">Panic PIN</h2>
+        <p class="text-xs text-text-muted mb-5">
+          A second, secret 4-digit PIN for emergencies. If someone forces you to authorize a payout, enter this
+          instead of your real transaction PIN — the payout is silently blocked, all further payouts are frozen,
+          and RigePay security is alerted immediately. It must be different from your real PIN.
+        </p>
+        <div v-if="panicChangeStep === 'idle'">
+          <div v-if="panicError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-4">{{ panicError }}</div>
+          <form class="flex flex-col gap-4 max-w-sm mb-6" @submit.prevent="savePanicPin">
+            <AppInput v-model="panicPassword" type="password" label="Current account password" required />
+            <div class="grid grid-cols-2 gap-4">
+              <AppInput v-model="panicPin" type="password" label="New panic PIN" placeholder="0000" required />
+              <AppInput v-model="panicPinConfirm" type="password" label="Confirm panic PIN" placeholder="0000" required />
+            </div>
+            <AppButton type="submit" :loading="panicSaving" class="self-start">Set panic PIN</AppButton>
+          </form>
+
+          <div class="border-t border-border pt-4">
+            <p class="text-xs text-text-muted mb-3">Already have a panic PIN set? Changing or removing it requires a 24-hour cooldown plus a confirmation code, so it can't be disabled under duress.</p>
+            <div v-if="panicChangeError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ panicChangeError }}</div>
+            <div class="flex items-end gap-2 flex-wrap">
+              <AppInput v-model="panicChangePassword" type="password" label="Current account password" class="max-w-xs" />
+              <AppButton size="sm" variant="secondary" :loading="panicChangeBusy" @click="startPanicChange('change')">Request PIN change</AppButton>
+              <AppButton size="sm" variant="ghost" :loading="panicChangeBusy" @click="startPanicChange('remove')">Request removal</AppButton>
+            </div>
+          </div>
+        </div>
+
+        <div v-else-if="panicChangeStep === 'requested'" class="text-sm">
+          <p class="text-text-primary mb-2">Cooldown started — you can request a confirmation code after:</p>
+          <p class="font-mono text-xs bg-surface-2 rounded-lg px-3 py-2 inline-block mb-4">{{ panicChangeAvailableAt }}</p>
+          <div v-if="panicChangeError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ panicChangeError }}</div>
+          <div class="flex gap-2">
+            <AppButton size="sm" :loading="panicChangeBusy" @click="sendPanicChangeOtp">Send confirmation code</AppButton>
+            <AppButton size="sm" variant="ghost" @click="panicChangeStep = 'idle'">Cancel</AppButton>
+          </div>
+        </div>
+
+        <div v-else-if="panicChangeStep === 'otp_sent'" class="flex flex-col gap-4 max-w-sm">
+          <div v-if="panicChangeError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2">{{ panicChangeError }}</div>
+          <AppInput v-model="panicChangeOtp" label="6-digit confirmation code" placeholder="000000" />
+          <template v-if="panicChangeAction === 'change'">
+            <div class="grid grid-cols-2 gap-4">
+              <AppInput v-model="panicChangeNewPin" type="password" label="New panic PIN" placeholder="0000" />
+              <AppInput v-model="panicChangeNewPinConfirm" type="password" label="Confirm" placeholder="0000" />
+            </div>
+          </template>
+          <div class="flex gap-2">
+            <AppButton size="sm" :loading="panicChangeBusy" @click="finalizePanicChange">Confirm {{ panicChangeAction === 'remove' ? 'removal' : 'change' }}</AppButton>
+            <AppButton size="sm" variant="ghost" @click="panicChangeStep = 'idle'">Cancel</AppButton>
+          </div>
+        </div>
       </AppCard>
 
       <AppCard>
@@ -377,7 +564,13 @@ function methodLabel(method: string) {
             {{ showOrgWideHistory ? 'Show my logins only' : 'Show all organization logins' }}
           </AppButton>
         </div>
-        <p class="text-xs text-text-muted mb-5">Recent sign-ins to your account, with approximate location.</p>
+        <p class="text-xs text-text-muted mb-3">Recent sign-ins to your account, with approximate location.</p>
+        <AppInput
+          v-model="loginHistorySearch"
+          placeholder="Search by IP, city, country, or method"
+          class="max-w-xs mb-4"
+          @update:model-value="onLoginHistorySearchInput"
+        />
         <p v-if="loginHistoryLoading" class="text-sm text-text-muted">Loading…</p>
         <p v-else-if="!loginHistory.length" class="text-sm text-text-muted">No login activity recorded yet.</p>
         <div v-else class="overflow-x-auto">
@@ -401,6 +594,11 @@ function methodLabel(method: string) {
               </tr>
             </tbody>
           </table>
+        </div>
+        <div v-if="loginHistoryTotalPages > 1" class="flex items-center justify-between mt-4 pt-3 border-t border-border">
+          <AppButton size="sm" variant="ghost" :disabled="loginHistoryPage <= 1 || loginHistoryLoading" @click="loadLoginHistory(loginHistoryPage - 1)">Previous</AppButton>
+          <span class="text-xs text-text-muted">Page {{ loginHistoryPage }} of {{ loginHistoryTotalPages }}</span>
+          <AppButton size="sm" variant="ghost" :disabled="loginHistoryPage >= loginHistoryTotalPages || loginHistoryLoading" @click="loadLoginHistory(loginHistoryPage + 1)">Next</AppButton>
         </div>
       </AppCard>
     </div>
