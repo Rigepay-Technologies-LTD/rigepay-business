@@ -7,6 +7,7 @@ import {
   fetchLoginHistory, type OrgMemberLoginHistoryRow,
   setBranchPanicPassword, requestBranchPanicPasswordChange, requestBranchPanicPasswordChangeOtp, finalizeBranchPanicPasswordChange,
   fetchActiveSessions, revokeSession, logoutAllSessions, type OrgActiveSession,
+  fetchOrgFraudAlerts, reviewOrgFraudAlert, type OrgFraudAlert,
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
 import { formatDate } from '@/lib/format'
@@ -414,6 +415,58 @@ function methodLabel(method: string) {
   if (method === 'passkey_auth') return 'Passkey'
   return method || 'Unknown'
 }
+
+// --- Fraud alerts (mirrors merchant FraudAlertsScreen) ---
+const alertTab = ref<'NEW' | 'CONFIRMED' | 'DISMISSED'>('NEW')
+const fraudAlerts = ref<OrgFraudAlert[]>([])
+const fraudAlertsLoading = ref(true)
+const reviewingAlertId = ref<string | null>(null)
+
+async function loadFraudAlerts() {
+  fraudAlertsLoading.value = true
+  try {
+    const result = await fetchOrgFraudAlerts(isBranchSession.value, alertTab.value)
+    fraudAlerts.value = result.alerts ?? []
+  } catch (err) {
+    showError(extractErrorMessage(err))
+  } finally {
+    fraudAlertsLoading.value = false
+  }
+}
+onMounted(loadFraudAlerts)
+
+function switchAlertTab(tab: 'NEW' | 'CONFIRMED' | 'DISMISSED') {
+  alertTab.value = tab
+  loadFraudAlerts()
+}
+
+async function handleReviewAlert(alert: OrgFraudAlert, action: 'CONFIRMED' | 'DISMISSED') {
+  const ok = await confirmAction({
+    title: action === 'CONFIRMED' ? 'Report this transaction as fraud?' : 'Mark this transaction as legitimate?',
+    message: action === 'CONFIRMED'
+      ? 'This helps our fraud engine learn and may trigger additional review.'
+      : "We'll stop flagging similar activity like this going forward.",
+    confirmLabel: action === 'CONFIRMED' ? 'Report Fraud' : 'Mark Legitimate',
+    danger: action === 'CONFIRMED',
+  })
+  if (!ok) return
+  reviewingAlertId.value = alert.id
+  try {
+    await reviewOrgFraudAlert(isBranchSession.value, alert.id, action)
+    showSuccess(action === 'CONFIRMED' ? 'Alert reported. Thank you for helping improve our security.' : 'Alert marked as legitimate.')
+    await loadFraudAlerts()
+  } catch (err) {
+    showError(extractErrorMessage(err))
+  } finally {
+    reviewingAlertId.value = null
+  }
+}
+
+function severityVariant(severity: string) {
+  if (severity === 'CRITICAL' || severity === 'HIGH') return 'error'
+  if (severity === 'MEDIUM') return 'warning'
+  return 'neutral'
+}
 </script>
 
 <template>
@@ -628,6 +681,36 @@ function methodLabel(method: string) {
           <AppButton size="sm" variant="ghost" :disabled="loginHistoryPage <= 1 || loginHistoryLoading" @click="loadLoginHistory(loginHistoryPage - 1)">Previous</AppButton>
           <span class="text-xs text-text-muted">Page {{ loginHistoryPage }} of {{ loginHistoryTotalPages }}</span>
           <AppButton size="sm" variant="ghost" :disabled="loginHistoryPage >= loginHistoryTotalPages || loginHistoryLoading" @click="loadLoginHistory(loginHistoryPage + 1)">Next</AppButton>
+        </div>
+      </AppCard>
+
+      <AppCard>
+        <h2 class="text-sm font-bold text-text-primary mb-1">Fraud alerts</h2>
+        <p class="text-xs text-text-muted mb-4">Review transactions our fraud engine flagged. Confirming or dismissing helps it learn.</p>
+        <div class="flex gap-2 mb-4">
+          <AppButton size="sm" :variant="alertTab === 'NEW' ? 'primary' : 'ghost'" @click="switchAlertTab('NEW')">Pending</AppButton>
+          <AppButton size="sm" :variant="alertTab === 'CONFIRMED' ? 'primary' : 'ghost'" @click="switchAlertTab('CONFIRMED')">Reported</AppButton>
+          <AppButton size="sm" :variant="alertTab === 'DISMISSED' ? 'primary' : 'ghost'" @click="switchAlertTab('DISMISSED')">Dismissed</AppButton>
+        </div>
+        <p v-if="fraudAlertsLoading" class="text-sm text-text-muted">Loading…</p>
+        <p v-else-if="!fraudAlerts.length" class="text-sm text-text-muted">No alerts in this category.</p>
+        <div v-else class="space-y-2">
+          <div v-for="a in fraudAlerts" :key="a.id" class="rounded-lg border border-border p-3">
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0">
+                <div class="flex items-center gap-2 mb-1">
+                  <AppBadge :variant="severityVariant(a.severity)" size="sm">{{ a.severity }}</AppBadge>
+                  <span class="text-sm font-semibold text-text-primary">{{ a.alert_type }}</span>
+                </div>
+                <p class="text-xs text-text-muted">{{ a.description }}</p>
+                <p class="text-xs text-text-muted mt-1">{{ formatDate(a.detected_at) }}</p>
+              </div>
+              <div v-if="alertTab === 'NEW'" class="flex flex-col gap-2 shrink-0">
+                <AppButton size="sm" variant="secondary" :loading="reviewingAlertId === a.id" @click="handleReviewAlert(a, 'DISMISSED')">Legitimate</AppButton>
+                <AppButton size="sm" variant="ghost" :loading="reviewingAlertId === a.id" @click="handleReviewAlert(a, 'CONFIRMED')">Report Fraud</AppButton>
+              </div>
+            </div>
+          </div>
         </div>
       </AppCard>
     </div>

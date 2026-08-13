@@ -2739,6 +2739,33 @@ export async function logoutAllSessions(isBranchSession: boolean): Promise<void>
   await http.post(path)
 }
 
+export interface OrgFraudAlert {
+  id: string
+  alert_type: string
+  severity: string
+  description: string
+  status: string
+  detected_at: string
+  transaction_id?: string | null
+}
+
+export async function fetchOrgFraudAlerts(isBranchSession: boolean, status = 'NEW', limit = 20): Promise<{ alerts: OrgFraudAlert[]; total: number }> {
+  const path = isBranchSession ? '/org/v1/branch/security/alerts' : '/org/v1/security/alerts'
+  const res = await http.get<{ alerts: OrgFraudAlert[]; total: number }>(path, { params: { status, limit } })
+  return res.data
+}
+
+export async function fetchOrgFraudAlertStats(isBranchSession: boolean): Promise<Record<string, number>> {
+  const path = isBranchSession ? '/org/v1/branch/security/alerts/stats' : '/org/v1/security/alerts/stats'
+  const res = await http.get<{ stats: Record<string, number> }>(path)
+  return res.data.stats ?? {}
+}
+
+export async function reviewOrgFraudAlert(isBranchSession: boolean, alertId: string, action: 'CONFIRMED' | 'DISMISSED', note = ''): Promise<void> {
+  const base = isBranchSession ? '/org/v1/branch/security/alerts' : '/org/v1/security/alerts'
+  await http.post(`${base}/${alertId}/review`, { action, note })
+}
+
 export interface OrgSupportContact {
   type: string
   name: string
