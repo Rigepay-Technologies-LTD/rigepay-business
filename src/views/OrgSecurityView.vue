@@ -7,6 +7,7 @@ import {
   addPasskeyBegin, addPasskeyFinish, disableTotp, deletePasskey, type Enrolled2FAMethods,
   fetchLoginHistory, fetchOrganizationLoginHistory, type OrgMemberLoginHistoryRow,
   setOrgPanicPin, requestOrgPanicPinChange, requestOrgPanicPinChangeOtp, finalizeOrgPanicPinChange,
+  fetchActiveSessions, revokeSession, logoutAllSessions, type OrgActiveSession,
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
 import { formatDate } from '@/lib/format'
@@ -389,6 +390,69 @@ function onLoginHistorySearchInput() {
   loginHistorySearchTimer = setTimeout(() => loadLoginHistory(1), 350)
 }
 
+const sessions = ref<OrgActiveSession[]>([])
+const sessionsLoading = ref(true)
+const revokingSessionId = ref<string | null>(null)
+const loggingOutAll = ref(false)
+
+async function loadSessions() {
+  sessionsLoading.value = true
+  try {
+    sessions.value = await fetchActiveSessions(isBranchSession)
+  } catch (err) {
+    showError(extractErrorMessage(err))
+  } finally {
+    sessionsLoading.value = false
+  }
+}
+onMounted(loadSessions)
+
+async function handleRevokeSession(session: OrgActiveSession) {
+  const ok = await confirmAction({
+    title: session.is_current ? 'Sign out this device?' : 'Sign out device?',
+    message: session.is_current
+      ? "This is the device you're using right now. You'll be signed out immediately."
+      : 'This device will be signed out immediately.',
+    confirmLabel: 'Sign Out',
+    danger: true,
+  })
+  if (!ok) return
+  revokingSessionId.value = session.session_id
+  try {
+    await revokeSession(isBranchSession, session.session_id)
+    if (session.is_current) {
+      auth.logout()
+      window.location.href = '/login'
+      return
+    }
+    showSuccess('Device signed out.')
+    await loadSessions()
+  } catch (err) {
+    showError(extractErrorMessage(err))
+  } finally {
+    revokingSessionId.value = null
+  }
+}
+
+async function handleLogoutAll() {
+  const ok = await confirmAction({
+    title: 'Log out everywhere?',
+    message: 'This signs you out on every device, including this one. You will need to log in again.',
+    confirmLabel: 'Log Out All',
+    danger: true,
+  })
+  if (!ok) return
+  loggingOutAll.value = true
+  try {
+    await logoutAllSessions(isBranchSession)
+    auth.logout()
+    window.location.href = '/login'
+  } catch (err) {
+    showError(extractErrorMessage(err))
+    loggingOutAll.value = false
+  }
+}
+
 function locationLabel(row: OrgMemberLoginHistoryRow) {
   const parts = [row.city, row.country].filter(Boolean)
   return parts.length ? parts.join(', ') : 'Unknown location'
@@ -553,6 +617,50 @@ function methodLabel(method: string) {
               <AppButton size="sm" variant="secondary" :loading="addingPasskey" @click="handleAddPasskey">Add a passkey</AppButton>
             </div>
             <div v-if="passkeyError" class="text-xs text-error-text">{{ passkeyError }}</div>
+          </div>
+        </div>
+      </AppCard>
+
+      <AppCard>
+        <div class="flex items-center justify-between mb-1">
+          <h2 class="text-sm font-bold text-text-primary">Active sessions</h2>
+          <AppButton
+            v-if="sessions.length"
+            size="sm"
+            variant="ghost"
+            :loading="loggingOutAll"
+            @click="handleLogoutAll"
+          >
+            Log out everywhere
+          </AppButton>
+        </div>
+        <p class="text-xs text-text-muted mb-4">Devices currently signed in to your account. Sign out any you don't recognise.</p>
+        <p v-if="sessionsLoading" class="text-sm text-text-muted">Loading…</p>
+        <p v-else-if="!sessions.length" class="text-sm text-text-muted">No active sessions found.</p>
+        <div v-else class="space-y-2">
+          <div
+            v-for="s in sessions"
+            :key="s.session_id"
+            class="flex items-center justify-between gap-3 rounded-lg border border-border p-3"
+          >
+            <div class="min-w-0">
+              <div class="flex items-center gap-2">
+                <span class="text-sm font-semibold text-text-primary truncate">
+                  {{ s.device_name || s.platform || 'Unknown device' }}
+                </span>
+                <AppBadge v-if="s.is_current" variant="success" size="sm">This device</AppBadge>
+              </div>
+              <p class="text-xs text-text-muted font-mono truncate">{{ s.ip_address || '—' }}</p>
+              <p class="text-xs text-text-muted">Active {{ formatDate(s.last_activity) }}</p>
+            </div>
+            <AppButton
+              size="sm"
+              variant="ghost"
+              :loading="revokingSessionId === s.session_id"
+              @click="handleRevokeSession(s)"
+            >
+              Sign out
+            </AppButton>
           </div>
         </div>
       </AppCard>

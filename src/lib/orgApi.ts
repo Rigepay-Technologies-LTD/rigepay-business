@@ -2709,6 +2709,36 @@ export async function fetchOrganizationLoginHistory(page = 1, pageSize = 20, sea
   }
 }
 
+export interface OrgActiveSession {
+  session_id: string
+  device_id: string
+  device_name: string
+  platform: string
+  app_version: string
+  ip_address: string
+  user_agent: string
+  created_at: string
+  last_activity: string
+  expires_at: string
+  is_current: boolean
+}
+
+export async function fetchActiveSessions(isBranchSession: boolean): Promise<OrgActiveSession[]> {
+  const path = isBranchSession ? '/org/v1/branch/security/sessions' : '/org/v1/security/sessions'
+  const res = await http.get<{ status: string; data: OrgActiveSession[] }>(path)
+  return res.data.data ?? []
+}
+
+export async function revokeSession(isBranchSession: boolean, sessionId: string): Promise<void> {
+  const base = isBranchSession ? '/org/v1/branch/security/sessions' : '/org/v1/security/sessions'
+  await http.delete(`${base}/${sessionId}`)
+}
+
+export async function logoutAllSessions(isBranchSession: boolean): Promise<void> {
+  const path = isBranchSession ? '/org/v1/branch/security/logout-all' : '/org/v1/security/logout-all'
+  await http.post(path)
+}
+
 export interface OrgSupportContact {
   type: string
   name: string
