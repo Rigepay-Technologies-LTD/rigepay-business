@@ -12,7 +12,9 @@ import DashboardLayout from '@/layouts/DashboardLayout.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppInput from '@/components/ui/AppInput.vue'
-import { PlusIcon, VaultIcon, ChevronDownIcon, ChevronUpIcon } from 'lucide-vue-next'
+import {
+  PlusIcon, VaultIcon, ArrowDownToLineIcon, ArrowUpFromLineIcon, XIcon,
+} from 'lucide-vue-next'
 
 const props = defineProps<{ orgId: string }>()
 const auth = useAuthStore()
@@ -130,88 +132,156 @@ async function submitTransfer(vaultId: string) {
 <template>
   <DashboardLayout :org-id="props.orgId" title="Vaults">
     <div class="flex flex-col gap-6">
-      <div class="flex items-center justify-between">
+      <!-- Header -->
+      <div class="flex items-start justify-between gap-4">
         <div>
           <h2 class="text-sm font-bold text-text-primary">Vaults</h2>
-          <p class="text-xs text-text-muted mt-0.5">
-            Custom prefunded sub-wallets. Move money in from your MAIN wallet ahead of a settlement date, then point
-            a scheduled payout at a vault instead of MAIN directly.
+          <p class="text-xs text-text-muted mt-0.5 max-w-md">
+            Custom prefunded sub-wallets. Move money in from MAIN ahead of a settlement date,
+            then point a scheduled payout at a vault instead of MAIN directly.
           </p>
         </div>
         <AppButton v-if="isOwner" size="sm" @click="showCreateForm = !showCreateForm">
-          <template #icon><PlusIcon class="w-4 h-4" /></template>
-          Create vault
+          <template #icon>
+            <XIcon v-if="showCreateForm" class="w-4 h-4" />
+            <PlusIcon v-else class="w-4 h-4" />
+          </template>
+          {{ showCreateForm ? 'Cancel' : 'Create vault' }}
         </AppButton>
       </div>
 
-      <AppCard v-if="showCreateForm">
-        <h3 class="text-sm font-bold text-text-primary mb-3">New vault</h3>
-        <div v-if="createError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ createError }}</div>
-        <form class="flex flex-col gap-4 max-w-sm" @submit.prevent="createVault">
-          <AppInput v-model="newVaultName" label="Vault name" placeholder="e.g. December payroll" required />
-          <div class="flex gap-2">
-            <AppButton type="submit" :loading="creating">Create</AppButton>
-            <AppButton type="button" variant="ghost" @click="showCreateForm = false">Cancel</AppButton>
+      <!-- Create form -->
+      <Transition
+        enter-active-class="transition duration-150 ease-out"
+        enter-from-class="opacity-0 -translate-y-1"
+        enter-to-class="opacity-100 translate-y-0"
+        leave-active-class="transition duration-100 ease-in"
+        leave-from-class="opacity-100"
+        leave-to-class="opacity-0"
+      >
+        <AppCard v-if="showCreateForm">
+          <h3 class="text-sm font-bold text-text-primary mb-3">New vault</h3>
+          <div v-if="createError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">
+            {{ createError }}
           </div>
-        </form>
-      </AppCard>
+          <form class="flex flex-col gap-4 max-w-sm" @submit.prevent="createVault">
+            <AppInput v-model="newVaultName" label="Vault name" placeholder="e.g. December payroll" required />
+            <div class="flex gap-2">
+              <AppButton type="submit" :loading="creating">Create</AppButton>
+              <AppButton type="button" variant="ghost" @click="showCreateForm = false">Cancel</AppButton>
+            </div>
+          </form>
+        </AppCard>
+      </Transition>
 
-      <p v-if="loading" class="text-sm text-text-muted">Loading vaults…</p>
+      <!-- Loading state -->
+      <div v-if="loading" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <AppCard v-for="i in 3" :key="i" padding="lg">
+          <div class="flex flex-col gap-3 animate-pulse">
+            <div class="w-8 h-8 rounded-lg bg-surface-2" />
+            <div class="h-3 w-2/3 rounded bg-surface-2" />
+            <div class="h-5 w-1/2 rounded bg-surface-2" />
+          </div>
+        </AppCard>
+      </div>
+
+      <!-- Empty state -->
       <AppCard v-else-if="!vaults.length" padding="lg">
-        <div class="flex flex-col items-center text-center gap-2 py-6">
-          <VaultIcon class="w-8 h-8 text-text-muted" />
-          <p class="text-sm font-semibold text-text-primary">No vaults yet</p>
-          <p class="text-xs text-text-muted">Create one to start ring-fencing funds for upcoming settlements.</p>
+        <div class="flex flex-col items-center text-center gap-3 py-8">
+          <div class="w-12 h-12 rounded-xl bg-primary-muted text-primary flex items-center justify-center">
+            <VaultIcon class="w-6 h-6" />
+          </div>
+          <div>
+            <p class="text-sm font-semibold text-text-primary">No vaults yet</p>
+            <p class="text-xs text-text-muted mt-1 max-w-xs">
+              Create one to start ring-fencing funds ahead of an upcoming settlement.
+            </p>
+          </div>
+          <AppButton v-if="isOwner" size="sm" class="mt-1" @click="showCreateForm = true">
+            <template #icon><PlusIcon class="w-4 h-4" /></template>
+            Create vault
+          </AppButton>
         </div>
       </AppCard>
 
-      <div v-else class="flex flex-col gap-3">
-        <AppCard v-for="v in vaults" :key="v.id" padding="none">
+      <!-- Vault grid -->
+      <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <AppCard
+          v-for="v in vaults"
+          :key="v.id"
+          padding="none"
+          :class="['overflow-hidden transition-shadow', expandedVaultId === v.id ? 'sm:col-span-2 lg:col-span-3' : '']"
+        >
           <button
             type="button"
-            class="w-full flex items-center gap-3 px-5 py-3.5 text-left hover:bg-surface-2 transition-colors"
+            class="w-full flex flex-col gap-3 px-5 py-4 text-left hover:bg-surface-2 transition-colors"
+            :aria-expanded="expandedVaultId === v.id"
             @click="toggleExpand(v.id)"
           >
-            <div class="w-8 h-8 rounded-lg bg-primary-muted text-primary flex items-center justify-center shrink-0">
-              <VaultIcon class="w-4 h-4" />
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-lg bg-primary-muted text-primary flex items-center justify-center shrink-0">
+                <VaultIcon class="w-4 h-4" />
+              </div>
+              <span class="text-sm font-semibold text-text-primary flex-1 truncate">{{ v.name }}</span>
             </div>
-            <span class="text-sm font-semibold text-text-primary flex-1">{{ v.name }}</span>
-            <span class="text-sm font-bold text-text-primary">KES {{ formatMoney(v.balance_cents) }}</span>
-            <ChevronUpIcon v-if="expandedVaultId === v.id" class="w-4 h-4 text-text-muted" />
-            <ChevronDownIcon v-else class="w-4 h-4 text-text-muted" />
+            <div>
+              <p class="text-[11px] font-medium uppercase tracking-wide text-text-muted">Balance</p>
+              <p class="text-xl font-bold text-text-primary leading-tight">
+                <span class="text-xs font-semibold text-text-muted align-top mr-1">KES</span>{{ formatMoney(v.balance_cents) }}
+              </p>
+            </div>
           </button>
 
-          <div v-if="expandedVaultId === v.id" class="border-t border-border px-5 py-5">
-            <div class="flex gap-2 rounded-xl bg-surface-2 p-1 mb-4 max-w-xs">
-              <button
-                type="button"
-                :class="['flex-1 text-xs font-semibold rounded-lg py-1.5', transferDirection === 'fund' ? 'bg-surface shadow-sm text-text-primary' : 'text-text-muted']"
-                @click="transferDirection = 'fund'"
-              >
-                Fund from MAIN
-              </button>
-              <button
-                type="button"
-                :class="['flex-1 text-xs font-semibold rounded-lg py-1.5', transferDirection === 'withdraw' ? 'bg-surface shadow-sm text-text-primary' : 'text-text-muted']"
-                @click="transferDirection = 'withdraw'"
-              >
-                Withdraw to MAIN
-              </button>
+          <Transition
+            enter-active-class="transition-all duration-200 ease-out"
+            enter-from-class="opacity-0 max-h-0"
+            enter-to-class="opacity-100 max-h-[32rem]"
+            leave-active-class="transition-all duration-150 ease-in"
+            leave-from-class="opacity-100 max-h-[32rem]"
+            leave-to-class="opacity-0 max-h-0"
+          >
+            <div v-if="expandedVaultId === v.id" class="border-t border-border px-5 py-5 overflow-hidden">
+              <div class="flex gap-2 rounded-xl bg-surface-2 p-1 mb-4 max-w-xs">
+                <button
+                  type="button"
+                  :class="[
+                    'flex-1 flex items-center justify-center gap-1.5 text-xs font-semibold rounded-lg py-1.5 transition-colors',
+                    transferDirection === 'fund' ? 'bg-surface shadow-sm text-primary' : 'text-text-muted',
+                  ]"
+                  @click="transferDirection = 'fund'"
+                >
+                  <ArrowDownToLineIcon class="w-3.5 h-3.5" />
+                  Fund from MAIN
+                </button>
+                <button
+                  type="button"
+                  :class="[
+                    'flex-1 flex items-center justify-center gap-1.5 text-xs font-semibold rounded-lg py-1.5 transition-colors',
+                    transferDirection === 'withdraw' ? 'bg-surface shadow-sm text-primary' : 'text-text-muted',
+                  ]"
+                  @click="transferDirection = 'withdraw'"
+                >
+                  <ArrowUpFromLineIcon class="w-3.5 h-3.5" />
+                  Withdraw to MAIN
+                </button>
+              </div>
+
+              <div v-if="transferError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">
+                {{ transferError }}
+              </div>
+
+              <form class="flex flex-col gap-3 max-w-sm" @submit.prevent="submitTransfer(v.id)">
+                <AppInput v-model="transferAmount" type="number" label="Amount (KES)" placeholder="Min 1" required />
+                <AppInput v-if="!isOwner" v-model="transferPassword" type="password" label="Confirm your password" required />
+                <AppInput v-else v-model="transferPin" type="password" label="Transaction PIN" placeholder="0000" required />
+                <AppButton type="submit" size="sm" :loading="transferring" class="self-start">
+                  {{ transferDirection === 'fund' ? 'Fund vault' : 'Withdraw to MAIN' }}
+                </AppButton>
+              </form>
+
+              <p class="text-[11px] text-text-muted mt-3">Created {{ formatDate(v.created_at) }}</p>
             </div>
-
-            <div v-if="transferError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ transferError }}</div>
-
-            <form class="flex flex-col gap-3 max-w-sm" @submit.prevent="submitTransfer(v.id)">
-              <AppInput v-model="transferAmount" type="number" label="Amount (KES)" placeholder="Min 1" required />
-              <AppInput v-if="!isOwner" v-model="transferPassword" type="password" label="Confirm your password" required />
-              <AppInput v-else v-model="transferPin" type="password" label="Transaction PIN" placeholder="0000" required />
-              <AppButton type="submit" size="sm" :loading="transferring" class="self-start">
-                {{ transferDirection === 'fund' ? 'Fund vault' : 'Withdraw to MAIN' }}
-              </AppButton>
-            </form>
-
-            <p class="text-[11px] text-text-muted mt-3">Created {{ formatDate(v.created_at) }}</p>
-          </div>
+          </Transition>
         </AppCard>
       </div>
     </div>

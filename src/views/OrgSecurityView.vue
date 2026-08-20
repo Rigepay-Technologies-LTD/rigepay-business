@@ -20,6 +20,10 @@ import AppCard from '@/components/ui/AppCard.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppInput from '@/components/ui/AppInput.vue'
 import AppBadge from '@/components/ui/AppBadge.vue'
+import {
+  KeyRoundIcon, ShieldAlertIcon, ShieldCheckIcon, MonitorSmartphoneIcon, HistoryIcon,
+  TriangleAlertIcon, FingerprintIcon, QrCodeIcon, LogOutIcon,
+} from 'lucide-vue-next'
 
 const props = defineProps<{ orgId: string }>()
 const auth = useAuthStore()
@@ -518,275 +522,365 @@ function severityVariant(severity: string) {
   if (severity === 'MEDIUM') return 'warning'
   return 'neutral'
 }
+
+const alertSubTabs: Array<{ key: 'NEW' | 'CONFIRMED' | 'DISMISSED'; label: string }> = [
+  { key: 'NEW', label: 'Pending' },
+  { key: 'CONFIRMED', label: 'Reported' },
+  { key: 'DISMISSED', label: 'Dismissed' },
+]
+
+// --- Page-level tab navigation ---
+// All the data loaders above still fire on mount regardless of which tab is
+// active (onMounted calls are untouched), so switching tabs never re-fetches
+// — it only changes which panel is rendered.
+type SectionTab = 'pin' | 'panic-pin' | 'twofa' | 'sessions' | 'login-history' | 'fraud-alerts'
+const allSectionTabs: Array<{ key: SectionTab; label: string; icon: any; ownerOnly: boolean }> = [
+  { key: 'pin', label: 'Transaction PIN', icon: KeyRoundIcon, ownerOnly: true },
+  { key: 'panic-pin', label: 'Panic PIN', icon: ShieldAlertIcon, ownerOnly: true },
+  { key: 'twofa', label: '2FA', icon: ShieldCheckIcon, ownerOnly: false },
+  { key: 'sessions', label: 'Sessions', icon: MonitorSmartphoneIcon, ownerOnly: false },
+  { key: 'login-history', label: 'Login activity', icon: HistoryIcon, ownerOnly: false },
+  { key: 'fraud-alerts', label: 'Fraud alerts', icon: TriangleAlertIcon, ownerOnly: false },
+]
+const sectionTabs = allSectionTabs.filter((t) => !t.ownerOnly || isOwner)
+const activeSection = ref<SectionTab>(sectionTabs[0]?.key ?? 'twofa')
 </script>
 
 <template>
   <DashboardLayout :org-id="props.orgId" title="Security">
-    <div class="flex flex-col gap-6">
-      <div v-if="revealedBackupCodes" class="text-sm bg-warning-light text-warning-text rounded-xl px-4 py-3 flex flex-col gap-2">
-        <p class="font-semibold">Save these backup codes now — they will not be shown again.</p>
-        <div class="grid grid-cols-2 sm:grid-cols-5 gap-2 font-mono text-xs">
-          <span v-for="code in revealedBackupCodes" :key="code" class="bg-surface rounded-lg px-2 py-1 text-center">{{ code }}</span>
+    <div class="flex flex-col gap-5">
+      <Transition
+        enter-active-class="transition duration-150 ease-out"
+        enter-from-class="opacity-0 -translate-y-1"
+        enter-to-class="opacity-100 translate-y-0"
+      >
+        <div v-if="revealedBackupCodes" class="text-sm bg-warning-light text-warning-text rounded-xl px-4 py-3 flex flex-col gap-2">
+          <p class="font-semibold">Save these backup codes now — they will not be shown again.</p>
+          <div class="grid grid-cols-2 sm:grid-cols-5 gap-2 font-mono text-xs">
+            <span v-for="code in revealedBackupCodes" :key="code" class="bg-surface rounded-lg px-2 py-1 text-center">{{ code }}</span>
+          </div>
+          <button type="button" class="text-xs font-semibold self-start hover:underline" @click="revealedBackupCodes = null">Dismiss</button>
         </div>
-        <button type="button" class="text-xs font-semibold self-start hover:underline" @click="revealedBackupCodes = null">Dismiss</button>
+      </Transition>
+
+      <!-- Tab bar -->
+      <div class="flex gap-1 rounded-xl bg-surface-2 p-1 overflow-x-auto">
+        <button
+          v-for="t in sectionTabs"
+          :key="t.key"
+          type="button"
+          :class="[
+            'flex items-center gap-1.5 whitespace-nowrap text-xs font-semibold rounded-lg px-3 py-1.5 transition-colors shrink-0',
+            activeSection === t.key ? 'bg-surface shadow-sm text-primary' : 'text-text-muted hover:text-text-primary',
+          ]"
+          @click="activeSection = t.key"
+        >
+          <component :is="t.icon" class="w-3.5 h-3.5" />
+          {{ t.label }}
+        </button>
       </div>
 
-      <AppCard v-if="!isOwner">
-        <p class="text-sm text-text-muted">Transaction PIN management is owner-only. You confirm your own payouts with your account password instead.</p>
-      </AppCard>
-
-      <AppCard v-else>
-        <h2 class="text-sm font-bold text-text-primary mb-1">Transaction PIN</h2>
-        <p class="text-xs text-text-muted mb-5">
-          As the owner, you confirm every payout with this 4-digit PIN instead of your password. Set it once here —
-          you can change it any time by re-confirming your account password.
-        </p>
-        <div v-if="error" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-4">{{ error }}</div>
-        <form class="flex flex-col gap-4 max-w-sm" @submit.prevent="save">
-          <AppInput v-model="currentPassword" type="password" label="Current account password" required />
-          <div class="grid grid-cols-2 gap-4">
-            <AppInput v-model="pin" type="password" label="New 4-digit PIN" placeholder="0000" required />
-            <AppInput v-model="confirmPin" type="password" label="Confirm PIN" placeholder="0000" required />
-          </div>
-          <AppButton type="submit" :loading="saving" class="self-start">Save PIN</AppButton>
-        </form>
-      </AppCard>
-
-      <AppCard v-if="isOwner">
-        <h2 class="text-sm font-bold text-text-primary mb-1">Panic PIN</h2>
-        <p class="text-xs text-text-muted mb-5">
-          A second, secret 4-digit PIN for emergencies. If someone forces you to authorize a payout, enter this
-          instead of your real transaction PIN — the payout is silently blocked, all further payouts are frozen,
-          and RigePay security is alerted immediately. It must be different from your real PIN.
-        </p>
-        <div v-if="panicChangeStep === 'idle'">
-          <div v-if="panicError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-4">{{ panicError }}</div>
-          <form class="flex flex-col gap-4 max-w-sm mb-6" @submit.prevent="savePanicPin">
-            <AppInput v-model="panicPassword" type="password" label="Current account password" required />
+      <AppCard>
+        <!-- Transaction PIN -->
+        <div v-if="activeSection === 'pin' && isOwner">
+          <h2 class="text-sm font-bold text-text-primary mb-1">Transaction PIN</h2>
+          <p class="text-xs text-text-muted mb-5 max-w-lg">
+            As the owner, you confirm every payout with this 4-digit PIN instead of your password. Set it once here —
+            you can change it any time by re-confirming your account password.
+          </p>
+          <div v-if="error" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-4">{{ error }}</div>
+          <form class="flex flex-col gap-4 max-w-sm" @submit.prevent="save">
+            <AppInput v-model="currentPassword" type="password" label="Current account password" required />
             <div class="grid grid-cols-2 gap-4">
-              <AppInput v-model="panicPin" type="password" label="New panic PIN" placeholder="0000" required />
-              <AppInput v-model="panicPinConfirm" type="password" label="Confirm panic PIN" placeholder="0000" required />
+              <AppInput v-model="pin" type="password" label="New 4-digit PIN" placeholder="0000" required />
+              <AppInput v-model="confirmPin" type="password" label="Confirm PIN" placeholder="0000" required />
             </div>
-            <AppButton type="submit" :loading="panicSaving" class="self-start">Set panic PIN</AppButton>
+            <AppButton type="submit" :loading="saving" class="self-start">Save PIN</AppButton>
           </form>
+        </div>
 
-          <div class="border-t border-border pt-4">
-            <p class="text-xs text-text-muted mb-3">Already have a panic PIN set? Changing or removing it requires a 24-hour cooldown plus a confirmation code, so it can't be disabled under duress.</p>
+        <!-- Panic PIN -->
+        <div v-else-if="activeSection === 'panic-pin' && isOwner">
+          <div class="flex items-center gap-2 mb-1">
+            <ShieldAlertIcon class="w-4 h-4 text-warning-text" />
+            <h2 class="text-sm font-bold text-text-primary">Panic PIN</h2>
+          </div>
+          <p class="text-xs text-text-muted mb-5 max-w-2xl">
+            A second, secret 4-digit PIN for emergencies. If someone forces you to authorize a payout, enter this
+            instead of your real transaction PIN — the payout is silently blocked, all further payouts are frozen,
+            and RigePay security is alerted immediately. It must be different from your real PIN.
+          </p>
+
+          <div v-if="panicChangeStep === 'idle'">
+            <div v-if="panicError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-4">{{ panicError }}</div>
+            <form class="flex flex-col gap-4 max-w-sm mb-6" @submit.prevent="savePanicPin">
+              <AppInput v-model="panicPassword" type="password" label="Current account password" required />
+              <div class="grid grid-cols-2 gap-4">
+                <AppInput v-model="panicPin" type="password" label="New panic PIN" placeholder="0000" required />
+                <AppInput v-model="panicPinConfirm" type="password" label="Confirm panic PIN" placeholder="0000" required />
+              </div>
+              <AppButton type="submit" :loading="panicSaving" class="self-start">Set panic PIN</AppButton>
+            </form>
+
+            <div class="border-t border-border pt-4">
+              <p class="text-xs text-text-muted mb-3">Already have a panic PIN set? Changing or removing it requires a 24-hour cooldown plus a confirmation code, so it can't be disabled under duress.</p>
+              <div v-if="panicChangeError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ panicChangeError }}</div>
+              <div class="flex items-end gap-2 flex-wrap">
+                <AppInput v-model="panicChangePassword" type="password" label="Current account password" class="max-w-xs" />
+                <AppButton size="sm" variant="secondary" :loading="panicChangeBusy" @click="startPanicChange('change')">Request PIN change</AppButton>
+                <AppButton size="sm" variant="ghost" :loading="panicChangeBusy" @click="startPanicChange('remove')">Request removal</AppButton>
+              </div>
+            </div>
+          </div>
+
+          <div v-else-if="panicChangeStep === 'requested'" class="text-sm">
+            <p class="text-text-primary mb-2">Cooldown started — you can request a confirmation code after:</p>
+            <p class="font-mono text-xs bg-surface-2 rounded-lg px-3 py-2 inline-block mb-4">{{ panicChangeAvailableAt }}</p>
             <div v-if="panicChangeError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ panicChangeError }}</div>
-            <div class="flex items-end gap-2 flex-wrap">
-              <AppInput v-model="panicChangePassword" type="password" label="Current account password" class="max-w-xs" />
-              <AppButton size="sm" variant="secondary" :loading="panicChangeBusy" @click="startPanicChange('change')">Request PIN change</AppButton>
-              <AppButton size="sm" variant="ghost" :loading="panicChangeBusy" @click="startPanicChange('remove')">Request removal</AppButton>
+            <div class="flex gap-2">
+              <AppButton size="sm" :loading="panicChangeBusy" @click="sendPanicChangeOtp">Send confirmation code</AppButton>
+              <AppButton size="sm" variant="ghost" @click="panicChangeStep = 'idle'">Cancel</AppButton>
+            </div>
+          </div>
+
+          <div v-else-if="panicChangeStep === 'otp_sent'" class="flex flex-col gap-4 max-w-sm">
+            <div v-if="panicChangeError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2">{{ panicChangeError }}</div>
+            <AppInput v-model="panicChangeOtp" label="6-digit confirmation code" placeholder="000000" />
+            <template v-if="panicChangeAction === 'change'">
+              <div class="grid grid-cols-2 gap-4">
+                <AppInput v-model="panicChangeNewPin" type="password" label="New panic PIN" placeholder="0000" />
+                <AppInput v-model="panicChangeNewPinConfirm" type="password" label="Confirm" placeholder="0000" />
+              </div>
+            </template>
+            <div class="flex gap-2">
+              <AppButton size="sm" :loading="panicChangeBusy" @click="finalizePanicChange">Confirm {{ panicChangeAction === 'remove' ? 'removal' : 'change' }}</AppButton>
+              <AppButton size="sm" variant="ghost" @click="panicChangeStep = 'idle'">Cancel</AppButton>
             </div>
           </div>
         </div>
 
-        <div v-else-if="panicChangeStep === 'requested'" class="text-sm">
-          <p class="text-text-primary mb-2">Cooldown started — you can request a confirmation code after:</p>
-          <p class="font-mono text-xs bg-surface-2 rounded-lg px-3 py-2 inline-block mb-4">{{ panicChangeAvailableAt }}</p>
-          <div v-if="panicChangeError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ panicChangeError }}</div>
-          <div class="flex gap-2">
-            <AppButton size="sm" :loading="panicChangeBusy" @click="sendPanicChangeOtp">Send confirmation code</AppButton>
-            <AppButton size="sm" variant="ghost" @click="panicChangeStep = 'idle'">Cancel</AppButton>
-          </div>
-        </div>
+        <!-- 2FA -->
+        <div v-else-if="activeSection === 'twofa'">
+          <h2 class="text-sm font-bold text-text-primary mb-1">Two-factor authentication</h2>
+          <p class="text-xs text-text-muted mb-5">You must have at least one method enrolled to access the dashboard — add a second one here so you're never locked out.</p>
 
-        <div v-else-if="panicChangeStep === 'otp_sent'" class="flex flex-col gap-4 max-w-sm">
-          <div v-if="panicChangeError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2">{{ panicChangeError }}</div>
-          <AppInput v-model="panicChangeOtp" label="6-digit confirmation code" placeholder="000000" />
-          <template v-if="panicChangeAction === 'change'">
-            <div class="grid grid-cols-2 gap-4">
-              <AppInput v-model="panicChangeNewPin" type="password" label="New panic PIN" placeholder="0000" />
-              <AppInput v-model="panicChangeNewPinConfirm" type="password" label="Confirm" placeholder="0000" />
-            </div>
-          </template>
-          <div class="flex gap-2">
-            <AppButton size="sm" :loading="panicChangeBusy" @click="finalizePanicChange">Confirm {{ panicChangeAction === 'remove' ? 'removal' : 'change' }}</AppButton>
-            <AppButton size="sm" variant="ghost" @click="panicChangeStep = 'idle'">Cancel</AppButton>
+          <div v-if="methodsLoading" class="flex flex-col gap-2">
+            <div v-for="i in 2" :key="i" class="h-14 rounded-xl bg-surface-2 animate-pulse" />
           </div>
-        </div>
-      </AppCard>
-
-      <AppCard>
-        <h2 class="text-sm font-bold text-text-primary mb-1">Two-factor authentication</h2>
-        <p class="text-xs text-text-muted mb-5">You must have at least one method enrolled to access the dashboard — add a second one here so you're never locked out.</p>
-        <p v-if="methodsLoading" class="text-sm text-text-muted">Loading…</p>
-        <div v-else-if="methods" class="flex flex-col gap-4">
-          <div class="flex items-center justify-between rounded-xl bg-surface-2 px-4 py-3">
-            <div>
-              <p class="text-sm font-semibold text-text-primary">Authenticator app (TOTP)</p>
-              <p class="text-xs text-text-muted">Google Authenticator, Authy, or similar</p>
-            </div>
-            <div class="flex items-center gap-2">
-              <AppBadge :variant="methods.totp_enabled ? 'success' : 'neutral'" size="sm">{{ methods.totp_enabled ? 'Enabled' : 'Not set up' }}</AppBadge>
-              <AppButton v-if="methods.totp_enabled" size="sm" variant="ghost" :loading="removingTotp" @click="handleDisableTotp">Remove</AppButton>
-            </div>
-          </div>
-
-          <div v-if="methods.passkeys.length > 0" class="flex flex-col gap-2">
-            <div v-for="pk in methods.passkeys" :key="pk.id" class="flex items-center justify-between rounded-xl bg-surface-2 px-4 py-3">
+          <div v-else-if="methods" class="flex flex-col gap-4">
+            <div class="flex items-center justify-between rounded-xl bg-surface-2 px-4 py-3">
               <div>
-                <p class="text-sm font-semibold text-text-primary">{{ pk.name }}</p>
-                <p class="text-xs text-text-muted">{{ pk.last_used_at ? `Last used ${pk.last_used_at}` : 'Never used' }}</p>
+                <p class="text-sm font-semibold text-text-primary">Authenticator app (TOTP)</p>
+                <p class="text-xs text-text-muted">Google Authenticator, Authy, or similar</p>
               </div>
-              <AppButton size="sm" variant="ghost" :loading="removingPasskeyId === pk.id" @click="handleDeletePasskey(pk.id)">Remove</AppButton>
-            </div>
-          </div>
-          <div v-else class="flex items-center justify-between rounded-xl bg-surface-2 px-4 py-3">
-            <div>
-              <p class="text-sm font-semibold text-text-primary">Passkeys</p>
-              <p class="text-xs text-text-muted">Face ID, Touch ID, or a security key</p>
-            </div>
-            <AppBadge variant="neutral" size="sm">0 registered</AppBadge>
-          </div>
-
-          <div class="border-t border-border pt-4 flex flex-col gap-3">
-            <div v-if="!showAddTotp" class="flex flex-wrap gap-2">
-              <AppButton size="sm" variant="secondary" :loading="addingTotp" @click="beginAddTotp">
-                {{ methods.totp_enabled ? 'Replace authenticator app' : 'Add authenticator app' }}
-              </AppButton>
-              <AppButton v-if="methods.totp_enabled" size="sm" variant="secondary" :loading="regenerating" @click="handleRegenerateBackupCodes">
-                Regenerate backup codes
-              </AppButton>
-            </div>
-            <div v-if="regenerateError" class="text-xs text-error-text">{{ regenerateError }}</div>
-
-            <div v-if="showAddTotp" class="flex flex-col gap-3 max-w-sm">
-              <p class="text-xs text-text-muted">Scan this into your authenticator app, or enter the secret manually.</p>
-              <div class="flex justify-center">
-                <img v-if="totpQrDataUrl" :src="totpQrDataUrl" alt="TOTP QR code" class="w-40 h-40 rounded-lg border border-border" />
-              </div>
-              <p class="font-mono text-xs bg-surface-2 rounded-lg px-3 py-2 break-all">{{ totpSecret }}</p>
-              <div v-if="totpError" class="text-xs text-error-text">{{ totpError }}</div>
-              <AppInput v-model="totpCode" label="6-digit code from the app" placeholder="000000" />
-              <div class="flex gap-2">
-                <AppButton size="sm" :loading="addingTotp" @click="verifyAddTotp">Confirm</AppButton>
-                <AppButton size="sm" variant="ghost" @click="showAddTotp = false">Cancel</AppButton>
-              </div>
-            </div>
-
-            <div class="flex items-end gap-2 flex-wrap">
-              <AppInput v-model="passkeyName" label="Passkey name (optional)" placeholder="e.g. My laptop" class="max-w-xs" />
-              <AppButton size="sm" variant="secondary" :loading="addingPasskey" @click="handleAddPasskey">Add a passkey</AppButton>
-            </div>
-            <div v-if="passkeyError" class="text-xs text-error-text">{{ passkeyError }}</div>
-          </div>
-        </div>
-      </AppCard>
-
-      <AppCard>
-        <div class="flex items-center justify-between mb-1">
-          <h2 class="text-sm font-bold text-text-primary">Active sessions</h2>
-          <AppButton
-            v-if="sessions.length"
-            size="sm"
-            variant="ghost"
-            :loading="loggingOutAll"
-            @click="handleLogoutAll"
-          >
-            Log out everywhere
-          </AppButton>
-        </div>
-        <p class="text-xs text-text-muted mb-4">Devices currently signed in to your account. Sign out any you don't recognise.</p>
-        <p v-if="sessionsLoading" class="text-sm text-text-muted">Loading…</p>
-        <p v-else-if="!sessions.length" class="text-sm text-text-muted">No active sessions found.</p>
-        <div v-else class="space-y-2">
-          <div
-            v-for="s in sessions"
-            :key="s.session_id"
-            class="flex items-center justify-between gap-3 rounded-lg border border-border p-3"
-          >
-            <div class="min-w-0">
               <div class="flex items-center gap-2">
-                <span class="text-sm font-semibold text-text-primary truncate">
-                  {{ s.device_name || s.platform || 'Unknown device' }}
-                </span>
-                <AppBadge v-if="s.is_current" variant="success" size="sm">This device</AppBadge>
+                <AppBadge :variant="methods.totp_enabled ? 'success' : 'neutral'" size="sm">{{ methods.totp_enabled ? 'Enabled' : 'Not set up' }}</AppBadge>
+                <AppButton v-if="methods.totp_enabled" size="sm" variant="ghost" :loading="removingTotp" @click="handleDisableTotp">Remove</AppButton>
               </div>
-              <p class="text-xs text-text-muted font-mono truncate">{{ s.ip_address || '—' }}</p>
-              <p class="text-xs text-text-muted">Active {{ formatDate(s.last_activity) }}</p>
             </div>
+
+            <div v-if="methods.passkeys.length > 0" class="flex flex-col gap-2">
+              <div v-for="pk in methods.passkeys" :key="pk.id" class="flex items-center justify-between rounded-xl bg-surface-2 px-4 py-3">
+                <div class="flex items-center gap-2.5">
+                  <FingerprintIcon class="w-4 h-4 text-text-muted shrink-0" />
+                  <div>
+                    <p class="text-sm font-semibold text-text-primary">{{ pk.name }}</p>
+                    <p class="text-xs text-text-muted">{{ pk.last_used_at ? `Last used ${pk.last_used_at}` : 'Never used' }}</p>
+                  </div>
+                </div>
+                <AppButton size="sm" variant="ghost" :loading="removingPasskeyId === pk.id" @click="handleDeletePasskey(pk.id)">Remove</AppButton>
+              </div>
+            </div>
+            <div v-else class="flex items-center justify-between rounded-xl bg-surface-2 px-4 py-3">
+              <div class="flex items-center gap-2.5">
+                <FingerprintIcon class="w-4 h-4 text-text-muted shrink-0" />
+                <div>
+                  <p class="text-sm font-semibold text-text-primary">Passkeys</p>
+                  <p class="text-xs text-text-muted">Face ID, Touch ID, or a security key</p>
+                </div>
+              </div>
+              <AppBadge variant="neutral" size="sm">0 registered</AppBadge>
+            </div>
+
+            <div class="border-t border-border pt-4 flex flex-col gap-3">
+              <div v-if="!showAddTotp" class="flex flex-wrap gap-2">
+                <AppButton size="sm" variant="secondary" :loading="addingTotp" @click="beginAddTotp">
+                  {{ methods.totp_enabled ? 'Replace authenticator app' : 'Add authenticator app' }}
+                </AppButton>
+                <AppButton v-if="methods.totp_enabled" size="sm" variant="secondary" :loading="regenerating" @click="handleRegenerateBackupCodes">
+                  Regenerate backup codes
+                </AppButton>
+              </div>
+              <div v-if="regenerateError" class="text-xs text-error-text">{{ regenerateError }}</div>
+
+              <Transition
+                enter-active-class="transition duration-150 ease-out"
+                enter-from-class="opacity-0 -translate-y-1"
+                enter-to-class="opacity-100 translate-y-0"
+              >
+                <div v-if="showAddTotp" class="flex flex-col gap-3 max-w-sm rounded-xl bg-surface-2 p-4">
+                  <div class="flex items-center gap-2 text-text-muted">
+                    <QrCodeIcon class="w-4 h-4" />
+                    <p class="text-xs">Scan this into your authenticator app, or enter the secret manually.</p>
+                  </div>
+                  <div class="flex justify-center">
+                    <img v-if="totpQrDataUrl" :src="totpQrDataUrl" alt="TOTP QR code" class="w-40 h-40 rounded-lg border border-border bg-surface" />
+                  </div>
+                  <p class="font-mono text-xs bg-surface rounded-lg px-3 py-2 break-all">{{ totpSecret }}</p>
+                  <div v-if="totpError" class="text-xs text-error-text">{{ totpError }}</div>
+                  <AppInput v-model="totpCode" label="6-digit code from the app" placeholder="000000" />
+                  <div class="flex gap-2">
+                    <AppButton size="sm" :loading="addingTotp" @click="verifyAddTotp">Confirm</AppButton>
+                    <AppButton size="sm" variant="ghost" @click="showAddTotp = false">Cancel</AppButton>
+                  </div>
+                </div>
+              </Transition>
+
+              <div class="flex items-end gap-2 flex-wrap">
+                <AppInput v-model="passkeyName" label="Passkey name (optional)" placeholder="e.g. My laptop" class="max-w-xs" />
+                <AppButton size="sm" variant="secondary" :loading="addingPasskey" @click="handleAddPasskey">Add a passkey</AppButton>
+              </div>
+              <div v-if="passkeyError" class="text-xs text-error-text">{{ passkeyError }}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Sessions -->
+        <div v-else-if="activeSection === 'sessions'">
+          <div class="flex items-center justify-between mb-1">
+            <h2 class="text-sm font-bold text-text-primary">Active sessions</h2>
             <AppButton
+              v-if="sessions.length"
               size="sm"
               variant="ghost"
-              :loading="revokingSessionId === s.session_id"
-              @click="handleRevokeSession(s)"
+              :loading="loggingOutAll"
+              @click="handleLogoutAll"
             >
-              Sign out
+              <template #icon><LogOutIcon class="w-3.5 h-3.5" /></template>
+              Log out everywhere
             </AppButton>
           </div>
-        </div>
-      </AppCard>
+          <p class="text-xs text-text-muted mb-4">Devices currently signed in to your account. Sign out any you don't recognise.</p>
 
-      <AppCard>
-        <div class="flex items-center justify-between mb-1">
-          <h2 class="text-sm font-bold text-text-primary">Login activity</h2>
-          <AppButton v-if="isOwner && !isBranchSession" size="sm" variant="ghost" @click="toggleOrgWideHistory">
-            {{ showOrgWideHistory ? 'Show my logins only' : 'Show all organization logins' }}
-          </AppButton>
-        </div>
-        <p class="text-xs text-text-muted mb-3">Recent sign-ins to your account, with approximate location.</p>
-        <AppInput
-          v-model="loginHistorySearch"
-          placeholder="Search by IP, city, country, or method"
-          class="max-w-xs mb-4"
-          @update:model-value="onLoginHistorySearchInput"
-        />
-        <p v-if="loginHistoryLoading" class="text-sm text-text-muted">Loading…</p>
-        <p v-else-if="!loginHistory.length" class="text-sm text-text-muted">No login activity recorded yet.</p>
-        <div v-else class="overflow-x-auto">
-          <table class="w-full text-sm">
-            <thead>
-              <tr class="text-left text-xs text-text-muted uppercase tracking-wide border-b border-border">
-                <th class="py-2 pr-4 font-semibold">When</th>
-                <th class="py-2 pr-4 font-semibold">Location</th>
-                <th class="py-2 pr-4 font-semibold">IP address</th>
-                <th class="py-2 pr-4 font-semibold">Method</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="row in loginHistory" :key="row.id" class="border-b border-border last:border-0">
-                <td class="py-2 pr-4 whitespace-nowrap text-text-primary">{{ formatDate(row.created_at) }}</td>
-                <td class="py-2 pr-4 text-text-primary">{{ locationLabel(row) }}</td>
-                <td class="py-2 pr-4 font-mono text-xs text-text-muted">{{ row.ip_address || '—' }}</td>
-                <td class="py-2 pr-4">
-                  <AppBadge variant="neutral" size="sm">{{ methodLabel(row.login_method) }}</AppBadge>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <div v-if="loginHistoryTotalPages > 1" class="flex items-center justify-between mt-4 pt-3 border-t border-border">
-          <AppButton size="sm" variant="ghost" :disabled="loginHistoryPage <= 1 || loginHistoryLoading" @click="loadLoginHistory(loginHistoryPage - 1)">Previous</AppButton>
-          <span class="text-xs text-text-muted">Page {{ loginHistoryPage }} of {{ loginHistoryTotalPages }}</span>
-          <AppButton size="sm" variant="ghost" :disabled="loginHistoryPage >= loginHistoryTotalPages || loginHistoryLoading" @click="loadLoginHistory(loginHistoryPage + 1)">Next</AppButton>
-        </div>
-      </AppCard>
-
-      <AppCard>
-        <h2 class="text-sm font-bold text-text-primary mb-1">Fraud alerts</h2>
-        <p class="text-xs text-text-muted mb-4">Review transactions our fraud engine flagged. Confirming or dismissing helps it learn.</p>
-        <div class="flex gap-2 mb-4">
-          <AppButton size="sm" :variant="alertTab === 'NEW' ? 'primary' : 'ghost'" @click="switchAlertTab('NEW')">Pending</AppButton>
-          <AppButton size="sm" :variant="alertTab === 'CONFIRMED' ? 'primary' : 'ghost'" @click="switchAlertTab('CONFIRMED')">Reported</AppButton>
-          <AppButton size="sm" :variant="alertTab === 'DISMISSED' ? 'primary' : 'ghost'" @click="switchAlertTab('DISMISSED')">Dismissed</AppButton>
-        </div>
-        <p v-if="fraudAlertsLoading" class="text-sm text-text-muted">Loading…</p>
-        <p v-else-if="!fraudAlerts.length" class="text-sm text-text-muted">No alerts in this category.</p>
-        <div v-else class="space-y-2">
-          <div v-for="a in fraudAlerts" :key="a.id" class="rounded-lg border border-border p-3">
-            <div class="flex items-start justify-between gap-3">
+          <div v-if="sessionsLoading" class="flex flex-col gap-2">
+            <div v-for="i in 2" :key="i" class="h-16 rounded-lg bg-surface-2 animate-pulse" />
+          </div>
+          <p v-else-if="!sessions.length" class="text-sm text-text-muted">No active sessions found.</p>
+          <div v-else class="space-y-2">
+            <div
+              v-for="s in sessions"
+              :key="s.session_id"
+              class="flex items-center justify-between gap-3 rounded-lg border border-border p-3"
+            >
               <div class="min-w-0">
-                <div class="flex items-center gap-2 mb-1">
-                  <AppBadge :variant="severityVariant(a.severity)" size="sm">{{ a.severity }}</AppBadge>
-                  <span class="text-sm font-semibold text-text-primary">{{ a.alert_type }}</span>
+                <div class="flex items-center gap-2">
+                  <span class="text-sm font-semibold text-text-primary truncate">
+                    {{ s.device_name || s.platform || 'Unknown device' }}
+                  </span>
+                  <AppBadge v-if="s.is_current" variant="success" size="sm">This device</AppBadge>
                 </div>
-                <p class="text-xs text-text-muted">{{ a.description }}</p>
-                <p class="text-xs text-text-muted mt-1">{{ formatDate(a.detected_at) }}</p>
+                <p class="text-xs text-text-muted font-mono truncate">{{ s.ip_address || '—' }}</p>
+                <p class="text-xs text-text-muted">Active {{ formatDate(s.last_activity) }}</p>
               </div>
-              <div v-if="alertTab === 'NEW'" class="flex flex-col gap-2 shrink-0">
-                <AppButton size="sm" variant="secondary" :loading="reviewingAlertId === a.id" @click="handleReviewAlert(a, 'DISMISSED')">Legitimate</AppButton>
-                <AppButton size="sm" variant="ghost" :loading="reviewingAlertId === a.id" @click="handleReviewAlert(a, 'CONFIRMED')">Report Fraud</AppButton>
+              <AppButton
+                size="sm"
+                variant="ghost"
+                :loading="revokingSessionId === s.session_id"
+                @click="handleRevokeSession(s)"
+              >
+                Sign out
+              </AppButton>
+            </div>
+          </div>
+        </div>
+
+        <!-- Login activity -->
+        <div v-else-if="activeSection === 'login-history'">
+          <div class="flex items-center justify-between mb-1 flex-wrap gap-2">
+            <h2 class="text-sm font-bold text-text-primary">Login activity</h2>
+            <AppButton v-if="isOwner && !isBranchSession" size="sm" variant="ghost" @click="toggleOrgWideHistory">
+              {{ showOrgWideHistory ? 'Show my logins only' : 'Show all organization logins' }}
+            </AppButton>
+          </div>
+          <p class="text-xs text-text-muted mb-3">Recent sign-ins to your account, with approximate location.</p>
+          <AppInput
+            v-model="loginHistorySearch"
+            placeholder="Search by IP, city, country, or method"
+            class="max-w-xs mb-4"
+            @update:model-value="onLoginHistorySearchInput"
+          />
+          <div v-if="loginHistoryLoading" class="flex flex-col gap-2">
+            <div v-for="i in 4" :key="i" class="h-9 rounded-lg bg-surface-2 animate-pulse" />
+          </div>
+          <p v-else-if="!loginHistory.length" class="text-sm text-text-muted">No login activity recorded yet.</p>
+          <div v-else class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="text-left text-xs text-text-muted uppercase tracking-wide border-b border-border">
+                  <th class="py-2 pr-4 font-semibold">When</th>
+                  <th class="py-2 pr-4 font-semibold">Location</th>
+                  <th class="py-2 pr-4 font-semibold">IP address</th>
+                  <th class="py-2 pr-4 font-semibold">Method</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in loginHistory" :key="row.id" class="border-b border-border last:border-0 hover:bg-surface-2/60 transition-colors">
+                  <td class="py-2 pr-4 whitespace-nowrap text-text-primary">{{ formatDate(row.created_at) }}</td>
+                  <td class="py-2 pr-4 text-text-primary">{{ locationLabel(row) }}</td>
+                  <td class="py-2 pr-4 font-mono text-xs text-text-muted">{{ row.ip_address || '—' }}</td>
+                  <td class="py-2 pr-4">
+                    <AppBadge variant="neutral" size="sm">{{ methodLabel(row.login_method) }}</AppBadge>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div v-if="loginHistoryTotalPages > 1" class="flex items-center justify-between mt-4 pt-3 border-t border-border">
+            <AppButton size="sm" variant="ghost" :disabled="loginHistoryPage <= 1 || loginHistoryLoading" @click="loadLoginHistory(loginHistoryPage - 1)">Previous</AppButton>
+            <span class="text-xs text-text-muted">Page {{ loginHistoryPage }} of {{ loginHistoryTotalPages }}</span>
+            <AppButton size="sm" variant="ghost" :disabled="loginHistoryPage >= loginHistoryTotalPages || loginHistoryLoading" @click="loadLoginHistory(loginHistoryPage + 1)">Next</AppButton>
+          </div>
+        </div>
+
+        <!-- Fraud alerts -->
+        <div v-else-if="activeSection === 'fraud-alerts'">
+          <h2 class="text-sm font-bold text-text-primary mb-1">Fraud alerts</h2>
+          <p class="text-xs text-text-muted mb-4">Review transactions our fraud engine flagged. Confirming or dismissing helps it learn.</p>
+
+          <div class="flex gap-1 rounded-xl bg-surface-2 p-1 mb-4 max-w-xs">
+            <button
+              v-for="t in alertSubTabs"
+              :key="t.key"
+              type="button"
+              :class="[
+                'flex-1 text-xs font-semibold rounded-lg py-1.5 transition-colors',
+                alertTab === t.key ? 'bg-surface shadow-sm text-primary' : 'text-text-muted',
+              ]"
+              @click="switchAlertTab(t.key)"
+            >
+              {{ t.label }}
+            </button>
+          </div>
+
+          <div v-if="fraudAlertsLoading" class="flex flex-col gap-2">
+            <div v-for="i in 2" :key="i" class="h-16 rounded-lg bg-surface-2 animate-pulse" />
+          </div>
+          <p v-else-if="!fraudAlerts.length" class="text-sm text-text-muted">No alerts in this category.</p>
+          <div v-else class="space-y-2">
+            <div v-for="a in fraudAlerts" :key="a.id" class="rounded-lg border border-border p-3">
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                  <div class="flex items-center gap-2 mb-1">
+                    <AppBadge :variant="severityVariant(a.severity)" size="sm">{{ a.severity }}</AppBadge>
+                    <span class="text-sm font-semibold text-text-primary">{{ a.alert_type }}</span>
+                  </div>
+                  <p class="text-xs text-text-muted">{{ a.description }}</p>
+                  <p class="text-xs text-text-muted mt-1">{{ formatDate(a.detected_at) }}</p>
+                </div>
+                <div v-if="alertTab === 'NEW'" class="flex flex-col gap-2 shrink-0">
+                  <AppButton size="sm" variant="secondary" :loading="reviewingAlertId === a.id" @click="handleReviewAlert(a, 'DISMISSED')">Legitimate</AppButton>
+                  <AppButton size="sm" variant="ghost" :loading="reviewingAlertId === a.id" @click="handleReviewAlert(a, 'CONFIRMED')">Report Fraud</AppButton>
+                </div>
               </div>
             </div>
           </div>

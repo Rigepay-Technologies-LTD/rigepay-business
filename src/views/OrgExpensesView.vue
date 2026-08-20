@@ -12,7 +12,7 @@ import AppCard from '@/components/ui/AppCard.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppInput from '@/components/ui/AppInput.vue'
 import AppModal from '@/components/ui/AppModal.vue'
-import { PlusIcon, ReceiptIcon, PaperclipIcon } from 'lucide-vue-next'
+import { PlusIcon, ReceiptIcon, PaperclipIcon, ChevronRightIcon, TagIcon, XIcon, FileTextIcon } from 'lucide-vue-next'
 import { useResponseModal } from '@/composables/useResponseModal'
 
 const { showError } = useResponseModal()
@@ -163,10 +163,13 @@ const availableTagsToAssign = () => allTags.value.filter((t) => !assignedTags.va
 <template>
   <DashboardLayout :org-id="props.orgId" title="Expenses">
     <div class="flex flex-col gap-6">
-      <div class="flex items-center justify-between">
+      <div class="flex items-start justify-between gap-4">
         <div>
-          <h2 class="text-sm font-bold text-text-primary">Expenses</h2>
-          <p class="text-xs text-text-muted mt-0.5">Record business spend for bookkeeping — {{ totalCount }} logged.</p>
+          <span class="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-text-muted mb-1">
+            <ReceiptIcon class="w-3.5 h-3.5 text-primary" />Bookkeeping
+          </span>
+          <h2 class="text-base font-bold text-text-primary">Expenses</h2>
+          <p class="text-xs text-text-muted mt-0.5">Record business spend for your records — {{ totalCount }} logged.</p>
         </div>
         <AppButton size="sm" @click="showCreateForm = !showCreateForm">
           <template #icon><PlusIcon class="w-4 h-4" /></template>
@@ -174,8 +177,8 @@ const availableTagsToAssign = () => allTags.value.filter((t) => !assignedTags.va
         </AppButton>
       </div>
 
-      <AppCard v-if="showCreateForm">
-        <h3 class="text-sm font-bold text-text-primary mb-3">Log expense</h3>
+      <div v-if="showCreateForm" class="rounded-2xl border-2 border-dashed border-primary/25 bg-primary/3 p-5">
+        <span class="block text-[11px] font-bold uppercase tracking-[0.14em] text-text-muted mb-4">New expense</span>
         <div v-if="createError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ createError }}</div>
         <form class="flex flex-col gap-4 max-w-sm" @submit.prevent="submitCreate">
           <AppInput v-model="amountKes" type="number" label="Amount (KES)" required />
@@ -202,12 +205,17 @@ const availableTagsToAssign = () => allTags.value.filter((t) => !assignedTags.va
             <AppButton type="button" variant="ghost" @click="showCreateForm = false">Cancel</AppButton>
           </div>
         </form>
-      </AppCard>
+      </div>
 
-      <p v-if="loading" class="text-sm text-text-muted">Loading expenses…</p>
+      <div v-if="loading" class="flex flex-col gap-2">
+        <div v-for="i in 4" :key="i" class="h-16 rounded-2xl bg-border/30 animate-pulse" />
+      </div>
+
       <AppCard v-else-if="!expenses.length" padding="lg">
-        <div class="flex flex-col items-center text-center gap-2 py-6">
-          <ReceiptIcon class="w-8 h-8 text-text-muted" />
+        <div class="flex flex-col items-center text-center gap-3 py-6">
+          <span class="flex items-center justify-center w-12 h-12 rounded-full bg-primary/10">
+            <ReceiptIcon class="w-6 h-6 text-primary" />
+          </span>
           <p class="text-sm font-semibold text-text-primary">No expenses logged yet</p>
           <p class="text-xs text-text-muted">Track money spent outside the system for your records.</p>
         </div>
@@ -217,17 +225,22 @@ const availableTagsToAssign = () => allTags.value.filter((t) => !assignedTags.va
         <AppCard v-for="exp in expenses" :key="exp.id" padding="none">
           <button
             type="button"
-            class="flex items-center justify-between gap-3 px-5 py-3.5 w-full text-left hover:bg-primary-muted/40 transition-colors"
+            class="flex items-center gap-3 px-5 py-3.5 w-full text-left hover:bg-primary-muted/40 transition-colors"
             @click="openDetails(exp)"
           >
+            <span class="flex items-center justify-center w-9 h-9 rounded-full bg-primary/10 text-primary text-xs font-bold shrink-0">
+              {{ exp.category?.[0]?.toUpperCase() }}
+            </span>
             <div class="min-w-0 flex-1">
-              <p class="text-sm font-semibold text-text-primary truncate flex items-center gap-1.5">
-                {{ exp.vendor }} — KES {{ formatMoney(exp.amount_cents) }}
-                <PaperclipIcon v-if="exp.receipt_url" class="w-3 h-3 text-text-muted" />
-              </p>
-              <p class="text-xs text-text-muted mt-0.5">
+              <p class="text-sm font-semibold text-text-primary truncate">{{ exp.vendor }}</p>
+              <p class="text-xs text-text-muted mt-0.5 flex items-center gap-1">
                 {{ exp.category }} · {{ formatDate(exp.occurred_at) }}
+                <PaperclipIcon v-if="exp.receipt_url" class="w-3 h-3 text-text-muted shrink-0" />
               </p>
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+              <span class="text-sm font-semibold text-text-primary tabular-nums">KES {{ formatMoney(exp.amount_cents) }}</span>
+              <ChevronRightIcon class="w-4 h-4 text-text-muted" />
             </div>
           </button>
         </AppCard>
@@ -235,24 +248,29 @@ const availableTagsToAssign = () => allTags.value.filter((t) => !assignedTags.va
     </div>
 
     <AppModal :model-value="!!selectedExpense" title="Expense details" size="sm" @update:model-value="selectedExpense = null">
-      <div v-if="selectedExpense" class="flex flex-col gap-3 p-6">
-        <div class="flex items-center justify-between">
-          <p class="text-lg font-bold text-text-primary">KES {{ formatMoney(selectedExpense.amount_cents) }}</p>
+      <div v-if="selectedExpense" class="flex flex-col gap-4 p-6">
+        <div>
+          <span class="block text-[10px] font-bold uppercase tracking-[0.14em] text-text-muted mb-1">{{ selectedExpense.vendor }}</span>
+          <p class="text-3xl font-bold text-text-primary tracking-tight tabular-nums">KES {{ formatMoney(selectedExpense.amount_cents) }}</p>
         </div>
-        <dl class="flex flex-col gap-2 text-sm">
-          <div class="flex justify-between"><dt class="text-text-muted">Vendor</dt><dd class="font-medium text-text-primary">{{ selectedExpense.vendor }}</dd></div>
-          <div class="flex justify-between"><dt class="text-text-muted">Category</dt><dd class="font-medium text-text-primary">{{ selectedExpense.category }}</dd></div>
-          <div class="flex justify-between"><dt class="text-text-muted">Date</dt><dd class="font-medium text-text-primary">{{ formatDate(selectedExpense.occurred_at) }}</dd></div>
-          <div class="flex justify-between"><dt class="text-text-muted">Payment method</dt><dd class="font-medium text-text-primary">{{ selectedExpense.payment_method }}</dd></div>
-          <div class="flex justify-between"><dt class="text-text-muted">Status</dt><dd class="font-medium text-text-primary">{{ selectedExpense.status }}</dd></div>
-          <div v-if="selectedExpense.reference_code" class="flex justify-between"><dt class="text-text-muted">Reference</dt><dd class="font-medium text-text-primary">{{ selectedExpense.reference_code }}</dd></div>
-          <div v-if="selectedExpense.tax_amount_cents" class="flex justify-between"><dt class="text-text-muted">Tax</dt><dd class="font-medium text-text-primary">KES {{ formatMoney(selectedExpense.tax_amount_cents) }}</dd></div>
+
+        <dl class="flex flex-col divide-y divide-border text-sm">
+          <div class="flex justify-between py-2"><dt class="text-text-muted">Vendor</dt><dd class="font-medium text-text-primary">{{ selectedExpense.vendor }}</dd></div>
+          <div class="flex justify-between py-2"><dt class="text-text-muted">Category</dt><dd class="font-medium text-text-primary">{{ selectedExpense.category }}</dd></div>
+          <div class="flex justify-between py-2"><dt class="text-text-muted">Date</dt><dd class="font-medium text-text-primary">{{ formatDate(selectedExpense.occurred_at) }}</dd></div>
+          <div class="flex justify-between py-2"><dt class="text-text-muted">Payment method</dt><dd class="font-medium text-text-primary">{{ selectedExpense.payment_method }}</dd></div>
+          <div class="flex justify-between py-2"><dt class="text-text-muted">Status</dt><dd class="font-medium text-text-primary">{{ selectedExpense.status }}</dd></div>
+          <div v-if="selectedExpense.reference_code" class="flex justify-between py-2"><dt class="text-text-muted">Reference</dt><dd class="font-medium text-text-primary">{{ selectedExpense.reference_code }}</dd></div>
+          <div v-if="selectedExpense.tax_amount_cents" class="flex justify-between py-2"><dt class="text-text-muted">Tax</dt><dd class="font-medium text-text-primary">KES {{ formatMoney(selectedExpense.tax_amount_cents) }}</dd></div>
         </dl>
+
         <p v-if="selectedExpense.notes" class="text-xs text-text-muted border-t border-border pt-3">{{ selectedExpense.notes }}</p>
 
         <div class="border-t border-border pt-3">
-          <p class="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-2">Tags</p>
-          <div class="flex flex-wrap gap-1.5 mb-2">
+          <span class="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.14em] text-text-muted mb-2.5">
+            <TagIcon class="w-3.5 h-3.5" />Tags
+          </span>
+          <div class="flex flex-wrap gap-1.5 mb-2.5">
             <span v-if="!assignedTags.length" class="text-xs text-text-muted">No tags yet</span>
             <span
               v-for="tag in assignedTags" :key="tag.id"
@@ -260,7 +278,9 @@ const availableTagsToAssign = () => allTags.value.filter((t) => !assignedTags.va
               :style="{ backgroundColor: (tag.color || '#9CA3AF') + '22', color: tag.color || '#6B7280' }"
             >
               {{ tag.name }}
-              <button type="button" class="hover:opacity-70" @click="handleUnassignTag(tag)">✕</button>
+              <button type="button" class="hover:opacity-70 rounded-full p-0.5" @click="handleUnassignTag(tag)">
+                <XIcon class="w-3 h-3" />
+              </button>
             </span>
           </div>
           <div v-if="availableTagsToAssign().length" class="flex items-center gap-2">
@@ -273,14 +293,18 @@ const availableTagsToAssign = () => allTags.value.filter((t) => !assignedTags.va
         </div>
 
         <div v-if="selectedExpense.receipt_url" class="border-t border-border pt-3">
-          <p class="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-2">Receipt</p>
-          <a :href="selectedExpense.receipt_url" target="_blank" rel="noopener">
+          <span class="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.14em] text-text-muted mb-2.5">
+            <FileTextIcon class="w-3.5 h-3.5" />Receipt
+          </span>
+          <a :href="selectedExpense.receipt_url" target="_blank" rel="noopener" class="block">
             <img
               v-if="!selectedExpense.receipt_url.endsWith('.pdf')"
               :src="selectedExpense.receipt_url" alt="Receipt"
               class="rounded-xl border border-border max-h-64 w-auto"
             />
-            <span v-else class="text-xs font-semibold text-primary underline">View receipt PDF</span>
+            <span v-else class="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline">
+              <FileTextIcon class="w-3.5 h-3.5" />View receipt PDF
+            </span>
           </a>
         </div>
       </div>
