@@ -183,9 +183,7 @@ async function validateShortcodeRecipient() {
   }
 }
 
-// Verify recipient for phone / bank-account destinations — mirrors
-// validateShortcodeRecipient above (paybill/till already had this). Reuses
-// the same org-level validate endpoints via their branch-scoped routes.
+
 const recipientValidation = ref<{ ok: boolean; message: string } | null>(null)
 
 async function validateRecipient() {

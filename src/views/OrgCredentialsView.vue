@@ -360,7 +360,7 @@ const credColumns = [
           </div>
         </div>
 
-        <div v-if="showKeyForm" class="rounded-2xl border-2 border-dashed border-primary/25 bg-primary/[0.03] p-5 mb-4">
+        <div v-if="showKeyForm" class="rounded-2xl border-2 border-dashed border-primary/25 bg-primary3 p-5 mb-4">
           <div v-if="keyError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ keyError }}</div>
           <form class="flex flex-col gap-4" @submit.prevent="createKey">
             <AppInput v-model="newKeyName" label="Key name" placeholder="e.g. Backend integration" required />
@@ -463,7 +463,7 @@ const credColumns = [
           </div>
         </div>
 
-        <div v-if="showCredForm" class="rounded-2xl border-2 border-dashed border-primary/25 bg-primary/[0.03] p-5 mb-4">
+        <div v-if="showCredForm" class="rounded-2xl border-2 border-dashed border-primary/25 bg-primary/3 p-5 mb-4">
           <div v-if="credError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ credError }}</div>
           <form class="flex flex-col gap-4" @submit.prevent="createCred">
             <AppSelect
@@ -556,7 +556,7 @@ const credColumns = [
           </div>
         </div>
 
-        <div v-if="showWebhookForm" class="rounded-2xl border-2 border-dashed border-primary/25 bg-primary/[0.03] p-5 mb-4">
+        <div v-if="showWebhookForm" class="rounded-2xl border-2 border-dashed border-primary/25 bg-primary/3 p-5 mb-4">
           <div v-if="webhookError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ webhookError }}</div>
           <form class="flex flex-col gap-4" @submit.prevent="createWebhook">
             <AppInput v-model="newWebhookUrl" label="Endpoint URL" placeholder="https://your-system.example.com/webhooks/rigepay" required />

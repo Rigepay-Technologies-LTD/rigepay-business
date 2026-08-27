@@ -123,8 +123,7 @@ async function verifyPayoutShortcode() {
   }
 }
 
-// Verify recipient for phone / bank-account destinations — mirrors
-// verifyPayoutShortcode above (paybill/till already had this).
+
 const payoutRecipientValidation = ref<{ ok: boolean; message: string } | null>(null)
 async function verifyPayoutRecipient() {
   payoutRecipientValidation.value = null
@@ -132,11 +131,17 @@ async function verifyPayoutRecipient() {
   try {
     if (payoutDestinationType.value === 'BANK_ACCOUNT') {
       if (!payoutBankAccountNumber.value.trim() || !payoutBankCode.value) {
-        payoutRecipientValidation.value = { ok: false, message: 'Enter a bank and account number first.' }
+        payoutRecipientValidation.value = { 
+          ok: false, 
+          message: 'Enter a bank and account number first.'
+        }
         return
       }
       const result = await validateOrgBankAccount(payoutBankAccountNumber.value.trim(), payoutBankCode.value, true)
-      payoutRecipientValidation.value = { ok: true, message: `Account holder: ${result.account_name}` }
+      payoutRecipientValidation.value = { 
+        ok: true, 
+        message: `Account holder: ${result.account_name}`,
+      }
       if (!payoutRecipientName.value.trim()) payoutRecipientName.value = result.account_name
     } else {
       if (!payoutPhoneNumber.value.trim()) {

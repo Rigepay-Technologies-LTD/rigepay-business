@@ -8,16 +8,15 @@ let inFlight: Promise<boolean> | null = null
 
 export async function refreshSession(): Promise<boolean> {
   if (inFlight) return inFlight
-  const refreshToken = session.getRefreshToken()
-  if (!refreshToken) return false
 
   inFlight = (async () => {
     try {
       const res = await axios.post<{ status: string; data: DashboardTokenData }>(
         `${API_BASE_URL}/org/v1/auth/refresh`,
-        { refresh_token: refreshToken },
+        {},
+        { withCredentials: true },
       )
-    
+
       const meta = session.getMeta()
       if (!meta) return false
       applyDashboardToken({

@@ -4,10 +4,16 @@ import { session } from './session'
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080/api/v1'
 
+function getCookie(name: string): string | null {
+  const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`))
+  return match?.[1] !== undefined ? decodeURIComponent(match[1]) : null
+}
+
 function attachDashboardToken(config: InternalAxiosRequestConfig) {
-  const token = session.getToken()
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`
+  const method = (config.method || 'get').toLowerCase()
+  if (method !== 'get') {
+    const csrfToken = getCookie('rp_biz_csrf')
+    if (csrfToken) config.headers['X-CSRF-Token'] = csrfToken
   }
 
   const meta = session.getMeta()
@@ -24,6 +30,7 @@ function attachDashboardToken(config: InternalAxiosRequestConfig) {
 export const http = axios.create({
   baseURL: API_BASE_URL,
   headers: { 'Content-Type': 'application/json' },
+  withCredentials: true,
 })
 http.interceptors.request.use(attachDashboardToken)
 
@@ -32,12 +39,11 @@ http.interceptors.response.use(
   (res) => res,
   async (error) => {
     const original = error.config as (InternalAxiosRequestConfig & { _retried?: boolean }) | undefined
-    if (error.response?.status === 401 && original && !original._retried && session.getRefreshToken()) {
+    if (error.response?.status === 401 && original && !original._retried) {
       original._retried = true
       const { refreshSession } = await import('./sessionRefresh')
       const refreshed = await refreshSession()
       if (refreshed) {
-        original.headers.Authorization = `Bearer ${session.getToken()}`
         return http(original)
       }
     }
@@ -64,5 +70,10 @@ export function setupTokenHttp(setupToken: string) {
       'Content-Type': 'application/json',
       'X-Setup-Token': setupToken,
     },
+    // Required — this instance carries the 2FA-verify requests that
+    // actually receive the Set-Cookie session headers from the backend.
+    // Without withCredentials, the browser silently drops Set-Cookie on
+    // cross-origin responses and no session cookie is ever stored.
+    withCredentials: true,
   })
 }

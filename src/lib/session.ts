@@ -1,5 +1,3 @@
-const ACCESS_TOKEN_KEY = 'rigepay_business_access_token'
-const REFRESH_TOKEN_KEY = 'rigepay_business_refresh_token'
 const EXPIRES_AT_KEY = 'rigepay_business_expires_at'
 const SESSION_META_KEY = 'rigepay_business_session_meta'
 
@@ -10,21 +8,8 @@ export interface SessionMeta {
   memberType: 'org_member' | 'branch_member'
 }
 
-export const session = {
-  getToken(): string | null {
-    return sessionStorage.getItem(ACCESS_TOKEN_KEY)
-  },
-  setToken(token: string) {
-    sessionStorage.setItem(ACCESS_TOKEN_KEY, token)
-  },
-  getRefreshToken(): string | null {
-    return sessionStorage.getItem(REFRESH_TOKEN_KEY)
-  },
-  setRefreshToken(token: string) {
-    sessionStorage.setItem(REFRESH_TOKEN_KEY, token)
-  },
 
-  
+export const session = {
   getExpiresAt(): number | null {
     const raw = sessionStorage.getItem(EXPIRES_AT_KEY)
     return raw ? Number(raw) : null
@@ -45,8 +30,6 @@ export const session = {
     sessionStorage.setItem(SESSION_META_KEY, JSON.stringify(meta))
   },
   clear() {
-    sessionStorage.removeItem(ACCESS_TOKEN_KEY)
-    sessionStorage.removeItem(REFRESH_TOKEN_KEY)
     sessionStorage.removeItem(EXPIRES_AT_KEY)
     sessionStorage.removeItem(SESSION_META_KEY)
   },
