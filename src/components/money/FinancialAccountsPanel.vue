@@ -3,9 +3,15 @@ import { ref, computed, onMounted } from 'vue'
 import { extractErrorMessage } from '@/lib/errors'
 import { formatMoney, formatDate } from '@/lib/format'
 import { useResponseModal } from '@/composables/useResponseModal'
+import { useAuthStore } from '@/stores/auth'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
-import type { FinancialAccounts, FinancialAccount } from '@/lib/orgApi'
+import AppButton from '@/components/ui/AppButton.vue'
+import AppModal from '@/components/ui/AppModal.vue'
+import {
+  freezeOrgWallet, unfreezeOrgWallet, closeOrgWallet,
+  type FinancialAccounts, type FinancialAccount,
+} from '@/lib/orgApi'
 import { XIcon } from 'lucide-vue-next'
 
 const props = defineProps<{
@@ -13,7 +19,46 @@ const props = defineProps<{
   allowScope?: boolean
 }>()
 
-const { showError } = useResponseModal()
+const { showError, showSuccess } = useResponseModal()
+const auth = useAuthStore()
+const canManage = computed(() => auth.meta?.role === 'owner' && auth.meta?.memberType !== 'branch_member')
+
+const MANAGEABLE_TYPES = ['MAIN', 'ESCROW', 'CHARGEBACK', 'MARKETPLACE_ESCROW', 'VAULT']
+
+const actionModal = ref<{ kind: 'freeze' | 'unfreeze' | 'close'; wallet: FinancialAccount } | null>(null)
+const actionReason = ref('')
+const actionPin = ref('')
+const actionBusy = ref(false)
+
+function openAction(kind: 'freeze' | 'unfreeze' | 'close', wallet: FinancialAccount) {
+  actionModal.value = { kind, wallet }
+  actionReason.value = ''
+  actionPin.value = ''
+}
+
+async function runAction() {
+  if (!actionModal.value) return
+  const { kind, wallet } = actionModal.value
+  if (!actionPin.value.trim()) {
+    showError('Enter your transaction PIN.')
+    return
+  }
+  actionBusy.value = true
+  try {
+    let res: { message?: string }
+    if (kind === 'freeze') res = await freezeOrgWallet(wallet.id, actionReason.value.trim(), actionPin.value.trim())
+    else if (kind === 'unfreeze') res = await unfreezeOrgWallet(wallet.id, actionPin.value.trim())
+    else res = await closeOrgWallet(wallet.id, actionPin.value.trim())
+    showSuccess(res.message || 'Done.')
+    actionModal.value = null
+    selected.value = null
+    await load()
+  } catch (err) {
+    showError(extractErrorMessage(err))
+  } finally {
+    actionBusy.value = false
+  }
+}
 
 const scope = ref('consolidated')
 const data = ref<FinancialAccounts | null>(null)
@@ -142,8 +187,8 @@ onMounted(load)
         </div>
       </AppCard>
 
-      <p class="text-xs text-text-muted">
-        Wallet lifecycle controls (freeze / block / close) are managed by RigePay support — contact us from the Support page if an account needs to be held.
+      <p v-if="!canManage" class="text-xs text-text-muted">
+        Wallet freeze / close controls are available to organization owners. Contact RigePay support if an account frozen by a system check needs to be reopened.
       </p>
     </template>
 
@@ -177,9 +222,60 @@ onMounted(load)
                 <dd class="font-medium text-text-primary text-right break-all" :class="r.mono ? 'font-mono text-xs' : ''">{{ r.value }}</dd>
               </div>
             </dl>
+
+            <div v-if="canManage && selected && MANAGEABLE_TYPES.includes(selected.type)" class="mt-6 pt-5 border-t border-border">
+              <p class="text-[11px] font-semibold uppercase tracking-wider text-text-muted mb-2">Wallet controls</p>
+              <div class="flex flex-wrap gap-2">
+                <AppButton
+                  v-if="selected.status === 'frozen'"
+                  size="sm" variant="secondary"
+                  @click="openAction('unfreeze', selected)"
+                >Unfreeze</AppButton>
+                <AppButton
+                  v-else
+                  size="sm" variant="secondary"
+                  @click="openAction('freeze', selected)"
+                >Freeze</AppButton>
+                <AppButton
+                  v-if="selected.type !== 'MAIN' && selected.status !== 'closed'
+                    && selected.balance_cents === 0 && selected.locked_cents === 0 && selected.reserved_cents === 0"
+                  size="sm" variant="secondary"
+                  @click="openAction('close', selected)"
+                >Close</AppButton>
+              </div>
+              <p class="text-xs text-text-muted mt-2">Freezing stops money leaving this wallet. Money can still come in.</p>
+            </div>
           </div>
         </aside>
       </Transition>
     </Teleport>
+
+    <AppModal
+      v-if="actionModal"
+      :model-value="!!actionModal"
+      :title="actionModal.kind === 'freeze' ? 'Freeze wallet' : actionModal.kind === 'unfreeze' ? 'Unfreeze wallet' : 'Close wallet'"
+      size="sm"
+      @update:model-value="(v: boolean) => { if (!v) actionModal = null }"
+    >
+      <div class="flex flex-col gap-3">
+        <p class="text-sm text-text-secondary">
+          {{ label(actionModal.wallet.type) }} · KES {{ formatMoney(actionModal.wallet.balance_cents) }}
+        </p>
+        <div v-if="actionModal.kind === 'freeze'" class="flex flex-col gap-1.5">
+          <label class="text-[13px] font-medium text-text-secondary">Reason (optional)</label>
+          <input v-model="actionReason" type="text" placeholder="Why are you freezing this wallet?"
+            class="h-10 rounded-lg border border-input-border bg-input-bg px-3.5 text-sm text-text-primary outline-none focus:border-input-border-focused focus:ring-2 focus:ring-primary/15" />
+        </div>
+        <div class="flex flex-col gap-1.5">
+          <label class="text-[13px] font-medium text-text-secondary">Transaction PIN</label>
+          <input v-model="actionPin" type="password" inputmode="numeric" autocomplete="off"
+            class="h-10 rounded-lg border border-input-border bg-input-bg px-3.5 text-sm text-text-primary outline-none focus:border-input-border-focused focus:ring-2 focus:ring-primary/15" />
+        </div>
+      </div>
+      <template #footer>
+        <AppButton variant="secondary" @click="actionModal = null">Cancel</AppButton>
+        <AppButton :loading="actionBusy" @click="runAction">Confirm</AppButton>
+      </template>
+    </AppModal>
   </div>
 </template>

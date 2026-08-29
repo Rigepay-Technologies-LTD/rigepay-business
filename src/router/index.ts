@@ -378,6 +378,27 @@ const router = createRouter({
       meta: { requiresAuth: true },
       props: true,
     },
+    {
+      path: '/org/:orgId/notification-preferences',
+      name: 'org-notification-preferences',
+      component: () => import('@/views/NotificationPreferencesView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/roles-permissions',
+      name: 'org-roles',
+      component: () => import('@/views/OrgRolesView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/branch/:branchId/notification-preferences',
+      name: 'branch-notification-preferences',
+      component: () => import('@/views/NotificationPreferencesView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
 
     {
       path: '/org/:orgId/branches',
@@ -906,6 +927,7 @@ router.beforeEach((to) => {
     'branch-supplier-invoice-detail', 'branch-purchase-orders', 'branch-purchase-order-detail',
     'branch-suppliers-analytics',
     'branch-settlements', 'branch-settlement-detail', 'branch-refunds', 'branch-reversals', 'branch-financial-accounts',
+    'branch-notification-preferences',
   ]
   if (typeof to.name === 'string' && branchOperatorRoutes.includes(to.name)) {
     if (to.params.orgId !== auth.meta.organizationId) {
@@ -922,6 +944,7 @@ router.beforeEach((to) => {
     to.name === 'org-members' || to.name === 'org-credentials' || to.name === 'org-webhooks' || to.name === 'org-payouts' || to.name === 'org-payout-detail' ||
     to.name === 'org-branches' || to.name === 'org-collect' || to.name === 'org-audit-log' ||
     to.name === 'org-security' || to.name === 'org-transactions' || to.name === 'org-transaction-detail' || to.name === 'org-limits' ||
+    to.name === 'org-notification-preferences' || to.name === 'org-roles' ||
     to.name === 'org-vaults' || to.name === 'org-scheduled-payouts' || to.name === 'org-scheduled-payout-detail' || to.name === 'org-fraud' ||
     to.name === 'org-transfers' || to.name === 'org-statements' || to.name === 'org-statement-entry-detail' || to.name === 'org-analytics' ||
     to.name === 'org-bulk-payouts' || to.name === 'org-bulk-payout-detail' || to.name === 'org-petty-cash' || to.name === 'org-payment-links' ||

@@ -2,13 +2,19 @@
 import { computed } from 'vue'
 import { WalletIcon, ArrowDownLeftIcon, ArrowUpRightIcon, CalendarClockIcon, TrendingUpIcon, TrendingDownIcon } from 'lucide-vue-next'
 import { formatMoney } from '@/lib/format'
-import type { DashboardKpis, KpiMetric } from '@/lib/orgApi'
+import type { DashboardKpis, KpiMetric, NextSettlement } from '@/lib/orgApi'
 
 const props = defineProps<{
   kpis: DashboardKpis | null
   loading?: boolean
   settlementHint?: string
+  nextSettlement?: NextSettlement | null
 }>()
+
+function etaLabel(iso: string): string {
+  const d = new Date(iso)
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+}
 
 function deltaText(m: KpiMetric): string {
   const pct = Math.abs(m.delta_pct)
@@ -52,7 +58,12 @@ const cards = computed(() => {
       tone: 'info' as const,
       value: k ? `KES ${formatMoney(k.settlement_due_cents)}` : '—',
       delta: null as KpiMetric | null,
-      caption: k && k.settlement_due_cents > 0 ? 'Held on high-risk rails' : (props.settlementHint ?? 'Nothing pending'),
+      caption:
+        props.nextSettlement && props.nextSettlement.amount_cents > 0 && props.nextSettlement.eta
+          ? `Next ~KES ${formatMoney(props.nextSettlement.amount_cents)} · ${etaLabel(props.nextSettlement.eta)}`
+          : k && k.settlement_due_cents > 0
+            ? 'Held on high-risk rails'
+            : (props.settlementHint ?? 'Nothing pending'),
     },
   ]
 })

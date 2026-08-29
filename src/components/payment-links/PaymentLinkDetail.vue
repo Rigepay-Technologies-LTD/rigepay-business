@@ -293,7 +293,7 @@ async function saveAppearance() {
           <table class="w-full text-sm">
             <thead>
               <tr class="text-left text-[11px] font-semibold uppercase tracking-wider text-text-muted bg-surface-2/40 border-b border-border">
-                <th class="px-5 py-2.5">Payer</th><th class="px-5 py-2.5">Method</th><th class="px-5 py-2.5">Status</th>
+                <th class="px-5 py-2.5">Payer</th><th class="px-5 py-2.5">Method</th><th class="px-5 py-2.5">Reference</th><th class="px-5 py-2.5">Message</th><th class="px-5 py-2.5">Status</th>
                 <th class="px-5 py-2.5 text-right">Amount</th><th class="px-5 py-2.5">Created</th>
               </tr>
             </thead>
@@ -301,6 +301,8 @@ async function saveAppearance() {
               <tr v-for="p in payments" :key="p.id" class="border-b border-border last:border-0">
                 <td class="px-5 py-2.5 text-text-primary">{{ p.payer_phone || p.payer_email || '—' }}</td>
                 <td class="px-5 py-2.5 text-text-secondary">{{ p.method }}</td>
+                <td class="px-5 py-2.5 text-text-secondary">{{ p.customer_reference || '—' }}</td>
+                <td class="px-5 py-2.5 text-text-muted max-w-[220px] truncate" :title="p.customer_message || ''">{{ p.customer_message || '—' }}</td>
                 <td class="px-5 py-2.5">
                   <span class="inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold"
                     :class="['PAID','COMPLETED','SUCCESS'].includes(p.status) ? 'bg-success-muted text-success' : ['FAILED','CANCELLED'].includes(p.status) ? 'bg-error-muted text-error' : 'bg-surface-2 text-text-muted'">

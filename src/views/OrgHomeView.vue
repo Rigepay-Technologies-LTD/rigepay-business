@@ -2,7 +2,8 @@
 import { ref, computed, onMounted } from 'vue'
 import {
   fetchOrgBranches, fetchOrgTransactions, fetchOrgProfile, fetchOrgTransaction, fetchOrgCashFlow, fetchBranchAnalytics,
-  fetchOrgDashboardKpis, fetchOrgAnalyticsDetail, fetchOrgFinancialAccounts,
+  fetchOrgDashboardKpis, fetchOrgAnalyticsDetail, fetchOrgFinancialAccounts, fetchOrgNextSettlement,
+  type NextSettlement,
   type BranchesResponse, type PaginatedTransactions, type ProfileResponse,
   type Transaction, type TransactionDetail, type CashFlowDayPoint, type BranchAnalytics, type DashboardKpis,
 } from '@/lib/orgApi'
@@ -18,6 +19,7 @@ import BranchLeaderboardChart from '@/components/BranchLeaderboardChart.vue'
 import DashboardHero from '@/components/DashboardHero.vue'
 import DashboardKpiRow from '@/components/DashboardKpiRow.vue'
 import DashboardSecondaryStats from '@/components/DashboardSecondaryStats.vue'
+import DashboardApprovalsWidget from '@/components/DashboardApprovalsWidget.vue'
 import type { QuickAction } from '@/components/QuickActions.vue'
 import {
   WalletIcon, BanknoteIcon, LinkIcon, UsersIcon, VaultIcon, ArrowLeftRightIcon,
@@ -45,6 +47,7 @@ const branchAnalyticsLoading = ref(true)
 
 const kpis = ref<DashboardKpis | null>(null)
 const kpiLoading = ref(true)
+const nextSettlement = ref<NextSettlement | null>(null)
 const refreshing = ref(false)
 
 const quickActions = computed<QuickAction[]>(() => [
@@ -150,6 +153,11 @@ async function loadKpis() {
   } finally {
     kpiLoading.value = false
   }
+  try {
+    nextSettlement.value = await fetchOrgNextSettlement()
+  } catch {
+    nextSettlement.value = null
+  }
 }
 
 async function refreshAll() {
@@ -218,7 +226,7 @@ async function openTxnDetail(row: Record<string, unknown>) {
         @refresh="refreshAll"
       />
 
-      <DashboardKpiRow :kpis="kpis" :loading="kpiLoading" settlement-hint="No settlement scheduled" />
+      <DashboardKpiRow :kpis="kpis" :loading="kpiLoading" :next-settlement="nextSettlement" settlement-hint="No settlement scheduled" />
 
       <DashboardSecondaryStats :analytics-fetcher="() => fetchOrgAnalyticsDetail()" :accounts-fetcher="() => fetchOrgFinancialAccounts()" />
 
@@ -252,6 +260,8 @@ async function openTxnDetail(row: Record<string, unknown>) {
             <p class="text-xs text-text-muted">There are no urgent updates requiring your attention.</p>
           </div>
         </AppCard>
+
+        <DashboardApprovalsWidget class="xl:col-span-3" :is-branch="false" route-name="org-approvals" />
       </div>
 
       <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">

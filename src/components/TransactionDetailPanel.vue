@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { fetchOrgTransaction, fetchBranchTransaction, type TransactionDetail } from '@/lib/orgApi'
+import { fetchOrgTransaction, fetchBranchTransaction, fetchTransactionRelated, type TransactionDetail, type TransactionRelated } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
-import { formatMoney, txnReference } from '@/lib/format'
+import { formatMoney, txnReference, formatDate } from '@/lib/format'
 import { useResponseModal } from '@/composables/useResponseModal'
 import AppCard from '@/components/ui/AppCard.vue'
 import TagEditor from '@/components/TagEditor.vue'
@@ -21,6 +21,7 @@ const { showError } = useResponseModal()
 const isBranch = computed(() => !!props.branchId)
 
 const detail = ref<TransactionDetail | null>(null)
+const related = ref<TransactionRelated | null>(null)
 const loading = ref(true)
 
 onMounted(async () => {
@@ -30,6 +31,11 @@ onMounted(async () => {
     showError(extractErrorMessage(err))
   } finally {
     loading.value = false
+  }
+  try {
+    related.value = await fetchTransactionRelated(props.txnId, isBranch.value)
+  } catch {
+    related.value = null
   }
 })
 
@@ -131,26 +137,62 @@ const rows = computed(() => {
         </div>
       </AppCard>
 
+      <AppCard v-if="related && (related.balance_before_cents != null || related.balance_after_cents != null)">
+        <h2 class="text-sm font-bold text-text-primary mb-3">Wallet balance</h2>
+        <div class="grid grid-cols-2 gap-4 text-sm">
+          <div>
+            <p class="text-[11px] font-semibold uppercase tracking-wider text-text-muted">Balance before</p>
+            <p class="text-base font-bold text-text-primary mt-0.5">KES {{ formatMoney(related.balance_before_cents ?? 0) }}</p>
+          </div>
+          <div>
+            <p class="text-[11px] font-semibold uppercase tracking-wider text-text-muted">Balance after</p>
+            <p class="text-base font-bold text-text-primary mt-0.5">KES {{ formatMoney(related.balance_after_cents ?? 0) }}</p>
+          </div>
+        </div>
+      </AppCard>
+
       <AppCard>
         <TagEditor subject-type="transaction" :subject-id="props.txnId" :is-branch="isBranch" />
       </AppCard>
 
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <AppCard>
-          <h2 class="text-sm font-bold text-text-primary mb-1">Refunds</h2>
+          <div class="flex items-center justify-between mb-1">
+            <h2 class="text-sm font-bold text-text-primary">Refunds</h2>
+            <RouterLink v-if="scopedRoute(refundsRouteName)" :to="scopedRoute(refundsRouteName)!" class="text-xs font-semibold text-primary hover:underline">
+              All refunds →
+            </RouterLink>
+          </div>
           <p class="text-xs text-text-muted mb-3">Money returned to the customer for this payment.</p>
-          <RouterLink v-if="scopedRoute(refundsRouteName)" :to="scopedRoute(refundsRouteName)!" class="text-xs font-semibold text-primary hover:underline">
-            View refunds →
-          </RouterLink>
-          <p v-else class="text-xs text-text-muted">No refunds recorded.</p>
+          <p v-if="!related?.refunds?.length" class="text-xs text-text-muted">No refunds recorded.</p>
+          <ul v-else class="flex flex-col divide-y divide-border">
+            <li v-for="r in related.refunds" :key="r.id" class="py-2 flex items-center justify-between gap-3 text-sm">
+              <div class="min-w-0">
+                <p class="font-semibold text-text-primary">KES {{ formatMoney(r.amount_cents) }}</p>
+                <p class="text-xs text-text-muted truncate">{{ r.reason || r.rail }} · {{ formatDate(r.created_at) }}</p>
+              </div>
+              <span class="inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold shrink-0" :class="statusClass(r.status)">{{ r.status }}</span>
+            </li>
+          </ul>
         </AppCard>
         <AppCard>
-          <h2 class="text-sm font-bold text-text-primary mb-1">Reversals</h2>
+          <div class="flex items-center justify-between mb-1">
+            <h2 class="text-sm font-bold text-text-primary">Reversals</h2>
+            <RouterLink v-if="scopedRoute(reversalsRouteName)" :to="scopedRoute(reversalsRouteName)!" class="text-xs font-semibold text-primary hover:underline">
+              All reversals →
+            </RouterLink>
+          </div>
           <p class="text-xs text-text-muted mb-3">Full or partial reversal of the original payment.</p>
-          <RouterLink v-if="scopedRoute(reversalsRouteName)" :to="scopedRoute(reversalsRouteName)!" class="text-xs font-semibold text-primary hover:underline">
-            View reversals →
-          </RouterLink>
-          <p v-else class="text-xs text-text-muted">No reversals recorded.</p>
+          <p v-if="!related?.reversals?.length" class="text-xs text-text-muted">No reversals recorded.</p>
+          <ul v-else class="flex flex-col divide-y divide-border">
+            <li v-for="r in related.reversals" :key="r.transaction_id" class="py-2 flex items-center justify-between gap-3 text-sm">
+              <div class="min-w-0">
+                <p class="font-semibold text-text-primary">KES {{ formatMoney(r.amount_cents) }}</p>
+                <p class="text-xs text-text-muted truncate">{{ r.details || r.type }} · {{ formatDate(r.created_at) }}</p>
+              </div>
+              <span class="inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold shrink-0" :class="statusClass(r.status)">{{ r.status }}</span>
+            </li>
+          </ul>
         </AppCard>
       </div>
 

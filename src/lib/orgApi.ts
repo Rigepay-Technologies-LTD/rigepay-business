@@ -203,6 +203,41 @@ export async function fetchBranchTransaction(id: string): Promise<TransactionDet
   return res.data.data
 }
 
+export interface RelatedRefundRow {
+  id: string
+  created_at: string
+  amount_cents: number
+  currency: string
+  rail: string
+  status: string
+  reason: string
+  source: string
+  completed_at?: string | null
+}
+export interface RelatedReversalRow {
+  transaction_id: string
+  created_at: string
+  type: string
+  status: string
+  rail: string
+  reference: string
+  amount_cents: number
+  fee_cents: number
+  details: string
+}
+export interface TransactionRelated {
+  transaction_id: string
+  balance_before_cents?: number | null
+  balance_after_cents?: number | null
+  refunds: RelatedRefundRow[]
+  reversals: RelatedReversalRow[]
+}
+export async function fetchTransactionRelated(id: string, isBranch: boolean): Promise<TransactionRelated> {
+  const base = isBranch ? `/org/v1/branch/transactions/${id}/related` : `/org/v1/transactions/${id}/related`
+  const res = await http.get<{ status: string; data: TransactionRelated }>(base)
+  return res.data.data
+}
+
 export interface OrgLimitsSnapshot {
   is_active: boolean
   using_defaults: boolean
@@ -640,6 +675,62 @@ export interface OrgMember {
   corporate_designation: string | null
   is_signatory: boolean
   signing_mandate: string | null
+  custom_role_id?: string | null
+}
+
+export interface RBACPermission {
+  key: string
+  label: string
+  group: string
+}
+export interface OrgCustomRole {
+  id: string
+  organization_id: string
+  name: string
+  description: string
+  permissions: string[]
+  created_at: string
+}
+export interface MemberRBAC {
+  custom_role_id?: string | null
+  per_txn_cents: number
+  daily_cents: number
+}
+export async function fetchRBACPermissions(): Promise<RBACPermission[]> {
+  const res = await http.get<{ status: string; data: RBACPermission[] }>('/org/v1/rbac/permissions')
+  return res.data.data
+}
+export async function fetchCustomRoles(): Promise<OrgCustomRole[]> {
+  const res = await http.get<{ status: string; data: OrgCustomRole[] }>('/org/v1/rbac/roles')
+  return res.data.data
+}
+export async function createCustomRole(input: { name: string; description?: string; permissions: string[] }): Promise<OrgCustomRole> {
+  const res = await http.post<{ status: string; data: OrgCustomRole }>('/org/v1/rbac/roles', input)
+  return res.data.data
+}
+export async function updateCustomRole(id: string, input: { name?: string; description?: string; permissions?: string[] }): Promise<OrgCustomRole> {
+  const res = await http.patch<{ status: string; data: OrgCustomRole }>(`/org/v1/rbac/roles/${id}`, input)
+  return res.data.data
+}
+export async function deleteCustomRole(id: string): Promise<void> {
+  await http.delete(`/org/v1/rbac/roles/${id}`)
+}
+export async function fetchMemberRBAC(memberId: string): Promise<MemberRBAC> {
+  const res = await http.get<{ status: string; data: MemberRBAC }>(`/org/v1/rbac/members/${memberId}`)
+  return res.data.data
+}
+export async function assignMemberRBAC(
+  memberId: string,
+  input: { custom_role_id?: string | null; per_txn_cents?: number; daily_cents?: number },
+): Promise<void> {
+  await http.put(`/org/v1/rbac/members/${memberId}`, input)
+}
+export async function fetchRequireApprovedPayees(): Promise<boolean> {
+  const res = await http.get<{ status: string; data: { require_approved_payees: boolean } }>('/org/v1/rbac/require-approved-payees')
+  return res.data.data.require_approved_payees
+}
+export async function setRequireApprovedPayees(enabled: boolean): Promise<void> {
+  await http.put('/org/v1/rbac/require-approved-payees', { enabled })
 }
 
 export interface UpdateMemberInput {
@@ -1643,6 +1734,28 @@ export async function markAllBranchNotificationsRead(): Promise<void> {
   await http.post('/org/v1/branch/notifications/read-all')
 }
 
+export interface NotificationPrefCategory {
+  category: string
+  enabled: boolean
+}
+export interface NotificationPreferences {
+  categories: NotificationPrefCategory[]
+  locked_category: string
+}
+export async function fetchNotificationPreferences(isBranch = false): Promise<NotificationPreferences> {
+  const base = isBranch ? '/org/v1/branch/notifications/preferences' : '/org/v1/notifications/preferences'
+  const res = await http.get<{ status: string; data: NotificationPreferences }>(base)
+  return res.data.data
+}
+export async function updateNotificationPreferences(
+  categories: NotificationPrefCategory[],
+  isBranch = false,
+): Promise<NotificationPreferences> {
+  const base = isBranch ? '/org/v1/branch/notifications/preferences' : '/org/v1/notifications/preferences'
+  const res = await http.put<{ status: string; data: NotificationPreferences }>(base, { categories })
+  return res.data.data
+}
+
 export interface OrgFraudDecision {
   id: string
   subject_type: string
@@ -1863,6 +1976,7 @@ export interface StatementEntry {
   rail: string
   provider_ref: string
   customer_ref: string
+  posting_type: string
 }
 
 export interface StatementEntries {
@@ -1878,6 +1992,7 @@ export interface StatementEntries {
   page: number
   page_size: number
   total: number
+  posting_types: string[]
   entries: StatementEntry[]
 }
 
@@ -1889,9 +2004,48 @@ export interface StatementEntryParams {
   branch_id?: string
   direction?: 'in' | 'out'
   txn_type?: string
+  posting_type?: string
   search?: string
   page?: number
   page_size?: number
+}
+
+export interface OrgStatementSchedule {
+  id: string
+  organization_id: string
+  branch_id?: string | null
+  scope: 'org' | 'consolidated' | 'branch'
+  recipient_email: string
+  day_of_month: number
+  format: string
+  active: boolean
+  last_run_at?: string | null
+  next_run_at: string
+  created_at: string
+}
+export interface StatementScheduleInput {
+  scope?: 'org' | 'consolidated' | 'branch'
+  branch_id?: string
+  recipient_email?: string
+  day_of_month?: number
+  active?: boolean
+}
+export async function fetchStatementSchedules(orgOnly = false): Promise<OrgStatementSchedule[]> {
+  const res = await http.get<{ status: string; data: OrgStatementSchedule[] }>('/org/v1/statements/schedules', {
+    params: orgOnly ? { scope: 'org' } : undefined,
+  })
+  return res.data.data
+}
+export async function createStatementSchedule(input: StatementScheduleInput): Promise<OrgStatementSchedule> {
+  const res = await http.post<{ status: string; data: OrgStatementSchedule }>('/org/v1/statements/schedules', input)
+  return res.data.data
+}
+export async function updateStatementSchedule(id: string, input: StatementScheduleInput): Promise<OrgStatementSchedule> {
+  const res = await http.patch<{ status: string; data: OrgStatementSchedule }>(`/org/v1/statements/schedules/${id}`, input)
+  return res.data.data
+}
+export async function deleteStatementSchedule(id: string): Promise<void> {
+  await http.delete(`/org/v1/statements/schedules/${id}`)
 }
 
 export async function fetchStatementEntries(params: StatementEntryParams): Promise<StatementEntries> {
@@ -2024,6 +2178,31 @@ export async function fetchBranchSettlements(params: SettlementQuery): Promise<S
   const res = await http.get<{ status: string; data: SettlementList }>('/org/v1/branch/settlements', { params })
   return res.data.data
 }
+export interface NextSettlementTranche {
+  amount_cents: number
+  matures_on: string
+}
+export interface NextSettlement {
+  scope: string
+  branch_id?: string | null
+  currency: string
+  amount_cents: number
+  held_now_cents: number
+  eta?: string | null
+  tranche_count: number
+  tranches: NextSettlementTranche[]
+  estimate_note: string
+}
+export async function fetchNextSettlement(isBranch = false, branchId?: string): Promise<NextSettlement> {
+  const base = isBranch ? '/org/v1/branch/settlements/next' : '/org/v1/settlements/next'
+  const res = await http.get<{ status: string; data: NextSettlement }>(base, {
+    params: !isBranch && branchId ? { branch_id: branchId } : undefined,
+  })
+  return res.data.data
+}
+export const fetchOrgNextSettlement = (branchId?: string) => fetchNextSettlement(false, branchId)
+export const fetchBranchNextSettlement = () => fetchNextSettlement(true)
+
 export async function fetchOrgSettlementDetail(id: string): Promise<SettlementDetail> {
   const res = await http.get<{ status: string; data: SettlementDetail }>(`/org/v1/settlements/${id}`)
   return res.data.data
@@ -2212,6 +2391,19 @@ export async function fetchOrgFinancialAccounts(params?: { scope?: 'org' | 'cons
 export async function fetchBranchFinancialAccounts(): Promise<FinancialAccounts> {
   const res = await http.get<{ status: string; data: FinancialAccounts }>('/org/v1/branch/financial-accounts')
   return res.data.data
+}
+
+export async function freezeOrgWallet(id: string, reason: string, pin: string): Promise<{ message?: string }> {
+  const res = await http.post<{ status: string; message?: string }>(`/org/v1/wallets/${id}/freeze`, { reason, pin })
+  return res.data
+}
+export async function unfreezeOrgWallet(id: string, pin: string): Promise<{ message?: string }> {
+  const res = await http.post<{ status: string; message?: string }>(`/org/v1/wallets/${id}/unfreeze`, { pin })
+  return res.data
+}
+export async function closeOrgWallet(id: string, pin: string): Promise<{ message?: string }> {
+  const res = await http.post<{ status: string; message?: string }>(`/org/v1/wallets/${id}/close`, { pin })
+  return res.data
 }
 
 
@@ -2531,6 +2723,8 @@ export interface PaymentLinkPayment {
   payer_email?: string
   method: string
   status: string
+  customer_reference?: string
+  customer_message?: string
   paid_at: string
   created_at: string
 }
@@ -3477,7 +3671,6 @@ export async function fetchOrgSupportContacts(isBranchSession = false): Promise<
   return res.data.contacts ?? []
 }
 
-// ─── Suppliers / accounts-payable (Phase 1) ──────────────────────────────
 
 export type SupplierStatus = 'ACTIVE' | 'SUSPENDED' | 'ARCHIVED'
 export type SupplierVerification = 'UNVERIFIED' | 'PENDING' | 'VERIFIED' | 'REJECTED'
@@ -3661,7 +3854,6 @@ export async function deleteSupplierContact(isBranch: boolean, id: string, conta
   await http.delete(`${supplierBase(isBranch)}/${id}/contacts/${contactId}`)
 }
 
-// ── Customers CRM (org_customers) ──
 
 export type CrmCustomerStatus = 'ACTIVE' | 'SUSPENDED' | 'ARCHIVED'
 export type CrmCustomerVerification = 'UNVERIFIED' | 'PENDING' | 'VERIFIED' | 'REJECTED'

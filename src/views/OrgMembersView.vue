@@ -4,7 +4,8 @@ import { useAuthStore } from '@/stores/auth'
 import {
   fetchOrgMembers, inviteOrgMember, fetchOrgBranches, fetchMemberDocuments, uploadMemberDocument, fetchOrgScopedDocumentUrl,
   updateOrgMember, suspendOrgMember, reactivateOrgMember, resetOrgMemberPassword,
-  type OrgMember, type BranchSummary, type MemberDocument, type UpdateMemberInput,
+  fetchCustomRoles, fetchMemberRBAC, assignMemberRBAC,
+  type OrgMember, type BranchSummary, type MemberDocument, type UpdateMemberInput, type OrgCustomRole,
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
 import { formatDate } from '@/lib/format'
@@ -37,6 +38,9 @@ async function load() {
     const [m, b] = await Promise.all([fetchOrgMembers(), fetchOrgBranches()])
     members.value = m
     branches.value = b.branches
+    if (isOwner) {
+      try { customRoles.value = await fetchCustomRoles() } catch { /* rbac optional */ }
+    }
   } catch (err) {
     const msg = extractErrorMessage(err)
     error.value = msg
@@ -218,8 +222,16 @@ const editNationalId = ref('')
 const editTaxId = ref('')
 const editCanInitiatePayments = ref(false)
 const editRole = ref('member')
+const editCustomRoleId = ref('')
+const editPerTxnCapKes = ref<number | undefined>(undefined)
 
-function startEditMember(m: OrgMember) {
+const customRoles = ref<OrgCustomRole[]>([])
+const customRoleOptions = () => [
+  { value: '', label: 'None (base role only)' },
+  ...customRoles.value.map((r) => ({ value: r.id, label: r.name })),
+]
+
+async function startEditMember(m: OrgMember) {
   editingMemberId.value = m.id
   editMemberError.value = null
   editCorporateDesignation.value = m.corporate_designation ?? ''
@@ -230,6 +242,15 @@ function startEditMember(m: OrgMember) {
   editTaxId.value = ''
   editCanInitiatePayments.value = m.can_initiate_payments
   editRole.value = m.role
+  editCustomRoleId.value = ''
+  editPerTxnCapKes.value = undefined
+  if (m.role !== 'owner') {
+    try {
+      const rb = await fetchMemberRBAC(m.id)
+      editCustomRoleId.value = rb.custom_role_id || ''
+      editPerTxnCapKes.value = rb.per_txn_cents > 0 ? Math.round(rb.per_txn_cents / 100) : undefined
+    } catch { /* rbac optional */ }
+  }
 }
 
 function cancelEditMember() {
@@ -251,6 +272,12 @@ async function saveEditMember(memberId: string) {
       role: editRole.value,
     }
     await updateOrgMember(memberId, input)
+    if (editRole.value !== 'owner') {
+      await assignMemberRBAC(memberId, {
+        custom_role_id: editCustomRoleId.value || null,
+        per_txn_cents: editPerTxnCapKes.value && editPerTxnCapKes.value > 0 ? Math.round(editPerTxnCapKes.value * 100) : 0,
+      })
+    }
     editingMemberId.value = null
     await load()
   } catch (err) {
@@ -475,6 +502,22 @@ const memberColumns = [
                 <input v-model="editCanInitiatePayments" type="checkbox" class="w-4 h-4 mt-0.5 rounded border-input-border" />
                 <span class="font-semibold text-text-primary">Can initiate payments</span>
               </label>
+              <template v-if="m.role !== 'owner' && isOwner">
+                <AppSelect
+                  v-model="editCustomRoleId"
+                  label="Custom role"
+                  :options="customRoleOptions()"
+                  class="max-w-sm"
+                  :tooltip="'Define custom roles in Settings → Roles & permissions. A member with one can only do what the role allows.'"
+                />
+                <AppInput
+                  v-model.number="editPerTxnCapKes"
+                  type="number"
+                  label="Per-payout cap (KES)"
+                  placeholder="No cap"
+                  class="max-w-sm"
+                />
+              </template>
               <div class="flex gap-2">
                 <AppButton type="submit" size="sm" :loading="editingMember">Save changes</AppButton>
                 <AppButton type="button" size="sm" variant="ghost" @click="cancelEditMember">Cancel</AppButton>

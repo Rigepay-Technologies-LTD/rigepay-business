@@ -7,7 +7,7 @@ import {
   LayoutDashboardIcon, UsersIcon, BanknoteIcon, FileTextIcon, BuildingIcon, Building2Icon, UserCheckIcon,
   WalletIcon, ShieldIcon, ScrollTextIcon, LogOutIcon, MenuIcon, XIcon, HistoryIcon, GaugeIcon,
   VaultIcon, CalendarClockIcon, ShieldAlertIcon, ArrowLeftRightIcon, FileBarChart2Icon, BarChart3Icon, LayersIcon,
-  MapPinIcon, LinkIcon, ClipboardCheckIcon, ReceiptIcon, TagIcon, CoinsIcon, LifeBuoyIcon,
+  MapPinIcon, LinkIcon, ClipboardCheckIcon, ReceiptIcon, TagIcon, CoinsIcon, LifeBuoyIcon, BellIcon,
   ChevronRightIcon, ChevronLeftIcon,
   SettingsIcon, Code2Icon, ReceiptTextIcon, ExternalLinkIcon, TruckIcon, WebhookIcon,
 } from 'lucide-vue-next'
@@ -16,7 +16,8 @@ import AppLogo from '@/components/ui/AppLogo.vue'
 import BranchSwitcher from '@/components/BranchSwitcher.vue'
 import NotificationBell from '@/components/NotificationBell.vue'
 import SessionTimeoutModal from '@/components/SessionTimeoutModal.vue'
-import { fetchBranchProfile, type BranchSummary } from '@/lib/orgApi'
+import { fetchBranchProfile, fetchNextSettlement, type BranchSummary, type NextSettlement } from '@/lib/orgApi'
+import { formatMoney } from '@/lib/format'
 
 const props = defineProps<{
   orgId: string
@@ -47,6 +48,34 @@ async function loadOwnBranchName() {
   }
 }
 onMounted(loadOwnBranchName)
+
+const nextSettlement = ref<NextSettlement | null>(null)
+async function loadNextSettlement() {
+  try {
+    if (isOrgWide.value || !props.branchId) {
+      nextSettlement.value = await fetchNextSettlement(false)
+      return
+    }
+    try {
+      nextSettlement.value = await fetchNextSettlement(true)
+    } catch {
+      nextSettlement.value = await fetchNextSettlement(false, props.branchId)
+    }
+  } catch {
+    nextSettlement.value = null
+  }
+}
+onMounted(loadNextSettlement)
+watch(() => props.branchId, loadNextSettlement)
+
+const settlementsRoute = computed<RouteLocationRaw>(() =>
+  props.branchId
+    ? { name: 'branch-settlements', params: { orgId: props.orgId, branchId: props.branchId as string } }
+    : { name: 'org-settlements', params: { orgId: props.orgId } },
+)
+function nextSettlementEta(iso: string): string {
+  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+}
 watch(() => props.branchId, loadOwnBranchName)
 
 const branchName = computed(() => {
@@ -318,6 +347,7 @@ const rawSections = computed<NavSection[]>(() => [
           items: [
             dual('Overview', SettingsIcon, 'org-settings', 'branch-settings'),
             orgLeaf('Team & access', UsersIcon, 'org-members', orgOnly.value),
+            orgLeaf('Roles & permissions', ShieldIcon, 'org-roles', orgOnly.value && isOwner.value),
             orgLeaf('Directors', UserCheckIcon, 'org-directors', orgOnly.value && isOwner.value),
             dual('Business profile', BuildingIcon, 'org-profile', 'branch-profile'),
             orgLeaf('KYB documents', FileTextIcon, 'org-documents', orgOnly.value),
@@ -329,6 +359,7 @@ const rawSections = computed<NavSection[]>(() => [
               show: !isOrgWide.value && !!props.branchId,
             },
             dual('Security', ShieldIcon, 'org-security', 'branch-security'),
+            dual('Notifications', BellIcon, 'org-notification-preferences', 'branch-notification-preferences'),
             dual('Limits', GaugeIcon, 'org-limits', 'branch-limits'),
             dual('Support', LifeBuoyIcon, 'org-support', 'branch-support'),
           ],
@@ -637,6 +668,16 @@ function logout() {
 
       <!-- Footer: user + logout -->
       <div class="shrink-0 p-3 border-t border-border space-y-2">
+        <RouterLink
+          v-if="nextSettlement && nextSettlement.amount_cents > 0 && nextSettlement.eta"
+          :to="settlementsRoute"
+          class="block rounded-xl border border-border bg-surface-2/40 px-3 py-2.5 hover:border-primary/40 transition-colors"
+        >
+          <p class="text-[11px] font-semibold uppercase tracking-wider text-text-muted">Next settlement</p>
+          <p class="text-[13px] font-bold text-text-primary mt-0.5">KES {{ formatMoney(nextSettlement.amount_cents) }}</p>
+          <p class="text-[11px] text-text-muted">~{{ nextSettlementEta(nextSettlement.eta) }} · view settlements</p>
+        </RouterLink>
+
         <div class="flex items-center gap-3 px-2 py-1.5">
           <div class="w-9 h-9 rounded-full bg-primary-muted text-primary flex items-center justify-center shrink-0">
             <UsersIcon class="w-4.5 h-4.5" />

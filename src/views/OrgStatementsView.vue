@@ -13,6 +13,7 @@ import DashboardLayout from '@/layouts/DashboardLayout.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
+import StatementSchedulesPanel from '@/components/money/StatementSchedulesPanel.vue'
 import { DownloadIcon } from 'lucide-vue-next'
 
 const props = defineProps<{ orgId: string }>()
@@ -70,8 +71,14 @@ const entries = ref<StatementEntries | null>(null)
 const entriesLoading = ref(false)
 const entriesDownloading = ref(false)
 const direction = ref<'' | 'in' | 'out'>('')
+const postingType = ref('')
 const search = ref('')
 const page = ref(1)
+
+const postingTypeOptions = computed(() => [
+  { value: '', label: 'All posting types' },
+  ...(entries.value?.posting_types ?? []).map((t) => ({ value: t, label: t.replace(/_/g, ' ') })),
+])
 
 const directionOptions = [
   { value: '', label: 'All movements' },
@@ -84,6 +91,7 @@ function entryParams(): StatementEntryParams {
   if (scopeSelection.value.startsWith('branch:')) p.branch_id = scopeSelection.value.slice('branch:'.length)
   else p.scope = scopeSelection.value as 'consolidated' | 'org'
   if (direction.value) p.direction = direction.value
+  if (postingType.value) p.posting_type = postingType.value
   if (search.value.trim()) p.search = search.value.trim()
   return p
 }
@@ -260,6 +268,7 @@ onMounted(async () => {
         <div class="flex flex-wrap items-end gap-3 px-5 pt-5">
           <h2 class="text-sm font-bold text-text-primary mr-auto">Statement entries</h2>
           <AppSelect v-model="direction" label="Movement" :options="directionOptions" class="min-w-44" @update:modelValue="resetAndLoadEntries" />
+          <AppSelect v-model="postingType" label="Posting type" :options="postingTypeOptions" class="min-w-48" @update:modelValue="resetAndLoadEntries" />
           <div class="flex flex-col gap-1.5">
             <label class="text-[13px] font-medium text-text-secondary">Search</label>
             <input
@@ -319,6 +328,8 @@ onMounted(async () => {
           </div>
         </div>
       </AppCard>
+
+      <StatementSchedulesPanel :branches="branches.map((b) => ({ id: b.id, name: b.name }))" />
     </div>
   </DashboardLayout>
 </template>

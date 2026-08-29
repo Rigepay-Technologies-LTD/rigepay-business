@@ -12,6 +12,9 @@ import {
   fetchBranchDashboardKpis,
   fetchBranchAnalyticsDetail,
   fetchBranchFinancialAccounts,
+  fetchOrgNextSettlement,
+  fetchBranchNextSettlement,
+  type NextSettlement,
   type WalletBalances,
   type PaginatedTransactions,
   type BranchSummary,
@@ -31,6 +34,7 @@ import CashFlowChart from '@/components/CashFlowChart.vue'
 import DashboardHero from '@/components/DashboardHero.vue'
 import DashboardKpiRow from '@/components/DashboardKpiRow.vue'
 import DashboardSecondaryStats from '@/components/DashboardSecondaryStats.vue'
+import DashboardApprovalsWidget from '@/components/DashboardApprovalsWidget.vue'
 import type { QuickAction } from '@/components/QuickActions.vue'
 import {
   WalletIcon, BanknoteIcon, LinkIcon, ReceiptIcon, CoinsIcon, ArrowLeftRightIcon,
@@ -58,6 +62,7 @@ const cashFlow = ref<CashFlowDayPoint[]>([])
 const cashFlowLoading = ref(true)
 
 const kpis = ref<DashboardKpis | null>(null)
+const nextSettlement = ref<NextSettlement | null>(null)
 const kpiLoading = ref(true)
 const refreshing = ref(false)
 
@@ -155,6 +160,13 @@ async function loadKpis() {
   } finally {
     kpiLoading.value = false
   }
+  try {
+    nextSettlement.value = isOrgMemberView.value
+      ? await fetchOrgNextSettlement(props.branchId)
+      : await fetchBranchNextSettlement()
+  } catch {
+    nextSettlement.value = null
+  }
 }
 
 async function refreshAll() {
@@ -229,7 +241,7 @@ function statusVariant(status: string) {
         @refresh="refreshAll"
       />
 
-      <DashboardKpiRow :kpis="kpis" :loading="kpiLoading" settlement-hint="No settlement scheduled" />
+      <DashboardKpiRow :kpis="kpis" :loading="kpiLoading" :next-settlement="nextSettlement" settlement-hint="No settlement scheduled" />
 
       <DashboardSecondaryStats :analytics-fetcher="() => fetchBranchAnalyticsDetail()" :accounts-fetcher="() => fetchBranchFinancialAccounts()" />
 
@@ -260,6 +272,8 @@ function statusVariant(status: string) {
             <p class="text-xs text-text-muted">There are no urgent updates requiring your attention.</p>
           </div>
         </AppCard>
+
+        <DashboardApprovalsWidget class="xl:col-span-3" :is-branch="true" route-name="branch-approvals" />
       </div>
 
       <AppCard>
