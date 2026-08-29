@@ -13,15 +13,15 @@ const emit = defineEmits<{ (e: 'row-click', row: Record<string, unknown>): void 
 </script>
 
 <template>
-  <div class="overflow-x-auto rounded-2xl shadow-sm bg-surface">
+  <div class="overflow-x-auto rounded-xl border border-border bg-surface">
     <table class="w-full min-w-140 text-sm">
       <thead>
-        <tr class="bg-surface-2">
+        <tr class="border-b border-border">
           <th
             v-for="col in columns"
             :key="col.key"
             :style="col.width ? `width: ${col.width}` : ''"
-            :class="['px-4 py-3 text-left text-xs font-bold text-text-muted uppercase tracking-wider', col.class ?? '']"
+            :class="['px-4 py-3 text-left text-[11px] font-semibold text-text-muted uppercase tracking-wider bg-surface-2/40', col.class ?? '']"
           >
             {{ col.label }}
           </th>
@@ -29,7 +29,7 @@ const emit = defineEmits<{ (e: 'row-click', row: Record<string, unknown>): void 
       </thead>
 
       <tbody v-if="loading">
-        <tr v-for="n in 5" :key="n" class="border-b border-surface-2 last:border-0">
+        <tr v-for="n in 5" :key="n" class="border-b border-border last:border-0">
           <td v-for="col in columns" :key="col.key" class="px-4 py-3.5">
             <div class="h-4 rounded-lg bg-skeleton animate-pulse" :style="`width: ${50 + Math.random() * 40}%`" />
           </td>
@@ -40,7 +40,7 @@ const emit = defineEmits<{ (e: 'row-click', row: Record<string, unknown>): void 
         <tr>
           <td :colspan="columns.length" class="px-4 py-16 text-center">
             <div class="flex flex-col items-center gap-3">
-              <div v-if="emptyIcon !== false" class="w-12 h-12 rounded-2xl bg-surface-2 flex items-center justify-center">
+              <div v-if="emptyIcon !== false" class="w-12 h-12 rounded-xl bg-surface-2 flex items-center justify-center">
                 <svg class="w-5 h-5 text-text-disabled" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
                 </svg>
@@ -56,7 +56,7 @@ const emit = defineEmits<{ (e: 'row-click', row: Record<string, unknown>): void 
           v-for="(row, i) in rows"
           :key="i"
           :class="[
-            'border-b border-surface-2 last:border-0 hover:bg-surface-2 transition-colors duration-100',
+            'border-b border-border last:border-0 hover:bg-surface-2/60 transition-colors duration-100',
             clickable ? 'cursor-pointer' : '',
           ]"
           @click="clickable && emit('row-click', row)"

@@ -230,12 +230,12 @@ function senderLabel(senderType: string) {
       <form class="flex flex-col gap-4" @submit.prevent="submitCreate">
         <AppInput v-model="newSubject" label="Subject" placeholder="Briefly describe the issue" required />
         <div class="flex flex-col gap-1.5">
-          <label class="text-xs font-semibold text-text-secondary uppercase tracking-wide">Message<span class="text-error ml-0.5">*</span></label>
+          <label class="text-[13px] font-medium text-text-secondary">Message<span class="text-error ml-0.5">*</span></label>
           <textarea
             v-model="newMessage"
             rows="5"
             placeholder="Give as much detail as you can — what happened, when, and any error messages you saw."
-            class="w-full rounded-xl border border-input-border bg-input-bg px-3.5 py-2.5 text-sm text-text-primary outline-none focus:border-input-border-focused focus:ring-2 focus:ring-primary/20 transition-all resize-none"
+            class="w-full rounded-lg border border-input-border bg-input-bg px-3.5 py-2.5 text-sm text-text-primary outline-none focus:border-input-border-focused focus:ring-2 focus:ring-primary/15 transition-all resize-none"
           />
         </div>
         <p v-if="createError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2">{{ createError }}</p>
@@ -263,7 +263,7 @@ function senderLabel(senderType: string) {
         >
           <div
             :class="[
-              'max-w-[80%] rounded-2xl px-3.5 py-2.5 text-sm',
+              'max-w-[80%] rounded-xl px-3.5 py-2.5 text-sm',
               m.sender_type === 'admin' || m.sender_type === 'system'
                 ? 'bg-surface-2 text-text-primary rounded-tl-sm'
                 : 'bg-primary text-white rounded-tr-sm',
@@ -283,7 +283,7 @@ function senderLabel(senderType: string) {
               v-model="replyMessage"
               rows="2"
               placeholder="Type a reply…"
-              class="flex-1 rounded-xl border border-input-border bg-input-bg px-3.5 py-2.5 text-sm text-text-primary outline-none focus:border-input-border-focused focus:ring-2 focus:ring-primary/20 transition-all resize-none"
+              class="flex-1 rounded-lg border border-input-border bg-input-bg px-3.5 py-2.5 text-sm text-text-primary outline-none focus:border-input-border-focused focus:ring-2 focus:ring-primary/15 transition-all resize-none"
             />
             <AppButton type="submit" size="sm" :loading="replySending" :disabled="!replyMessage.trim()">Send</AppButton>
           </div>

@@ -2,11 +2,12 @@
 import { ref, computed, onMounted } from 'vue'
 import {
   fetchOrgBranches, fetchOrgTransactions, fetchOrgProfile, fetchOrgTransaction, fetchOrgCashFlow, fetchBranchAnalytics,
+  fetchOrgDashboardKpis, fetchOrgAnalyticsDetail, fetchOrgFinancialAccounts,
   type BranchesResponse, type PaginatedTransactions, type ProfileResponse,
-  type Transaction, type TransactionDetail, type CashFlowDayPoint, type BranchAnalytics,
+  type Transaction, type TransactionDetail, type CashFlowDayPoint, type BranchAnalytics, type DashboardKpis,
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
-import { formatMoney, formatDate, riskTier, txnReference } from '@/lib/format'
+import { formatMoney, formatDate, txnReference } from '@/lib/format'
 import DashboardLayout from '@/layouts/DashboardLayout.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppTable from '@/components/ui/AppTable.vue'
@@ -14,10 +15,13 @@ import AppBadge from '@/components/ui/AppBadge.vue'
 import AppModal from '@/components/ui/AppModal.vue'
 import CashFlowChart from '@/components/CashFlowChart.vue'
 import BranchLeaderboardChart from '@/components/BranchLeaderboardChart.vue'
-import QuickActions, { type QuickAction } from '@/components/QuickActions.vue'
+import DashboardHero from '@/components/DashboardHero.vue'
+import DashboardKpiRow from '@/components/DashboardKpiRow.vue'
+import DashboardSecondaryStats from '@/components/DashboardSecondaryStats.vue'
+import type { QuickAction } from '@/components/QuickActions.vue'
 import {
-  WalletIcon, ShieldCheckIcon, AlertOctagonIcon,
-  BanknoteIcon, LinkIcon, UsersIcon, VaultIcon, ArrowLeftRightIcon,
+  WalletIcon, BanknoteIcon, LinkIcon, UsersIcon, VaultIcon, ArrowLeftRightIcon,
+  ClipboardCheckIcon, SparklesIcon, CheckCircle2Icon,
 } from 'lucide-vue-next'
 import { useResponseModal } from '@/composables/useResponseModal'
 
@@ -39,11 +43,16 @@ const cashFlowLoading = ref(true)
 const branchAnalytics = ref<BranchAnalytics | null>(null)
 const branchAnalyticsLoading = ref(true)
 
+const kpis = ref<DashboardKpis | null>(null)
+const kpiLoading = ref(true)
+const refreshing = ref(false)
+
 const quickActions = computed<QuickAction[]>(() => [
-  { label: 'Collect', icon: WalletIcon, to: { name: 'org-collect', params: { orgId: props.orgId } } },
+  { label: 'New collection', icon: WalletIcon, to: { name: 'org-collect', params: { orgId: props.orgId } } },
   { label: 'Send payout', icon: BanknoteIcon, to: { name: 'org-payouts', params: { orgId: props.orgId } } },
   { label: 'Payment link', icon: LinkIcon, to: { name: 'org-payment-links', params: { orgId: props.orgId } } },
   { label: 'Transfer funds', icon: ArrowLeftRightIcon, to: { name: 'org-transfers', params: { orgId: props.orgId } } },
+  { label: 'Approvals', icon: ClipboardCheckIcon, to: { name: 'org-approvals', params: { orgId: props.orgId } } },
   { label: 'Invite member', icon: UsersIcon, to: { name: 'org-members', params: { orgId: props.orgId } } },
   { label: 'Vaults', icon: VaultIcon, to: { name: 'org-vaults', params: { orgId: props.orgId } } },
 ])
@@ -53,6 +62,28 @@ const greeting = computed(() => {
   if (hour < 12) return 'Good morning'
   if (hour < 17) return 'Good afternoon'
   return 'Good evening'
+})
+
+const orgStatus = computed(() => {
+  const s = profile.value?.organization.status
+  if (s === 'approved') return { label: 'Active', variant: 'success' as const }
+  if (s === 'suspended') return { label: 'Suspended', variant: 'error' as const }
+  if (s) return { label: s.replace(/_/g, ' '), variant: 'warning' as const }
+  return undefined
+})
+
+const insights = computed<string[]>(() => {
+  const out: string[] = []
+  if (branchAnalytics.value?.highlights?.length) out.push(...branchAnalytics.value.highlights.slice(0, 2))
+  const c = kpis.value?.todays_collections
+  if (c && c.delta_dir !== 'flat') {
+    out.push(
+      `Today's collections are ${c.delta_dir === 'up' ? 'up' : 'down'} ${Math.abs(c.delta_pct) >= 100 ? '100+' : Math.abs(c.delta_pct).toFixed(0)}% versus yesterday.`,
+    )
+  }
+  const due = kpis.value?.settlement_due_cents ?? 0
+  if (due > 0) out.push(`KES ${formatMoney(due)} is held on high-risk rails and will settle to your main wallet within 72h.`)
+  return out
 })
 
 async function loadOverview() {
@@ -73,9 +104,7 @@ async function loadProfile() {
   try {
     profile.value = await fetchOrgProfile()
   } catch (err) {
-    const msg = extractErrorMessage(err)
-    error.value = msg
-    showError(msg)
+    showError(extractErrorMessage(err))
   }
 }
 
@@ -84,23 +113,18 @@ async function loadCashFlow() {
   try {
     cashFlow.value = await fetchOrgCashFlow(14)
   } catch (err) {
-    const msg = extractErrorMessage(err)
-    error.value = msg
-    showError(msg)
+    showError(extractErrorMessage(err))
   } finally {
     cashFlowLoading.value = false
   }
 }
-
 
 async function loadTransactions() {
   txnLoading.value = true
   try {
     txns.value = await fetchOrgTransactions({ page: 1, page_size: 5 })
   } catch (err) {
-    const msg = extractErrorMessage(err)
-    error.value = msg
-    showError(msg)
+    showError(extractErrorMessage(err))
   } finally {
     txnLoading.value = false
   }
@@ -117,12 +141,30 @@ async function loadBranchAnalytics() {
   }
 }
 
+async function loadKpis() {
+  kpiLoading.value = true
+  try {
+    kpis.value = await fetchOrgDashboardKpis()
+  } catch {
+    kpis.value = null
+  } finally {
+    kpiLoading.value = false
+  }
+}
+
+async function refreshAll() {
+  refreshing.value = true
+  await Promise.allSettled([loadOverview(), loadProfile(), loadCashFlow(), loadTransactions(), loadBranchAnalytics(), loadKpis()])
+  refreshing.value = false
+}
+
 onMounted(() => {
   loadOverview()
   loadProfile()
   loadCashFlow()
   loadTransactions()
   loadBranchAnalytics()
+  loadKpis()
 })
 
 const txnColumns = [
@@ -166,46 +208,22 @@ async function openTxnDetail(row: Record<string, unknown>) {
 <template>
   <DashboardLayout :org-id="props.orgId" :branches="overview?.branches ?? []" title="Organization overview">
     <div class="flex flex-col gap-6">
-      <div v-if="profile">
-        <h1 class="text-xl font-bold text-text-primary">{{ greeting }}, {{ profile.member.first_name }}!</h1>
-        <p class="text-xs text-text-muted mt-1">
-          {{ new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) }}
-        </p>
-      </div>
+      <DashboardHero
+        :greeting="greeting"
+        :name="profile?.member.first_name"
+        :status-label="orgStatus?.label"
+        :status-variant="orgStatus?.variant"
+        :actions="quickActions"
+        :refreshing="refreshing"
+        @refresh="refreshAll"
+      />
 
-      <QuickActions :actions="quickActions" />
+      <DashboardKpiRow :kpis="kpis" :loading="kpiLoading" settlement-hint="No settlement scheduled" />
 
-      <section class="grid grid-cols-1 sm:grid-cols-4 gap-4">
-        <div class="rounded-2xl bg-linear-to-br from-primary to-primary/80 text-white p-5 flex flex-col gap-3 shadow-sm sm:col-span-2">
-          <div class="flex items-center justify-between">
-            <span class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-white/80">
-              <WalletIcon class="w-4 h-4" />Organization main balance
-            </span>
-            <span v-if="profile?.organization.collection_code" class="text-[10px] font-bold uppercase tracking-wide bg-white/15 rounded-full px-2 py-1">
-              Code {{ profile.organization.collection_code }}
-            </span>
-          </div>
-          <p class="text-3xl font-bold tracking-tight">KES {{ formatMoney(profile?.organization.wallet.main_cents) }}</p>
-          <AppBadge v-if="profile" :variant="riskTier(profile.organization.risk_score).variant" size="sm" class="self-start">
-            {{ riskTier(profile.organization.risk_score).label }}{{ profile.organization.risk_score > 0 ? ` (${profile.organization.risk_score}/100)` : '' }}
-          </AppBadge>
-        </div>
-        <div class="rounded-2xl bg-surface border border-border p-5 flex flex-col gap-3 shadow-sm">
-          <span class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-text-muted">
-            <ShieldCheckIcon class="w-4 h-4 text-info" />Escrow balance
-          </span>
-          <p class="text-2xl font-bold text-text-primary tracking-tight">KES {{ formatMoney(profile?.organization.wallet.escrow_cents) }}</p>
-        </div>
-        <div class="rounded-2xl bg-surface border border-border p-5 flex flex-col gap-3 shadow-sm">
-          <span class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-text-muted">
-            <AlertOctagonIcon class="w-4 h-4 text-warning" />Chargeback holding
-          </span>
-          <p class="text-2xl font-bold text-text-primary tracking-tight">KES {{ formatMoney(profile?.organization.wallet.chargeback_cents) }}</p>
-        </div>
-      </section>
+      <DashboardSecondaryStats :analytics-fetcher="() => fetchOrgAnalyticsDetail()" :accounts-fetcher="() => fetchOrgFinancialAccounts()" />
 
-      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <AppCard class="lg:col-span-2">
+      <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
+        <AppCard class="xl:col-span-2">
           <div class="flex items-center justify-between mb-1">
             <h2 class="text-sm font-bold text-text-primary">Cash flow — last 14 days</h2>
             <span class="text-xs text-text-muted">{{ overview?.branch_count ?? 0 }} branch{{ overview?.branch_count === 1 ? '' : 'es' }}</span>
@@ -216,7 +234,31 @@ async function openTxnDetail(row: Record<string, unknown>) {
           <CashFlowChart v-else :points="cashFlow" />
         </AppCard>
 
-        <AppCard v-if="branchAnalyticsLoading || branchAnalytics?.branches.length">
+        <AppCard>
+          <div class="flex items-center gap-2 mb-3">
+            <span class="w-8 h-8 rounded-xl bg-primary-muted text-primary flex items-center justify-center">
+              <SparklesIcon class="w-4 h-4" />
+            </span>
+            <h2 class="text-sm font-bold text-text-primary">Insights</h2>
+          </div>
+          <div v-if="insights.length" class="flex flex-col gap-2">
+            <p v-for="(line, i) in insights" :key="i" class="text-[13px] text-text-secondary bg-surface-2 rounded-xl px-3.5 py-2.5 leading-snug">
+              {{ line }}
+            </p>
+          </div>
+          <div v-else class="flex flex-col items-start gap-2 rounded-xl bg-success-light px-3.5 py-4">
+            <CheckCircle2Icon class="w-6 h-6 text-success" />
+            <p class="text-sm font-semibold text-text-primary">You're all caught up</p>
+            <p class="text-xs text-text-muted">There are no urgent updates requiring your attention.</p>
+          </div>
+        </AppCard>
+      </div>
+
+      <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
+        <AppCard
+          v-if="branchAnalyticsLoading || branchAnalytics?.branches.length"
+          class="xl:col-span-1"
+        >
           <div class="flex items-center justify-between mb-1">
             <h2 class="text-sm font-bold text-text-primary">Top branches</h2>
             <router-link
@@ -230,35 +272,35 @@ async function openTxnDetail(row: Record<string, unknown>) {
           <p v-if="branchAnalyticsLoading" class="text-sm text-text-muted">Loading…</p>
           <BranchLeaderboardChart v-else :rows="branchAnalytics?.branches ?? []" />
         </AppCard>
-      </div>
 
-      <AppCard>
-        <div class="flex items-center justify-between mb-5">
-          <h2 class="text-sm font-bold text-text-primary">Recent transactions</h2>
-          <router-link
-            :to="{ name: 'org-transactions', params: { orgId: props.orgId } }"
-            class="text-xs font-semibold text-primary hover:underline"
+        <AppCard :class="branchAnalytics?.branches.length ? 'xl:col-span-2' : 'xl:col-span-3'">
+          <div class="flex items-center justify-between mb-5">
+            <h2 class="text-sm font-bold text-text-primary">Recent transactions</h2>
+            <router-link
+              :to="{ name: 'org-transactions', params: { orgId: props.orgId } }"
+              class="text-xs font-semibold text-primary hover:underline"
+            >
+              View all
+            </router-link>
+          </div>
+
+          <AppTable
+            :columns="txnColumns"
+            :rows="txns?.transactions ?? []"
+            :loading="txnLoading"
+            empty-message="No transactions found."
+            clickable
+            @row-click="openTxnDetail"
           >
-            View all
-          </router-link>
-        </div>
-
-        <AppTable
-          :columns="txnColumns"
-          :rows="txns?.transactions ?? []"
-          :loading="txnLoading"
-          empty-message="No transactions found."
-          clickable
-          @row-click="openTxnDetail"
-        >
-          <template #cell-created_at="{ value }">{{ formatDate(value as string) }}</template>
-          <template #cell-reference="{ row }">{{ txnReference(row as unknown as Transaction) }}</template>
-          <template #cell-status="{ value }">
-            <AppBadge :variant="statusVariant(value as string)" size="sm">{{ value }}</AppBadge>
-          </template>
-          <template #cell-amountCents="{ value }">KES {{ formatMoney(value as number) }}</template>
-        </AppTable>
-      </AppCard>
+            <template #cell-created_at="{ value }">{{ formatDate(value as string) }}</template>
+            <template #cell-reference="{ row }">{{ txnReference(row as unknown as Transaction) }}</template>
+            <template #cell-status="{ value }">
+              <AppBadge :variant="statusVariant(value as string)" size="sm">{{ value }}</AppBadge>
+            </template>
+            <template #cell-amountCents="{ value }">KES {{ formatMoney(value as number) }}</template>
+          </AppTable>
+        </AppCard>
+      </div>
     </div>
 
     <AppModal v-model="showTxnDetail" title="Transaction detail" size="sm">

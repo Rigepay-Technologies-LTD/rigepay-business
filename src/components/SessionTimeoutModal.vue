@@ -77,7 +77,7 @@ onUnmounted(() => {
       role="alertdialog"
       aria-modal="true"
     >
-      <div class="w-full max-w-sm bg-surface rounded-2xl shadow-2xl p-6 flex flex-col gap-4">
+      <div class="w-full max-w-sm bg-surface rounded-xl shadow-2xl p-6 flex flex-col gap-4">
         <h2 class="text-base font-bold text-text-primary">Still there?</h2>
         <p class="text-sm text-text-secondary">
           Your session is about to expire due to inactivity. You'll be logged out in

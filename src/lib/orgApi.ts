@@ -188,10 +188,18 @@ export interface TransactionDetail extends Transaction {
   currency: string
   settlement_status: string
   externalTxnId?: string | null
+  customer_phone?: string
+  customer_name?: string
+  metadata?: Record<string, unknown> | null
 }
 
 export async function fetchOrgTransaction(id: string): Promise<TransactionDetail> {
   const res = await http.get<{ status: string; data: TransactionDetail }>(`/org/v1/transactions/${id}`)
+  return res.data.data
+}
+
+export async function fetchBranchTransaction(id: string): Promise<TransactionDetail> {
+  const res = await http.get<{ status: string; data: TransactionDetail }>(`/org/v1/branch/transactions/${id}`)
   return res.data.data
 }
 
@@ -261,6 +269,36 @@ export async function fetchOrgCashFlow(days = 14): Promise<CashFlowDayPoint[]> {
 
 export async function fetchBranchCashFlow(days = 14): Promise<CashFlowDayPoint[]> {
   const res = await http.get<{ status: string; data: CashFlowDayPoint[] }>('/org/v1/branch/analytics/cashflow', { params: { days } })
+  return res.data.data
+}
+
+export interface KpiMetric {
+  cents: number
+  prev_cents: number
+  count?: number
+  delta_pct: number
+  delta_dir: 'up' | 'down' | 'flat'
+}
+
+export interface DashboardKpis {
+  available_balance_cents: number
+  escrow_cents: number
+  settlement_due_cents: number
+  todays_collections: KpiMetric
+  todays_payouts: KpiMetric
+  window_start: string
+  generated_at: string
+}
+
+export async function fetchOrgDashboardKpis(branchId?: string): Promise<DashboardKpis> {
+  const res = await http.get<{ status: string; data: DashboardKpis }>('/org/v1/dashboard/kpis', {
+    params: branchId ? { branch_id: branchId } : undefined,
+  })
+  return res.data.data
+}
+
+export async function fetchBranchDashboardKpis(): Promise<DashboardKpis> {
+  const res = await http.get<{ status: string; data: DashboardKpis }>('/org/v1/branch/dashboard/kpis')
   return res.data.data
 }
 
@@ -696,6 +734,8 @@ export async function uploadMemberDocument(memberId: string, file: File, docType
 export interface OrgCredential {
   id: string
   client_id: string
+  name?: string
+  description?: string
   branch_ids: string[]
   scopes: string[]
   status: string
@@ -703,9 +743,28 @@ export interface OrgCredential {
 }
 
 export interface CreateCredentialInput {
+  name?: string
+  description?: string
   branch_ids?: string[]
   scopes: string[]
 }
+
+export const API_CLIENT_SCOPES = [
+  { value: 'collections:read', label: 'collections:read' },
+  { value: 'collections:write', label: 'collections:write' },
+  { value: 'payouts:read', label: 'payouts:read' },
+  { value: 'payouts:write', label: 'payouts:write' },
+  { value: 'transfers:read', label: 'transfers:read' },
+  { value: 'transfers:write', label: 'transfers:write' },
+  { value: 'checkout:read', label: 'checkout:read' },
+  { value: 'checkout:write', label: 'checkout:write' },
+  { value: 'invoices:read', label: 'invoices:read' },
+  { value: 'invoices:write', label: 'invoices:write' },
+  { value: 'balance:read', label: 'balance:read' },
+  { value: 'transactions:read', label: 'transactions:read' },
+  { value: 'screening:read', label: 'screening:read' },
+  { value: 'utils:read', label: 'utils:read' },
+] as const
 
 export interface CreateCredentialResult extends OrgCredential {
   client_secret: string
@@ -808,19 +867,83 @@ export const WEBHOOK_EVENT_TYPES = [
 
 export interface OrgWebhookEndpoint {
   id: string
+  name?: string
+  description?: string
   url: string
   event_types: string[]
   is_active: boolean
+  environment?: string
+  last_success_at?: string
   created_at: string
 }
 
 export interface CreateWebhookEndpointInput {
+  name?: string
+  description?: string
   url: string
   event_types: string[]
 }
 
+export interface WebhookStats {
+  active_endpoints: number
+  successful_deliveries: number
+  failed_deliveries: number
+  pending_retries: number
+  success_rate: number
+}
+
+export interface WebhookEventTypeInfo {
+  event_type: string
+  description: string
+}
+
+export async function fetchOrgWebhookStats(): Promise<WebhookStats> {
+  const res = await http.get<{ status: string; data: WebhookStats }>('/org/v1/webhook-endpoints/stats')
+  return res.data.data
+}
+
+export async function fetchOrgWebhookEventTypes(): Promise<WebhookEventTypeInfo[]> {
+  const res = await http.get<{ status: string; data: WebhookEventTypeInfo[] }>('/org/v1/webhook-endpoints/event-types')
+  return res.data.data
+}
+
+export async function fetchOrgAllWebhookDeliveries(limit = 100): Promise<OrgWebhookDelivery[]> {
+  const res = await http.get<{ status: string; data: OrgWebhookDelivery[] }>('/org/v1/webhook-endpoints/deliveries', { params: { limit } })
+  return res.data.data
+}
+
+export async function setOrgWebhookEndpointActive(id: string, active: boolean): Promise<void> {
+  await http.post(`/org/v1/webhook-endpoints/${id}/status`, { active })
+}
+
+export interface WebhookTestResult {
+  reachable: boolean
+  status_code?: number
+  error?: string
+  duration_ms: number
+}
+
+export async function testOrgWebhookEndpoint(id: string): Promise<WebhookTestResult> {
+  const res = await http.post<{ status: string; data: WebhookTestResult }>(`/org/v1/webhook-endpoints/${id}/test`)
+  return res.data.data
+}
+
+export async function testOrgWebhookUrl(url: string): Promise<{ valid: boolean; normalized?: string; reachable?: boolean; status_code?: number; error?: string }> {
+  const res = await http.post<{ status: string; data: { valid: boolean; normalized?: string; reachable?: boolean; status_code?: number; error?: string } }>(
+    '/org/v1/webhook-endpoints/test-url', { url },
+  )
+  return res.data.data
+}
+
+export async function updateOrgWebhookEndpoint(
+  id: string, fields: { name?: string; description?: string; url?: string; event_types?: string[] },
+): Promise<void> {
+  await http.patch(`/org/v1/webhook-endpoints/${id}`, fields)
+}
+
 export interface CreateWebhookEndpointResult extends OrgWebhookEndpoint {
   secret: string
+  test?: { reachable: boolean; status_code?: number; error?: string; duration_ms: number }
 }
 
 export interface OrgWebhookDelivery {
@@ -1033,10 +1156,6 @@ export async function setTransactionPin(currentPassword: string, pin: string): P
   await http.post('/org/v1/security/transaction-pin', { current_password: currentPassword, pin })
 }
 
-// --- Panic PIN (org owner) / panic password (branch member) — duress
-// protection: entering this instead of the real secret during a payout
-// silently freezes the account and alerts security. Mirrors the merchant
-// panic-PIN flow (set once, then a 24h-cooldown + OTP change/removal flow). ---
 
 export async function setOrgPanicPin(currentPassword: string, panicPin: string): Promise<void> {
   await http.post('/org/v1/security/panic-pin', {
@@ -1373,6 +1492,12 @@ export async function fetchScheduledPayouts(isBranch = false): Promise<Scheduled
   return res.data.data
 }
 
+export async function fetchScheduledPayout(id: string, isBranch = false): Promise<ScheduledPayout> {
+  const base = isBranch ? '/org/v1/branch/scheduled-payouts' : '/org/v1/scheduled-payouts'
+  const res = await http.get<{ status: string; data: ScheduledPayout }>(`${base}/${id}`)
+  return res.data.data
+}
+
 export interface ScheduledPayoutCreateResult {
   status: string
   message?: string
@@ -1607,6 +1732,29 @@ export async function createBranchTransfer(input: Omit<TransferInput, 'from' | '
   return res.data.data
 }
 
+export interface TransferHistoryRow {
+  id: string
+  type: 'INTERNAL_TRANSFER' | 'CROSS_ORG_TRANSFER'
+  amount_cents: number
+  description: string
+  status: string
+  direction: 'INTERNAL' | 'OUT' | 'IN'
+  created_at: string
+}
+
+export interface TransferHistory {
+  page: number
+  page_size: number
+  total: number
+  transfers: TransferHistoryRow[]
+}
+
+export async function fetchTransferHistory(isBranch = false, params: { page?: number; page_size?: number } = {}): Promise<TransferHistory> {
+  const base = isBranch ? '/org/v1/branch/transfers' : '/org/v1/transfers'
+  const res = await http.get<{ status: string; data: TransferHistory }>(base, { params })
+  return res.data.data
+}
+
 
 export interface TransferRecipientLookup {
   name: string
@@ -1698,6 +1846,374 @@ export async function downloadStatementCsv(params: { period?: string; scope?: 'c
   return res.data
 }
 
+export interface StatementEntry {
+  id: number
+  created_at: string
+  transaction_id: string
+  wallet_id: string
+  entry_type: 'CREDIT' | 'DEBIT'
+  amount_cents: number
+  money_in_cents: number
+  money_out_cents: number
+  running_balance_cents: number
+  txn_type: string
+  status: string
+  reference: string
+  details: string
+  rail: string
+  provider_ref: string
+  customer_ref: string
+}
+
+export interface StatementEntries {
+  period: string
+  from: string
+  to: string
+  scope: string
+  branch_id?: string
+  opening_balance_cents: number
+  closing_balance_cents: number
+  total_in_cents: number
+  total_out_cents: number
+  page: number
+  page_size: number
+  total: number
+  entries: StatementEntry[]
+}
+
+export interface StatementEntryParams {
+  from?: string
+  to?: string
+  period?: string
+  scope?: 'consolidated' | 'org'
+  branch_id?: string
+  direction?: 'in' | 'out'
+  txn_type?: string
+  search?: string
+  page?: number
+  page_size?: number
+}
+
+export async function fetchStatementEntries(params: StatementEntryParams): Promise<StatementEntries> {
+  const res = await http.get<{ status: string; data: StatementEntries }>('/org/v1/statements/entries', { params })
+  return res.data.data
+}
+
+export async function downloadStatementEntriesCsv(params: StatementEntryParams): Promise<Blob> {
+  const res = await http.get('/org/v1/statements/entries', { params: { ...params, format: 'csv' }, responseType: 'blob' })
+  return res.data
+}
+
+export interface StatementEntryDetail {
+  id: number
+  created_at: string
+  ledger_txn_id: string
+  wallet_id: string
+  wallet_name: string
+  wallet_type: string
+  entry_type: string
+  amount_cents: number
+  direction: 'IN' | 'OUT'
+  branch_id?: string
+  transaction_id?: string
+  txn_type?: string
+  status?: string
+  rail?: string
+  reference?: string
+  description?: string
+  fee_cents: number
+  currency?: string
+  provider_ref?: string
+  customer_name?: string
+  customer_phone?: string
+  settlement_status?: string
+  txn_created_at?: string
+}
+
+export async function fetchStatementEntry(id: string | number, params: { scope?: string; branch_id?: string } = {}): Promise<StatementEntryDetail> {
+  const res = await http.get<{ status: string; data: StatementEntryDetail }>(`/org/v1/statements/entries/${id}`, { params })
+  return res.data.data
+}
+
+export interface SettlementRow {
+  settlement_id: string
+  reference: string
+  settled_at: string
+  wallet_id: string
+  net_cents: number
+  gross_cents: number
+  fees_cents: number
+  refunds_cents: number
+  item_count: number
+  status: string
+}
+
+export interface SettlementList {
+  scope: string
+  branch_id?: string
+  from: string
+  to: string
+  page: number
+  page_size: number
+  total: number
+  total_net_cents: number
+  settlements: SettlementRow[]
+}
+
+export interface SettlementItem {
+  transaction_id: string
+  created_at: string
+  type: string
+  status: string
+  settlement_status: string
+  rail: string
+  reference: string
+  external_txn_id: string | null
+  description: string
+  currency: string
+  amount_cents: number
+  fee_cents: number
+  customer_name: string
+  customer_phone: string
+  customer_ref: string
+}
+
+export interface SettlementDetail {
+  settlement_id: string
+  transaction_id: string
+  ledger_txn_id: string
+  reference: string
+  external_txn_id: string | null
+  settled_at: string
+  updated_at: string
+  net_cents: number
+  transfer_fee_cents: number
+  gross_cents: number
+  fees_cents: number
+  refunds_cents: number
+  currency: string
+  status: string
+  settlement_status: string
+  rail: string
+  source: string
+  description: string
+  is_escrow: boolean
+  scope: string
+  wallet_id: string
+  wallet_name: string
+  wallet_type: string
+  item_count: number
+  items: SettlementItem[]
+}
+
+export interface SettlementQuery {
+  from?: string
+  to?: string
+  period?: string
+  scope?: 'consolidated' | 'org'
+  branch_id?: string
+  page?: number
+  page_size?: number
+}
+
+export async function fetchOrgSettlements(params: SettlementQuery): Promise<SettlementList> {
+  const res = await http.get<{ status: string; data: SettlementList }>('/org/v1/settlements', { params })
+  return res.data.data
+}
+export async function fetchBranchSettlements(params: SettlementQuery): Promise<SettlementList> {
+  const res = await http.get<{ status: string; data: SettlementList }>('/org/v1/branch/settlements', { params })
+  return res.data.data
+}
+export async function fetchOrgSettlementDetail(id: string): Promise<SettlementDetail> {
+  const res = await http.get<{ status: string; data: SettlementDetail }>(`/org/v1/settlements/${id}`)
+  return res.data.data
+}
+export async function fetchBranchSettlementDetail(id: string): Promise<SettlementDetail> {
+  const res = await http.get<{ status: string; data: SettlementDetail }>(`/org/v1/branch/settlements/${id}`)
+  return res.data.data
+}
+export function fetchSettlementDetail(id: string, isBranch = false): Promise<SettlementDetail> {
+  return isBranch ? fetchBranchSettlementDetail(id) : fetchOrgSettlementDetail(id)
+}
+
+export interface PayoutHistoryRow {
+  id: string
+  created_at: string
+  updated_at: string
+  reference: string
+  recipient_name: string
+  recipient_info: string
+  destination_type: string
+  amount_cents: number
+  fee_cents: number
+  provider: string
+  status: string
+  failure_reason: string
+  mpesa_transaction_id: string
+  bank_reference_id: string
+  branch_id?: string
+}
+
+export interface PayoutHistoryList {
+  scope: string
+  branch_id?: string
+  page: number
+  page_size: number
+  total: number
+  total_paid_cents: number
+  total_fees_cents: number
+  payouts: PayoutHistoryRow[]
+}
+
+export interface PayoutHistoryQuery {
+  status?: string
+  from?: string
+  to?: string
+  search?: string
+  scope?: 'consolidated' | 'org'
+  branch_id?: string
+  page?: number
+  page_size?: number
+}
+
+export async function fetchOrgPayoutHistory(params: PayoutHistoryQuery): Promise<PayoutHistoryList> {
+  const res = await http.get<{ status: string; data: PayoutHistoryList }>('/org/v1/payouts', { params })
+  return res.data.data
+}
+export async function fetchBranchPayoutHistory(params: PayoutHistoryQuery): Promise<PayoutHistoryList> {
+  const res = await http.get<{ status: string; data: PayoutHistoryList }>('/org/v1/branch/payouts', { params })
+  return res.data.data
+}
+
+export interface PayoutDetail extends PayoutHistoryRow {
+  total_cents: number
+  currency: string
+  attempts: number
+  wallet_id: string
+  metadata: Record<string, unknown> | null
+}
+
+export async function fetchOrgPayout(id: string): Promise<PayoutDetail> {
+  const res = await http.get<{ status: string; data: PayoutDetail }>(`/org/v1/payouts/${id}`)
+  return res.data.data
+}
+export async function fetchBranchPayout(id: string): Promise<PayoutDetail> {
+  const res = await http.get<{ status: string; data: PayoutDetail }>(`/org/v1/branch/payouts/${id}`)
+  return res.data.data
+}
+
+export interface CreditNoteRow {
+  transaction_id: string
+  created_at: string
+  type: string
+  status: string
+  rail: string
+  reference: string
+  amount_cents: number
+  fee_cents: number
+  customer_ref: string
+  details: string
+  original_reference: string
+  original_transaction_id?: string
+}
+
+export interface CreditNoteList {
+  kind: 'refunds' | 'reversals'
+  scope: string
+  branch_id?: string
+  from: string
+  to: string
+  page: number
+  page_size: number
+  total: number
+  total_amount_cents: number
+  rows: CreditNoteRow[]
+}
+
+export interface CreditNoteQuery {
+  from?: string
+  to?: string
+  period?: string
+  scope?: 'consolidated' | 'org'
+  branch_id?: string
+  status?: string
+  search?: string
+  page?: number
+  page_size?: number
+}
+
+export async function fetchOrgRefunds(params: CreditNoteQuery): Promise<CreditNoteList> {
+  const res = await http.get<{ status: string; data: CreditNoteList }>('/org/v1/refunds', { params })
+  return res.data.data
+}
+export async function fetchBranchRefunds(params: CreditNoteQuery): Promise<CreditNoteList> {
+  const res = await http.get<{ status: string; data: CreditNoteList }>('/org/v1/branch/refunds', { params })
+  return res.data.data
+}
+export interface CreateRefundPayload {
+  transaction_id: string
+  amount_cents?: number
+  reason: string
+}
+
+export async function createOrgRefund(payload: CreateRefundPayload, isBranch = false): Promise<{ id: string; status: string }> {
+  const base = isBranch ? '/org/v1/branch/refunds' : '/org/v1/refunds'
+  const res = await http.post<{ status: string; data: { id: string; status: string } }>(base, payload)
+  return res.data.data
+}
+
+export async function fetchOrgReversals(params: CreditNoteQuery): Promise<CreditNoteList> {
+  const res = await http.get<{ status: string; data: CreditNoteList }>('/org/v1/reversals', { params })
+  return res.data.data
+}
+export async function fetchBranchReversals(params: CreditNoteQuery): Promise<CreditNoteList> {
+  const res = await http.get<{ status: string; data: CreditNoteList }>('/org/v1/branch/reversals', { params })
+  return res.data.data
+}
+
+export interface FinancialAccount {
+  id: string
+  type: string
+  wallet_name: string
+  name?: string
+  currency: string
+  balance_cents: number
+  reserved_cents: number
+  locked_cents: number
+  available_cents: number
+  status: string
+  freeze_reason?: string
+  organization_id?: string
+  branch_id?: string
+  branch_name?: string
+  store_id?: string
+  last_credited_at?: string
+  created_at?: string
+}
+
+export interface FinancialAccountGroup {
+  type: string
+  count: number
+  balance_cents: number
+  available_cents: number
+}
+
+export interface FinancialAccounts {
+  scope: string
+  branch_id?: string
+  accounts: FinancialAccount[]
+  groups: FinancialAccountGroup[]
+}
+
+export async function fetchOrgFinancialAccounts(params?: { scope?: 'org' | 'consolidated'; branch_id?: string }): Promise<FinancialAccounts> {
+  const res = await http.get<{ status: string; data: FinancialAccounts }>('/org/v1/financial-accounts', { params })
+  return res.data.data
+}
+export async function fetchBranchFinancialAccounts(): Promise<FinancialAccounts> {
+  const res = await http.get<{ status: string; data: FinancialAccounts }>('/org/v1/branch/financial-accounts')
+  return res.data.data
+}
+
 
 
 export interface BranchAnalyticsRow {
@@ -1731,9 +2247,20 @@ export interface AnalyticsTotals {
   payouts_cents: number
   payouts_count: number
   net_cents: number
+  volume_cents: number
+  txn_count: number
+  avg_txn_cents: number
   avg_collection_cents: number
   avg_payout_cents: number
   fees_cents: number
+  success_rate: number
+}
+
+export interface AnalyticsTimeseriesPoint {
+  date: string
+  collections_cents: number
+  payouts_cents: number
+  volume_cents: number
 }
 
 export interface AnalyticsStatusRow {
@@ -1771,15 +2298,22 @@ export interface AnalyticsDetail {
   rail_breakdown: AnalyticsRailRow[]
   tag_breakdown: AnalyticsTagRow[] | null
   untagged_spend: { total_cents: number; count: number }
+  timeseries: AnalyticsTimeseriesPoint[]
 }
 
-export async function fetchOrgAnalyticsDetail(period?: string): Promise<AnalyticsDetail> {
-  const res = await http.get<{ status: string; data: AnalyticsDetail }>('/org/v1/analytics/detail', { params: { period } })
+export interface AnalyticsRangeParams {
+  period?: string
+  from?: string
+  to?: string
+}
+
+export async function fetchOrgAnalyticsDetail(params: AnalyticsRangeParams = {}): Promise<AnalyticsDetail> {
+  const res = await http.get<{ status: string; data: AnalyticsDetail }>('/org/v1/analytics/detail', { params })
   return res.data.data
 }
 
-export async function fetchBranchAnalyticsDetail(period?: string): Promise<AnalyticsDetail> {
-  const res = await http.get<{ status: string; data: AnalyticsDetail }>('/org/v1/branch/analytics/detail', { params: { period } })
+export async function fetchBranchAnalyticsDetail(params: AnalyticsRangeParams = {}): Promise<AnalyticsDetail> {
+  const res = await http.get<{ status: string; data: AnalyticsDetail }>('/org/v1/branch/analytics/detail', { params })
   return res.data.data
 }
 
@@ -1945,23 +2479,99 @@ export interface OrgPaymentLink {
   organization_id?: string
   branch_id?: string
   code: string
+  name?: string
   amount_cents: number
   currency: string
   description: string
   status: 'PENDING' | 'PAID' | 'EXPIRED'
+  display_status?: 'ACTIVE' | 'PAUSED' | 'COMPLETED' | 'DISABLED' | 'EXPIRED'
+  customer_label?: string
+  checkout_url?: string
   expires_at: string
   is_reusable: boolean
   allow_open_amount: boolean
+  link_type?: string
+  customer_id?: string
+  paused?: boolean
+  created_at: string
+  payments_count?: number
+  collected_cents?: number
+  max_uses?: number
+  use_count?: number
+  redirect_url?: string
+  cancel_url?: string
+  brand_logo_url?: string
+  brand_color?: string
+  payment_image_url?: string
+  header_banner_url?: string
+  image_alt?: string
+  collect_name?: boolean
+  collect_phone?: boolean
+  collect_email?: boolean
+  require_reference?: boolean
+  allow_message?: boolean
+  payment_methods?: string
+}
+
+export interface PaymentLinkStats {
+  collected_cents: number
+  successful_count: number
+  pending_count: number
+  failed_count: number
+  total_count: number
+  conversion_pct: number
+}
+
+export interface PaymentLinkPayment {
+  id: string
+  payment_link_id: string
+  transaction_id?: string
+  amount_cents: number
+  payer_phone?: string
+  payer_email?: string
+  method: string
+  status: string
+  paid_at: string
   created_at: string
 }
 
 export interface CreatePaymentLinkInput {
+  name?: string
   amount_cents: number
   currency?: string
   description?: string
   is_reusable?: boolean
   allow_open_amount?: boolean
   branch_id?: string
+  expires_in_days?: number
+  max_uses?: number
+  redirect_url?: string
+  cancel_url?: string
+  payment_image_url?: string
+  header_banner_url?: string
+  image_alt?: string
+  brand_color?: string
+  collect_name?: boolean
+  collect_phone?: boolean
+  collect_email?: boolean
+  require_reference?: boolean
+  allow_message?: boolean
+  payment_methods?: string
+  link_type?: 'STANDARD' | 'INVOICE' | 'CUSTOMER' | 'DONATION'
+  customer_id?: string
+}
+
+export interface OrgCustomerLite {
+  id: string
+  phone: string
+  display_name?: string
+}
+
+export async function fetchOrgCustomersLite(search = ''): Promise<OrgCustomerLite[]> {
+  const res = await http.get<{ status: string; data: { items?: OrgCustomerLite[] } }>(
+    '/org/v1/customers', { params: { search: search || undefined, limit: 100 } },
+  )
+  return res.data.data.items ?? []
 }
 
 export interface PaymentLinkCreateResult {
@@ -1971,17 +2581,16 @@ export interface PaymentLinkCreateResult {
   url: string
 }
 
-export async function createOrgPaymentLink(input: CreatePaymentLinkInput): Promise<PaymentLinkCreateResult> {
-  const res = await http.post<PaymentLinkCreateResult>('/org/v1/payment-links', input)
-  return res.data
+export interface PaymentLinkAppearanceInput {
+  payment_image_url?: string | null
+  header_banner_url?: string | null
+  image_alt?: string | null
+  brand_color?: string | null
+  redirect_url?: string | null
+  cancel_url?: string | null
 }
 
-export async function createBranchPaymentLink(input: CreatePaymentLinkInput): Promise<PaymentLinkCreateResult> {
-  const res = await http.post<PaymentLinkCreateResult>('/org/v1/branch/payment-links', input)
-  return res.data
-}
-
-interface PaginatedPaymentLinksResponse {
+export interface PaginatedPaymentLinksResponse {
   total_count: number
   page: number
   page_size: number
@@ -1989,32 +2598,103 @@ interface PaginatedPaymentLinksResponse {
   payment_links: OrgPaymentLink[]
 }
 
-export async function fetchOrgPaymentLinks(): Promise<OrgPaymentLink[]> {
-  const res = await http.get<PaginatedPaymentLinksResponse>('/org/v1/payment-links')
+function plBase(isBranch: boolean) {
+  return isBranch ? '/org/v1/branch/payment-links' : '/org/v1/payment-links'
+}
+
+export async function createPaymentLink(input: CreatePaymentLinkInput, isBranch = false): Promise<PaymentLinkCreateResult> {
+  const res = await http.post<PaymentLinkCreateResult>(plBase(isBranch), input)
+  return res.data
+}
+export const createOrgPaymentLink = (input: CreatePaymentLinkInput) => createPaymentLink(input, false)
+export const createBranchPaymentLink = (input: CreatePaymentLinkInput) => createPaymentLink(input, true)
+
+export async function fetchPaymentLinks(isBranch = false): Promise<OrgPaymentLink[]> {
+  const res = await http.get<PaginatedPaymentLinksResponse>(plBase(isBranch), { params: { page_size: 200 } })
   return res.data.payment_links ?? []
 }
+export const fetchOrgPaymentLinks = () => fetchPaymentLinks(false)
+export const fetchBranchPaymentLinks = () => fetchPaymentLinks(true)
 
-export async function fetchBranchPaymentLinks(): Promise<OrgPaymentLink[]> {
-  const res = await http.get<PaginatedPaymentLinksResponse>('/org/v1/branch/payment-links')
-  return res.data.payment_links ?? []
+export interface PaymentLinksPageParams {
+  page?: number
+  page_size?: number
+  status?: string
+  search?: string
 }
 
-export async function closeOrgPaymentLink(id: string): Promise<void> {
-  await http.post(`/org/v1/payment-links/${id}/close`)
+export async function fetchPaymentLinksPage(
+  isBranch = false,
+  params: PaymentLinksPageParams = {},
+): Promise<PaginatedPaymentLinksResponse> {
+  const res = await http.get<PaginatedPaymentLinksResponse>(plBase(isBranch), { params })
+  return {
+    total_count: res.data.total_count ?? 0,
+    page: res.data.page ?? 1,
+    page_size: res.data.page_size ?? 20,
+    total_pages: res.data.total_pages ?? 1,
+    payment_links: res.data.payment_links ?? [],
+  }
 }
 
-export async function closeBranchPaymentLink(id: string): Promise<void> {
-  await http.post(`/org/v1/branch/payment-links/${id}/close`)
+export async function fetchPaymentLink(id: string, isBranch = false): Promise<{ link: OrgPaymentLink; stats: PaymentLinkStats }> {
+  const res = await http.get<{ status: string; data: OrgPaymentLink; stats: PaymentLinkStats }>(`${plBase(isBranch)}/${id}`)
+  return { link: res.data.data, stats: res.data.stats }
 }
+export const fetchOrgPaymentLink = async (id: string) => (await fetchPaymentLink(id, false)).link
+export const fetchBranchPaymentLink = async (id: string) => (await fetchPaymentLink(id, true)).link
 
-export async function fetchOrgPaymentLink(id: string): Promise<OrgPaymentLink> {
-  const res = await http.get<{ status: string; data: OrgPaymentLink }>(`/org/v1/payment-links/${id}`)
+export async function fetchPaymentLinkPayments(
+  id: string, isBranch = false, page = 1, pageSize = 50,
+): Promise<{ payments: PaymentLinkPayment[]; total: number; page: number; page_size: number }> {
+  const res = await http.get<{ status: string; data: { payments: PaymentLinkPayment[]; total: number; page: number; page_size: number } }>(
+    `${plBase(isBranch)}/${id}/payments`, { params: { page, page_size: pageSize } },
+  )
   return res.data.data
 }
 
-export async function fetchBranchPaymentLink(id: string): Promise<OrgPaymentLink> {
-  const res = await http.get<{ status: string; data: OrgPaymentLink }>(`/org/v1/branch/payment-links/${id}`)
+export async function fetchPaymentLinkSession(id: string, isBranch = false): Promise<Record<string, unknown> | null> {
+  const res = await http.get<{ status: string; data: { session: Record<string, unknown> | null } }>(`${plBase(isBranch)}/${id}/session`)
+  return res.data.data.session
+}
+
+export async function closePaymentLink(id: string, isBranch = false): Promise<void> {
+  await http.post(`${plBase(isBranch)}/${id}/close`)
+}
+export const closeOrgPaymentLink = (id: string) => closePaymentLink(id, false)
+export const closeBranchPaymentLink = (id: string) => closePaymentLink(id, true)
+
+export async function pausePaymentLink(id: string, isBranch = false): Promise<void> {
+  await http.post(`${plBase(isBranch)}/${id}/pause`)
+}
+export async function resumePaymentLink(id: string, isBranch = false): Promise<void> {
+  await http.post(`${plBase(isBranch)}/${id}/resume`)
+}
+export async function updatePaymentLinkAppearance(id: string, input: PaymentLinkAppearanceInput, isBranch = false): Promise<void> {
+  await http.patch(`${plBase(isBranch)}/${id}/appearance`, input)
+}
+
+export interface PaymentLinkImageUpload {
+  upload_url: string
+  public_url: string
+  content_type: string
+}
+
+export async function presignPaymentLinkImage(
+  contentType: string, purpose: 'payment_image' | 'header_banner', isBranch = false,
+): Promise<PaymentLinkImageUpload> {
+  const res = await http.post<{ status: string; data: PaymentLinkImageUpload }>(
+    `${plBase(isBranch)}/upload-url`, { content_type: contentType, purpose },
+  )
   return res.data.data
+}
+
+export async function uploadPaymentLinkImage(
+  file: File, purpose: 'payment_image' | 'header_banner', isBranch = false,
+): Promise<string> {
+  const { upload_url, public_url } = await presignPaymentLinkImage(file.type, purpose, isBranch)
+  await fetch(upload_url, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } })
+  return public_url
 }
 
 export async function reclaimBulkPayoutResidual(id: string, isBranch = false): Promise<{ reclaimed_cents: number }> {
@@ -2023,14 +2703,13 @@ export async function reclaimBulkPayoutResidual(id: string, isBranch = false): P
   return res.data.data
 }
 
-// --- Bulk / recurring invoices ---
 
 export interface BulkInvoiceRecipientInput {
   email: string
   phone: string
   name?: string
   amount_cents: number
-  due_date: string // RFC3339
+  due_date: string 
   description?: string
   tax_category?: string
 }
@@ -2126,7 +2805,6 @@ export async function fetchInvoiceBatch(id: string, isBranch = false): Promise<{
   return res.data.data
 }
 
-// --- Invoice schedules ---
 
 export interface InvoiceScheduleRecipientInput {
   email: string
@@ -2184,7 +2862,6 @@ export async function patchInvoiceSchedule(
   return res.data.data
 }
 
-// --- Recipient suppressions ---
 
 export interface RecipientSuppression {
   id: string
@@ -2239,18 +2916,33 @@ export interface OrgInvoiceItem {
   unit_price_cents: number
   total_cents: number
   tax_category: string
+  hs_code?: string | null
+}
+
+export interface InvoiceMessagingLog {
+  id: string
+  channel: string
+  recipient: string
+  status: string
+  provider_ref?: string | null
+  charge_amount_cents?: number
+  sent_at?: string | null
+  error_message?: string | null
+  created_at: string
 }
 
 export interface OrgInvoice {
   id: string
   organization_id?: string
   branch_id?: string
+  store_id?: string | null
   invoice_number: string
   shareable_code: string
   currency: string
   customer_name: string
   customer_phone: string
   customer_email?: string | null
+  customer_kra_pin?: string | null
   sub_total_cents: number
   tax_amount_cents: number
   total_cents: number
@@ -2258,9 +2950,12 @@ export interface OrgInvoice {
   due_date: string
   paid_at?: string | null
   payment_link_id?: string | null
+  is_etims_synced?: boolean
   notes?: string | null
   items: OrgInvoiceItem[]
+  messaging_logs?: InvoiceMessagingLog[]
   created_at: string
+  updated_at?: string
 }
 
 export interface CreateOrgInvoiceItemInput {
@@ -2279,6 +2974,7 @@ export interface CreateOrgInvoiceInput {
   currency: string
   due_date: string
   notes?: string
+  org_customer_id?: string
   items: CreateOrgInvoiceItemInput[]
   branch_id?: string
 }
@@ -2474,12 +3170,14 @@ export async function deleteTag(id: string, isBranch = false): Promise<void> {
   await http.delete(`${base}/${id}`)
 }
 
-export async function assignTag(tagId: string, subjectType: 'payout' | 'expense', subjectId: string, isBranch = false): Promise<void> {
+export type TagSubjectType = 'payout' | 'expense' | 'transaction' | 'petty_cash_draw'
+
+export async function assignTag(tagId: string, subjectType: TagSubjectType, subjectId: string, isBranch = false): Promise<void> {
   const base = isBranch ? '/org/v1/branch/tags' : '/org/v1/tags'
   await http.post(`${base}/assign`, { tag_id: tagId, subject_type: subjectType, subject_id: subjectId })
 }
 
-export async function unassignTag(tagId: string, subjectType: 'payout' | 'expense', subjectId: string, isBranch = false): Promise<void> {
+export async function unassignTag(tagId: string, subjectType: TagSubjectType, subjectId: string, isBranch = false): Promise<void> {
   const base = isBranch ? '/org/v1/branch/tags' : '/org/v1/tags'
   await http.post(`${base}/unassign`, { tag_id: tagId, subject_type: subjectType, subject_id: subjectId })
 }
@@ -2505,7 +3203,7 @@ export async function fetchTagBreakdown(params: { from?: string; to?: string }, 
   return res.data.data
 }
 
-export async function fetchTagsForSubject(subjectType: 'payout' | 'expense', subjectId: string, isBranch = false): Promise<OrgTag[]> {
+export async function fetchTagsForSubject(subjectType: TagSubjectType, subjectId: string, isBranch = false): Promise<OrgTag[]> {
   const base = isBranch ? '/org/v1/branch/tags' : '/org/v1/tags'
   const res = await http.get<{ status: string; data: OrgTag[] }>(`${base}/for/${subjectType}/${subjectId}`)
   return res.data.data ?? []
@@ -2777,4 +3475,907 @@ export async function fetchOrgSupportContacts(isBranchSession = false): Promise<
   const path = isBranchSession ? '/org/v1/branch/utils/support-details' : '/org/v1/utils/support-details'
   const res = await http.get<{ contacts: OrgSupportContact[] }>(path)
   return res.data.contacts ?? []
+}
+
+// ─── Suppliers / accounts-payable (Phase 1) ──────────────────────────────
+
+export type SupplierStatus = 'ACTIVE' | 'SUSPENDED' | 'ARCHIVED'
+export type SupplierVerification = 'UNVERIFIED' | 'PENDING' | 'VERIFIED' | 'REJECTED'
+export type SupplierRisk = 'NORMAL' | 'ELEVATED' | 'HIGH'
+export type SupplierPayoutMethodKind = 'MOBILE_MONEY' | 'BANK' | 'PAYBILL' | 'TILL'
+
+export interface SupplierPayoutMethod {
+  id: string
+  method: SupplierPayoutMethodKind
+  label: string
+  currency: string
+  country: string
+  phone_number?: string | null
+  bank_code?: string | null
+  bank_account_number?: string | null
+  account_name: string
+  is_primary: boolean
+}
+
+export interface SupplierContact {
+  id: string
+  name: string
+  email: string
+  phone: string
+  role: string
+  is_primary: boolean
+}
+
+export interface Supplier {
+  id: string
+  organization_id: string
+  branch_id?: string | null
+  supplier_type: 'BUSINESS' | 'INDIVIDUAL'
+  category: string
+  legal_name: string
+  trading_name: string
+  registration_number: string
+  tax_number: string
+  supplier_code: string
+  country: string
+  preferred_currency: string
+  email: string
+  phone: string
+  payment_terms_days: number
+  status: SupplierStatus
+  verification_status: SupplierVerification
+  risk_level: SupplierRisk
+  risk_level_override?: SupplierRisk | null
+  risk_flags: unknown[]
+  readiness_score: number
+  screening_match_count: number
+  screened_at?: string | null
+  notes: string
+  payout_methods?: SupplierPayoutMethod[]
+  contacts?: SupplierContact[]
+  created_at: string
+  outstanding_cents?: number
+  last_payment_at?: string | null
+  readiness?: 'READY' | 'PENDING_VERIFICATION' | 'NO_PAYOUT_METHOD' | 'NOT_READY'
+}
+
+export interface SupplierListResponse {
+  suppliers: Supplier[]
+  total: number
+  page: number
+  page_size: number
+  total_pages: number
+}
+
+export interface SupplierListParams {
+  status?: string
+  verification?: string
+  readiness?: string
+  q?: string
+  branch_id?: string
+  page?: number
+  page_size?: number
+}
+
+export interface SupplierInput {
+  branch_id?: string
+  supplier_type?: string
+  category?: string
+  legal_name?: string
+  trading_name?: string
+  registration_number?: string
+  tax_number?: string
+  supplier_code?: string
+  country?: string
+  preferred_currency?: string
+  email?: string
+  phone?: string
+  payment_terms_days?: number
+  notes?: string
+}
+
+export interface SupplierPayoutMethodInput {
+  method: SupplierPayoutMethodKind
+  label?: string
+  currency?: string
+  country?: string
+  phone_number?: string
+  bank_code?: string
+  bank_account_number?: string
+  account_name?: string
+  is_primary?: boolean
+}
+
+export interface SupplierContactInput {
+  name: string
+  email?: string
+  phone?: string
+  role?: string
+  is_primary?: boolean
+}
+
+function supplierBase(isBranch: boolean): string {
+  return isBranch ? '/org/v1/branch/suppliers' : '/org/v1/suppliers'
+}
+
+export async function fetchSuppliers(isBranch: boolean, params: SupplierListParams = {}): Promise<SupplierListResponse> {
+  const res = await http.get<{ status: string; data: SupplierListResponse }>(supplierBase(isBranch), { params })
+  return res.data.data
+}
+
+export async function fetchSupplier(isBranch: boolean, id: string): Promise<Supplier> {
+  const res = await http.get<{ status: string; data: Supplier }>(`${supplierBase(isBranch)}/${id}`)
+  return res.data.data
+}
+
+export async function createSupplier(isBranch: boolean, input: SupplierInput): Promise<Supplier> {
+  const res = await http.post<{ status: string; data: Supplier }>(supplierBase(isBranch), input)
+  return res.data.data
+}
+
+export async function updateSupplier(isBranch: boolean, id: string, input: SupplierInput): Promise<Supplier> {
+  const res = await http.patch<{ status: string; data: Supplier }>(`${supplierBase(isBranch)}/${id}`, input)
+  return res.data.data
+}
+
+export async function setSupplierStatus(isBranch: boolean, id: string, action: 'suspend' | 'reactivate'): Promise<Supplier> {
+  const res = await http.post<{ status: string; data: Supplier }>(`${supplierBase(isBranch)}/${id}/${action}`)
+  return res.data.data
+}
+
+export async function rescreenSupplier(isBranch: boolean, id: string): Promise<void> {
+  await http.post(`${supplierBase(isBranch)}/${id}/rescreen`)
+}
+
+export async function setSupplierVerification(id: string, action: 'verify' | 'reject-verification'): Promise<Supplier> {
+  const res = await http.post<{ status: string; data: Supplier }>(`/org/v1/suppliers/${id}/${action}`)
+  return res.data.data
+}
+
+export async function fetchSupplierPayoutMethods(isBranch: boolean, id: string): Promise<SupplierPayoutMethod[]> {
+  const res = await http.get<{ status: string; data: SupplierPayoutMethod[] }>(`${supplierBase(isBranch)}/${id}/payout-methods`)
+  return res.data.data
+}
+
+export async function replaceSupplierPayoutMethods(isBranch: boolean, id: string, methods: SupplierPayoutMethodInput[]): Promise<SupplierPayoutMethod[]> {
+  const res = await http.put<{ status: string; data: SupplierPayoutMethod[] }>(`${supplierBase(isBranch)}/${id}/payout-methods`, { methods })
+  return res.data.data
+}
+
+export async function fetchSupplierContacts(isBranch: boolean, id: string): Promise<SupplierContact[]> {
+  const res = await http.get<{ status: string; data: SupplierContact[] }>(`${supplierBase(isBranch)}/${id}/contacts`)
+  return res.data.data
+}
+
+export async function createSupplierContact(isBranch: boolean, id: string, input: SupplierContactInput): Promise<SupplierContact> {
+  const res = await http.post<{ status: string; data: SupplierContact }>(`${supplierBase(isBranch)}/${id}/contacts`, input)
+  return res.data.data
+}
+
+export async function updateSupplierContact(isBranch: boolean, id: string, contactId: string, input: SupplierContactInput): Promise<SupplierContact> {
+  const res = await http.patch<{ status: string; data: SupplierContact }>(`${supplierBase(isBranch)}/${id}/contacts/${contactId}`, input)
+  return res.data.data
+}
+
+export async function deleteSupplierContact(isBranch: boolean, id: string, contactId: string): Promise<void> {
+  await http.delete(`${supplierBase(isBranch)}/${id}/contacts/${contactId}`)
+}
+
+// ── Customers CRM (org_customers) ──
+
+export type CrmCustomerStatus = 'ACTIVE' | 'SUSPENDED' | 'ARCHIVED'
+export type CrmCustomerVerification = 'UNVERIFIED' | 'PENDING' | 'VERIFIED' | 'REJECTED'
+export type CrmPaymentMethodKind = 'MOBILE_MONEY' | 'BANK' | 'PAYBILL' | 'TILL' | 'CARD'
+
+export interface CrmCustomerContact {
+  id: string
+  customer_id: string
+  name: string
+  email: string
+  phone: string
+  role: string
+  is_primary: boolean
+}
+
+export interface CrmCustomerPaymentMethod {
+  id: string
+  customer_id: string
+  method: CrmPaymentMethodKind
+  label: string
+  currency: string
+  country: string
+  phone_number?: string | null
+  bank_code?: string | null
+  bank_account_number?: string | null
+  paybill_number?: string | null
+  till_number?: string | null
+  account_name: string
+  is_primary: boolean
+}
+
+export interface CrmCustomer {
+  id: string
+  organization_id: string
+  branch_id?: string | null
+  customer_type: 'BUSINESS' | 'INDIVIDUAL'
+  category: string
+  legal_name: string
+  trading_name: string
+  registration_number: string
+  tax_number: string
+  customer_code: string
+  country: string
+  preferred_currency: string
+  email: string
+  phone: string
+  billing_address: string
+  payment_terms_days: number
+  credit_limit_cents: number
+  status: CrmCustomerStatus
+  verification_status: CrmCustomerVerification
+  notes: string
+  payment_methods?: CrmCustomerPaymentMethod[]
+  contacts?: CrmCustomerContact[]
+  created_at: string
+  outstanding_cents?: number
+  last_invoice_at?: string | null
+  readiness?: 'READY' | 'PENDING_VERIFICATION' | 'NOT_READY'
+}
+
+export interface CrmCustomerListResponse {
+  customers: CrmCustomer[]
+  total: number
+  page: number
+  page_size: number
+  total_pages: number
+}
+
+export interface CrmCustomerListParams {
+  status?: string
+  verification?: string
+  q?: string
+  branch_id?: string
+  page?: number
+  page_size?: number
+}
+
+export interface CrmCustomerInput {
+  branch_id?: string
+  customer_type?: string
+  category?: string
+  legal_name?: string
+  trading_name?: string
+  registration_number?: string
+  tax_number?: string
+  customer_code?: string
+  country?: string
+  preferred_currency?: string
+  email?: string
+  phone?: string
+  billing_address?: string
+  payment_terms_days?: number
+  credit_limit_cents?: number
+  notes?: string
+}
+
+export interface CrmContactInput {
+  name: string
+  email?: string
+  phone?: string
+  role?: string
+  is_primary?: boolean
+}
+
+export interface CrmPaymentMethodInput {
+  method: CrmPaymentMethodKind
+  label?: string
+  currency?: string
+  country?: string
+  phone_number?: string
+  bank_code?: string
+  bank_account_number?: string
+  paybill_number?: string
+  till_number?: string
+  account_name?: string
+  is_primary?: boolean
+}
+
+function crmCustomerBase(isBranch: boolean): string {
+  return isBranch ? '/org/v1/branch/crm-customers' : '/org/v1/crm-customers'
+}
+
+export async function fetchCrmCustomers(isBranch: boolean, params: CrmCustomerListParams = {}): Promise<CrmCustomerListResponse> {
+  const res = await http.get<{ status: string; data: CrmCustomerListResponse }>(crmCustomerBase(isBranch), { params })
+  return res.data.data
+}
+
+export async function fetchCrmCustomer(isBranch: boolean, id: string): Promise<CrmCustomer> {
+  const res = await http.get<{ status: string; data: CrmCustomer }>(`${crmCustomerBase(isBranch)}/${id}`)
+  return res.data.data
+}
+
+export async function createCrmCustomer(isBranch: boolean, input: CrmCustomerInput): Promise<CrmCustomer> {
+  const res = await http.post<{ status: string; data: CrmCustomer }>(crmCustomerBase(isBranch), input)
+  return res.data.data
+}
+
+export async function updateCrmCustomer(isBranch: boolean, id: string, input: CrmCustomerInput): Promise<CrmCustomer> {
+  const res = await http.patch<{ status: string; data: CrmCustomer }>(`${crmCustomerBase(isBranch)}/${id}`, input)
+  return res.data.data
+}
+
+export async function setCrmCustomerStatus(isBranch: boolean, id: string, action: 'suspend' | 'reactivate' | 'archive'): Promise<CrmCustomer> {
+  const res = await http.post<{ status: string; data: CrmCustomer }>(`${crmCustomerBase(isBranch)}/${id}/${action}`)
+  return res.data.data
+}
+
+export async function setCrmCustomerVerification(id: string, action: 'verify' | 'reject-verification'): Promise<CrmCustomer> {
+  const res = await http.post<{ status: string; data: CrmCustomer }>(`/org/v1/crm-customers/${id}/${action}`)
+  return res.data.data
+}
+
+export async function fetchCrmCustomerContacts(isBranch: boolean, id: string): Promise<CrmCustomerContact[]> {
+  const res = await http.get<{ status: string; data: CrmCustomerContact[] }>(`${crmCustomerBase(isBranch)}/${id}/contacts`)
+  return res.data.data
+}
+
+export async function createCrmCustomerContact(isBranch: boolean, id: string, input: CrmContactInput): Promise<CrmCustomerContact> {
+  const res = await http.post<{ status: string; data: CrmCustomerContact }>(`${crmCustomerBase(isBranch)}/${id}/contacts`, input)
+  return res.data.data
+}
+
+export async function updateCrmCustomerContact(isBranch: boolean, id: string, contactId: string, input: CrmContactInput): Promise<CrmCustomerContact> {
+  const res = await http.patch<{ status: string; data: CrmCustomerContact }>(`${crmCustomerBase(isBranch)}/${id}/contacts/${contactId}`, input)
+  return res.data.data
+}
+
+export async function deleteCrmCustomerContact(isBranch: boolean, id: string, contactId: string): Promise<void> {
+  await http.delete(`${crmCustomerBase(isBranch)}/${id}/contacts/${contactId}`)
+}
+
+export async function fetchCrmCustomerPaymentMethods(isBranch: boolean, id: string): Promise<CrmCustomerPaymentMethod[]> {
+  const res = await http.get<{ status: string; data: CrmCustomerPaymentMethod[] }>(`${crmCustomerBase(isBranch)}/${id}/payment-methods`)
+  return res.data.data
+}
+
+export async function replaceCrmCustomerPaymentMethods(isBranch: boolean, id: string, methods: CrmPaymentMethodInput[]): Promise<CrmCustomerPaymentMethod[]> {
+  const res = await http.put<{ status: string; data: CrmCustomerPaymentMethod[] }>(`${crmCustomerBase(isBranch)}/${id}/payment-methods`, { methods })
+  return res.data.data
+}
+
+export interface CrmCustomerInvoiceRow {
+  id: string
+  invoice_number: string
+  shareable_code: string
+  status: string
+  currency: string
+  total_cents: number
+  created_at: string
+  due_date: string
+  paid_at?: string | null
+}
+
+export interface CrmCustomerStatement {
+  invoice_count: number
+  total_invoiced_cents: number
+  total_paid_cents: number
+  outstanding_cents: number
+  overdue_cents: number
+  invoices: CrmCustomerInvoiceRow[]
+}
+
+export async function fetchCrmCustomerStatement(isBranch: boolean, id: string): Promise<CrmCustomerStatement> {
+  const res = await http.get<{ status: string; data: CrmCustomerStatement }>(`${crmCustomerBase(isBranch)}/${id}/statement`)
+  return res.data.data
+}
+
+export interface CrmCustomerInvite {
+  id: string
+  customer_id: string
+  email: string
+  status: 'PENDING' | 'ACCEPTED' | 'EXPIRED' | 'REVOKED'
+  expires_at: string
+  accepted_at?: string | null
+  created_at: string
+}
+
+export async function fetchCrmCustomerInvites(isBranch: boolean, id: string): Promise<CrmCustomerInvite[]> {
+  const res = await http.get<{ status: string; data: CrmCustomerInvite[] }>(`${crmCustomerBase(isBranch)}/${id}/invites`)
+  return res.data.data
+}
+
+export async function inviteCrmCustomer(isBranch: boolean, id: string, email?: string): Promise<{ invite_id: string; link: string; expires_at: string }> {
+  const res = await http.post<{ status: string; data: { invite_id: string; link: string; expires_at: string } }>(
+    `${crmCustomerBase(isBranch)}/${id}/invite`, email ? { email } : {},
+  )
+  return res.data.data
+}
+
+export interface CustomerOnboardInfo {
+  legal_name: string
+  trading_name: string
+  country: string
+  preferred_currency: string
+  category: string
+}
+
+export interface CustomerOnboardSubmission {
+  payment_method?: {
+    method: string
+    currency?: string
+    country?: string
+    phone_number?: string
+    bank_code?: string
+    bank_account_number?: string
+    paybill_number?: string
+    till_number?: string
+    account_name?: string
+  }
+  contact?: { name: string; email?: string; phone?: string; role?: string }
+  registration_number?: string
+  tax_number?: string
+  billing_address?: string
+}
+
+export async function fetchCustomerOnboard(token: string): Promise<CustomerOnboardInfo> {
+  const res = await http.get<{ status: string; data: CustomerOnboardInfo }>(`/org/v1/public/customers/onboard/${token}`)
+  return res.data.data
+}
+
+export async function submitCustomerOnboard(token: string, body: CustomerOnboardSubmission): Promise<void> {
+  await http.post(`/org/v1/public/customers/onboard/${token}`, body)
+}
+
+function apBase(isBranch: boolean): string {
+  return isBranch ? '/org/v1/branch' : '/org/v1'
+}
+
+export interface SupplierLineItem {
+  id?: string
+  description: string
+  sku?: string
+  quantity_milli?: number
+  unit_price_cents: number
+  tax_rate_bps?: number
+  tax_cents?: number
+  discount_cents?: number
+  line_total_cents?: number
+}
+
+export type SupplierInvoiceStatus = 'DRAFT' | 'OPEN' | 'PARTIALLY_PAID' | 'PAID' | 'VOID'
+export type ApprovalStatus = 'NOT_REQUIRED' | 'PENDING' | 'APPROVED' | 'REJECTED'
+
+export interface SupplierInvoice {
+  id: string
+  organization_id: string
+  branch_id?: string | null
+  supplier_id: string
+  purchase_order_id?: string | null
+  invoice_number: string
+  supplier_reference: string
+  invoice_date?: string | null
+  due_date?: string | null
+  currency: string
+  subtotal_cents: number
+  tax_cents: number
+  discount_cents: number
+  total_cents: number
+  paid_cents: number
+  status: SupplierInvoiceStatus
+  approval_status: ApprovalStatus
+  approval_request_id?: string | null
+  attachment_ref: string
+  notes: string
+  supplier?: Supplier
+  lines?: SupplierLineItem[]
+  created_at: string
+}
+
+export interface SupplierInvoiceInput {
+  supplier_id: string
+  purchase_order_id?: string
+  invoice_date?: string
+  due_date?: string
+  currency?: string
+  attachment_ref?: string
+  notes?: string
+  lines: SupplierLineItem[]
+}
+
+export interface PayablesSummary {
+  outstanding_cents: number
+  due_this_week_cents: number
+  overdue_cents: number
+  open_invoice_count: number
+  overdue_count: number
+}
+
+export interface AgingBucket {
+  currency: string
+  current_cents: number
+  d1_30_cents: number
+  d31_60_cents: number
+  d61_90_cents: number
+  d90_plus_cents: number
+}
+
+export interface SupplierAttentionItem {
+  supplier_id: string
+  legal_name: string
+  reason: string
+}
+
+export interface SuppliersOverview {
+  total_suppliers: number
+  active_suppliers: number
+  payment_ready: number
+  pending_verification: number
+  payables: PayablesSummary
+  recent_suppliers: Supplier[]
+  upcoming_payables: SupplierInvoice[]
+  attention: SupplierAttentionItem[]
+  recent_payments: SupplierPayment[]
+}
+
+export interface SuppliersAnalytics {
+  total_suppliers: number
+  payment_ready: number
+  overdue_invoices: number
+  avg_payment_days: number
+  spend_over_time: { month: string; spend_cents: number }[]
+  aging: AgingBucket[]
+  top_suppliers: { supplier_id: string; legal_name: string; spend_cents: number }[]
+  spend_by_category: { category: string; spend_cents: number }[]
+  failed_payments: number
+}
+
+export async function fetchSuppliersOverview(isBranch: boolean): Promise<SuppliersOverview> {
+  const res = await http.get<{ status: string; data: SuppliersOverview }>(`${apBase(isBranch)}/suppliers-overview`)
+  return res.data.data
+}
+
+export async function fetchSuppliersAnalytics(isBranch: boolean): Promise<SuppliersAnalytics> {
+  const res = await http.get<{ status: string; data: SuppliersAnalytics }>(`${apBase(isBranch)}/suppliers-analytics`)
+  return res.data.data
+}
+
+export async function fetchSupplierInvoices(isBranch: boolean, params: { supplier_id?: string; status?: string; payable?: boolean; page?: number } = {}): Promise<{ invoices: SupplierInvoice[]; total: number }> {
+  const res = await http.get<{ status: string; data: { invoices: SupplierInvoice[]; total: number } }>(`${apBase(isBranch)}/supplier-invoices`, { params })
+  return res.data.data
+}
+
+export async function fetchSupplierInvoice(isBranch: boolean, id: string): Promise<SupplierInvoice> {
+  const res = await http.get<{ status: string; data: SupplierInvoice }>(`${apBase(isBranch)}/supplier-invoices/${id}`)
+  return res.data.data
+}
+
+export async function createSupplierInvoice(isBranch: boolean, input: SupplierInvoiceInput): Promise<SupplierInvoice> {
+  const res = await http.post<{ status: string; data: SupplierInvoice }>(`${apBase(isBranch)}/supplier-invoices`, input)
+  return res.data.data
+}
+
+export async function updateSupplierInvoice(isBranch: boolean, id: string, input: Partial<SupplierInvoiceInput>): Promise<SupplierInvoice> {
+  const res = await http.patch<{ status: string; data: SupplierInvoice }>(`${apBase(isBranch)}/supplier-invoices/${id}`, input)
+  return res.data.data
+}
+
+export async function submitSupplierInvoice(isBranch: boolean, id: string): Promise<SupplierInvoice> {
+  const res = await http.post<{ status: string; data: SupplierInvoice }>(`${apBase(isBranch)}/supplier-invoices/${id}/submit`)
+  return res.data.data
+}
+
+export async function voidSupplierInvoice(isBranch: boolean, id: string): Promise<SupplierInvoice> {
+  const res = await http.post<{ status: string; data: SupplierInvoice }>(`${apBase(isBranch)}/supplier-invoices/${id}/void`)
+  return res.data.data
+}
+
+export async function sendSupplierInvoiceEmail(isBranch: boolean, id: string): Promise<{ emailed_to: string; fee_charged_cents: number }> {
+  const res = await http.post<{ status: string; message: string; data: { emailed_to: string; fee_charged_cents: number } }>(
+    `${apBase(isBranch)}/supplier-invoices/${id}/send`,
+  )
+  return res.data.data
+}
+
+export async function decideSupplierInvoice(id: string, action: 'approve' | 'reject', reason?: string): Promise<SupplierInvoice> {
+  const res = await http.post<{ status: string; data: SupplierInvoice }>(`/org/v1/supplier-invoices/${id}/${action}`, { reason })
+  return res.data.data
+}
+
+export async function fetchSupplierPayables(isBranch: boolean): Promise<{ invoices: SupplierInvoice[]; total: number; summary: PayablesSummary }> {
+  const res = await http.get<{ status: string; data: { invoices: SupplierInvoice[]; total: number; summary: PayablesSummary } }>(`${apBase(isBranch)}/supplier-payables`)
+  return res.data.data
+}
+
+export async function fetchPayablesAging(isBranch: boolean): Promise<AgingBucket[]> {
+  const res = await http.get<{ status: string; data: AgingBucket[] }>(`${apBase(isBranch)}/supplier-payables/aging`)
+  return res.data.data
+}
+
+export type POStatus = 'DRAFT' | 'PENDING_APPROVAL' | 'APPROVED' | 'ISSUED' | 'CANCELLED' | 'CLOSED'
+export type POFulfillment = 'NOT_STARTED' | 'PARTIAL' | 'FULFILLED'
+
+export interface PurchaseOrder {
+  id: string
+  organization_id: string
+  branch_id?: string | null
+  supplier_id: string
+  po_number: string
+  issue_date?: string | null
+  expected_delivery_date?: string | null
+  currency: string
+  subtotal_cents: number
+  tax_cents: number
+  discount_cents: number
+  total_cents: number
+  status: POStatus
+  approval_status: ApprovalStatus
+  approval_request_id?: string | null
+  fulfillment_status: POFulfillment
+  notes: string
+  supplier?: Supplier
+  lines?: SupplierLineItem[]
+  created_at: string
+}
+
+export interface PurchaseOrderInput {
+  supplier_id: string
+  issue_date?: string
+  expected_delivery_date?: string
+  currency?: string
+  notes?: string
+  lines: SupplierLineItem[]
+}
+
+export async function fetchPurchaseOrders(isBranch: boolean, params: { supplier_id?: string; status?: string; page?: number } = {}): Promise<{ purchase_orders: PurchaseOrder[]; total: number }> {
+  const res = await http.get<{ status: string; data: { purchase_orders: PurchaseOrder[]; total: number } }>(`${apBase(isBranch)}/purchase-orders`, { params })
+  return res.data.data
+}
+
+export async function fetchPurchaseOrder(isBranch: boolean, id: string): Promise<PurchaseOrder> {
+  const res = await http.get<{ status: string; data: PurchaseOrder }>(`${apBase(isBranch)}/purchase-orders/${id}`)
+  return res.data.data
+}
+
+export async function createPurchaseOrder(isBranch: boolean, input: PurchaseOrderInput): Promise<PurchaseOrder> {
+  const res = await http.post<{ status: string; data: PurchaseOrder }>(`${apBase(isBranch)}/purchase-orders`, input)
+  return res.data.data
+}
+
+export async function updatePurchaseOrder(isBranch: boolean, id: string, input: Partial<PurchaseOrderInput>): Promise<PurchaseOrder> {
+  const res = await http.patch<{ status: string; data: PurchaseOrder }>(`${apBase(isBranch)}/purchase-orders/${id}`, input)
+  return res.data.data
+}
+
+export async function poAction(isBranch: boolean, id: string, action: 'submit' | 'issue' | 'cancel'): Promise<PurchaseOrder> {
+  const res = await http.post<{ status: string; data: PurchaseOrder }>(`${apBase(isBranch)}/purchase-orders/${id}/${action}`)
+  return res.data.data
+}
+
+export async function setPOFulfillment(isBranch: boolean, id: string, fulfillment_status: POFulfillment): Promise<PurchaseOrder> {
+  const res = await http.post<{ status: string; data: PurchaseOrder }>(`${apBase(isBranch)}/purchase-orders/${id}/fulfillment`, { fulfillment_status })
+  return res.data.data
+}
+
+export async function decidePurchaseOrder(id: string, action: 'approve' | 'reject', reason?: string): Promise<PurchaseOrder> {
+  const res = await http.post<{ status: string; data: PurchaseOrder }>(`/org/v1/purchase-orders/${id}/${action}`, { reason })
+  return res.data.data
+}
+
+export interface ApprovalStage {
+  id: string
+  stage_index: number
+  name: string
+  rule: string
+  required_approvals: number
+  received_approvals: number
+  status: string
+  verification_methods: string
+}
+
+export interface ApprovalDecisionRecord {
+  id: string
+  created_at: string
+  stage_index: number
+  decider_label: string
+  decision: 'APPROVE' | 'REJECT'
+  note: string
+  verification_method: string
+}
+
+export interface ApprovalEventRecord {
+  id: string
+  created_at: string
+  event_type: string
+  actor_label: string
+  detail: string
+  status_after: string
+}
+
+export interface ApprovalRequest {
+  id: string
+  organization_id: string
+  branch_id?: string | null
+  action_type: string
+  resource_type: string
+  resource_id?: string | null
+  title: string
+  description: string
+  maker_org_member_id?: string | null
+  maker_label: string
+  amount_cents?: number | null
+  currency?: string | null
+  status: string
+  payload: Record<string, unknown>
+  version: number
+  current_stage_index: number
+  expires_at?: string | null
+  decided_at?: string | null
+  created_at: string
+  updated_at: string
+  stages?: ApprovalStage[]
+  decisions?: ApprovalDecisionRecord[]
+  events?: ApprovalEventRecord[]
+}
+
+export interface ApprovalRequestList {
+  approvals: ApprovalRequest[]
+  total_count: number
+  page: number
+  page_size: number
+  total_pages: number
+}
+
+export interface ApprovalListParams {
+  status?: string
+  action_type?: string
+  search?: string
+  page?: number
+  page_size?: number
+}
+
+function approvalsBase(isBranch: boolean) {
+  return isBranch ? '/org/v1/branch/approvals' : '/org/v1/approvals'
+}
+
+export async function fetchApprovals(isBranch: boolean, params: ApprovalListParams = {}): Promise<ApprovalRequestList> {
+  const res = await http.get<{ status: string; data: ApprovalRequestList }>(approvalsBase(isBranch), { params })
+  return res.data.data
+}
+export async function fetchApproval(isBranch: boolean, id: string): Promise<ApprovalRequest> {
+  const res = await http.get<{ status: string; data: ApprovalRequest }>(`${approvalsBase(isBranch)}/${id}`)
+  return res.data.data
+}
+export async function decideApproval(
+  isBranch: boolean,
+  id: string,
+  decision: 'APPROVE' | 'REJECT',
+  note?: string,
+  verificationMethod?: string,
+): Promise<ApprovalRequest> {
+  const res = await http.post<{ status: string; data: ApprovalRequest }>(
+    `${approvalsBase(isBranch)}/${id}/decisions`,
+    { decision, note, verification_method: verificationMethod },
+  )
+  return res.data.data
+}
+
+export const fetchOrgApprovals = (params: ApprovalListParams = {}) => fetchApprovals(false, params)
+export const fetchOrgApproval = (id: string) => fetchApproval(false, id)
+export const decideOrgApproval = (id: string, decision: 'APPROVE' | 'REJECT', note?: string, verificationMethod?: string) =>
+  decideApproval(false, id, decision, note, verificationMethod)
+
+export type SupplierPaymentStatus = 'PENDING_OTP' | 'PENDING_APPROVAL' | 'PROCESSING' | 'PAID' | 'FAILED' | 'CANCELLED'
+
+export interface SupplierPaymentAllocation {
+  id: string
+  invoice_id: string
+  amount_cents: number
+}
+
+export interface SupplierPayment {
+  id: string
+  organization_id: string
+  branch_id?: string | null
+  supplier_id: string
+  amount_cents: number
+  fee_cents: number
+  currency: string
+  reference: string
+  description: string
+  status: SupplierPaymentStatus
+  payout_id?: string | null
+  provider: string
+  failure_reason?: string | null
+  completed_at?: string | null
+  supplier?: Supplier
+  allocations?: SupplierPaymentAllocation[]
+  created_at: string
+}
+
+export interface SupplierPaymentInput {
+  supplier_id: string
+  amount_cents: number
+  reference?: string
+  description?: string
+  allocations?: { invoice_id: string; amount_cents: number }[]
+  pin?: string
+  password?: string
+}
+
+export async function fetchSupplierPayments(isBranch: boolean, params: { supplier_id?: string; status?: string; page?: number } = {}): Promise<{ payments: SupplierPayment[]; total: number }> {
+  const res = await http.get<{ status: string; data: { payments: SupplierPayment[]; total: number } }>(`${apBase(isBranch)}/supplier-payments`, { params })
+  return res.data.data
+}
+
+export async function fetchSupplierPayment(isBranch: boolean, id: string): Promise<SupplierPayment> {
+  const res = await http.get<{ status: string; data: SupplierPayment }>(`${apBase(isBranch)}/supplier-payments/${id}`)
+  return res.data.data
+}
+
+export interface SupplierPaymentResult {
+  status: 'success' | 'approval_required'
+  message: string
+  data: SupplierPayment
+}
+
+export async function createSupplierPayment(isBranch: boolean, input: SupplierPaymentInput): Promise<SupplierPaymentResult> {
+  const res = await http.post<SupplierPaymentResult>(`${apBase(isBranch)}/supplier-payments`, input)
+  return res.data
+}
+
+export async function decideSupplierPayment(id: string, action: 'approve' | 'reject', reason?: string): Promise<SupplierPayment> {
+  const res = await http.post<{ status: string; data: SupplierPayment }>(`/org/v1/supplier-payments/${id}/${action}`, { reason })
+  return res.data.data
+}
+
+export interface SupplierInvite {
+  id: string
+  supplier_id: string
+  email: string
+  status: 'PENDING' | 'ACCEPTED' | 'EXPIRED' | 'REVOKED'
+  expires_at: string
+  accepted_at?: string | null
+  created_at: string
+}
+
+export async function createSupplierInvite(isBranch: boolean, supplierId: string, email?: string): Promise<{ invite_id: string; link: string; expires_at: string }> {
+  const res = await http.post<{ status: string; data: { invite_id: string; link: string; expires_at: string } }>(`${apBase(isBranch)}/suppliers/${supplierId}/invite`, { email })
+  return res.data.data
+}
+
+export async function fetchSupplierInvites(isBranch: boolean, supplierId: string): Promise<SupplierInvite[]> {
+  const res = await http.get<{ status: string; data: SupplierInvite[] }>(`${apBase(isBranch)}/suppliers/${supplierId}/invites`)
+  return res.data.data
+}
+
+export interface SupplierOnboardInfo {
+  legal_name: string
+  trading_name: string
+  country: string
+  preferred_currency: string
+  category: string
+}
+
+export async function fetchSupplierOnboard(token: string): Promise<SupplierOnboardInfo> {
+  const res = await http.get<{ status: string; data: SupplierOnboardInfo }>(`/org/v1/public/suppliers/onboard/${token}`)
+  return res.data.data
+}
+
+export interface SupplierOnboardSubmission {
+  payout_method: {
+    method: SupplierPayoutMethodKind
+    currency?: string
+    country?: string
+    phone_number?: string
+    bank_code?: string
+    bank_account_number?: string
+    account_name?: string
+  }
+  contact?: { name: string; email?: string; phone?: string; role?: string }
+  registration_number?: string
+  tax_number?: string
+}
+
+export async function submitSupplierOnboard(token: string, body: SupplierOnboardSubmission): Promise<void> {
+  await http.post(`/org/v1/public/suppliers/onboard/${token}`, body)
 }

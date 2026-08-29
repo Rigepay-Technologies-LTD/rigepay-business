@@ -17,7 +17,7 @@ defineProps<{ actions: QuickAction[] }>()
       v-for="a in actions"
       :key="a.label"
       :to="a.to"
-      class="group flex flex-col items-center justify-center gap-2.5 rounded-2xl bg-surface shadow-sm py-5 px-3 text-center transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
+      class="group flex flex-col items-center justify-center gap-2.5 rounded-xl bg-surface shadow-sm py-5 px-3 text-center transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
     >
       <span class="w-10 h-10 rounded-xl flex items-center justify-center bg-primary-muted transition-colors group-hover:bg-primary group-hover:text-white text-primary">
         <component :is="a.icon" class="w-5 h-5" />

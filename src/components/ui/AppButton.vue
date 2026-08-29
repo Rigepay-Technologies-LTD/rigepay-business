@@ -14,19 +14,19 @@ defineProps<{
     :type="type ?? 'button'"
     :disabled="disabled || loading"
     :class="[
-      'inline-flex items-center justify-center gap-2 font-semibold rounded-xl transition-all duration-200 select-none',
-      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
+      'inline-flex items-center justify-center gap-2 font-semibold rounded-lg transition-colors duration-150 select-none',
+      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-1',
       'disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none',
-      size === 'sm' ? 'h-8 px-3 text-xs'
+      size === 'sm' ? 'h-9 px-3.5 text-[13px]'
         : size === 'lg' ? 'h-12 px-6 text-base'
         : 'h-10 px-4 text-sm',
       variant === 'secondary'
-        ? 'bg-surface-2 text-text-primary hover:bg-border'
+        ? 'bg-surface text-text-primary border border-border hover:bg-surface-2'
         : variant === 'ghost'
         ? 'bg-transparent text-text-secondary hover:bg-surface-2 hover:text-text-primary'
         : variant === 'danger'
-        ? 'bg-error text-white hover:bg-error/90 shadow-sm hover:-translate-y-px'
-        : 'bg-primary text-white hover:bg-primary-dark shadow-sm hover:-translate-y-px',
+        ? 'bg-error text-white hover:bg-error/90'
+        : 'bg-primary text-white hover:bg-primary-dark',
       block ? 'w-full' : '',
     ]"
   >

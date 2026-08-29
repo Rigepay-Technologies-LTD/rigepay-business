@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted } from 'vue'
+import { onMounted, onUnmounted, watch } from 'vue'
 
-defineProps<{
+const props = defineProps<{
   modelValue: boolean
   title?: string
   size?: 'sm' | 'md' | 'lg' | 'xl' | 'full'
@@ -14,8 +14,36 @@ const emit = defineEmits<{
 const close = () => emit('update:modelValue', false)
 
 const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }
+
+// --- Shared scroll lock. This app scrolls on <section class="app-main-scroll">
+// (see DashboardLayout), not <body>, so a modal that only Teleports to <body>
+// still lets the page behind it scroll/reflow. Lock every scroll surface while
+// any modal is open, reference-counted so nested modals behave.
+let held = false
+function lock() {
+  if (held) return
+  held = true
+  modalOpenCount++
+  if (modalOpenCount === 1) document.documentElement.classList.add('modal-open')
+}
+function unlock() {
+  if (!held) return
+  held = false
+  modalOpenCount = Math.max(0, modalOpenCount - 1)
+  if (modalOpenCount === 0) document.documentElement.classList.remove('modal-open')
+}
+
+watch(() => props.modelValue, (v) => (v ? lock() : unlock()), { immediate: true })
+
 onMounted(() => window.addEventListener('keydown', handleKey))
-onUnmounted(() => window.removeEventListener('keydown', handleKey))
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleKey)
+  unlock()
+})
+</script>
+
+<script lang="ts">
+let modalOpenCount = 0
 </script>
 
 <template>
@@ -43,8 +71,8 @@ onUnmounted(() => window.removeEventListener('keydown', handleKey))
           <div
             v-if="modelValue"
             :class="[
-              'relative w-full bg-surface shadow-2xl flex flex-col',
-              'rounded-t-3xl sm:rounded-2xl overflow-hidden',
+              'relative w-full bg-surface shadow-2xl flex flex-col border border-border',
+              'rounded-t-2xl sm:rounded-xl overflow-hidden',
               size === 'sm'   ? 'sm:max-w-sm'
                 : size === 'lg'   ? 'sm:max-w-2xl'
                 : size === 'xl'   ? 'sm:max-w-4xl'
@@ -68,7 +96,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKey))
               </button>
             </div>
 
-            <div class="flex-1 overflow-y-auto px-6 py-5">
+            <div class="flex-1 overflow-y-auto overscroll-contain px-6 py-5">
               <slot />
             </div>
 

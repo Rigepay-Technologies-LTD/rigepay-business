@@ -123,9 +123,37 @@ const router = createRouter({
       props: true,
     },
     {
+      path: '/org/:orgId/branch/:branchId/transactions/:txnId',
+      name: 'branch-transaction-detail',
+      component: () => import('@/views/BranchTransactionDetailView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
       path: '/org/:orgId/branch/:branchId/payouts',
       name: 'branch-payouts',
       component: () => import('@/views/BranchPayoutsView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/branch/:branchId/payouts/:payoutId',
+      name: 'branch-payout-detail',
+      component: () => import('@/views/BranchPayoutDetailView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/branch/:branchId/approvals',
+      name: 'branch-approvals',
+      component: () => import('@/views/BranchApprovalsView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/branch/:branchId/approvals/:requestId',
+      name: 'branch-approval-detail',
+      component: () => import('@/views/BranchApprovalDetailView.vue'),
       meta: { requiresAuth: true },
       props: true,
     },
@@ -158,9 +186,23 @@ const router = createRouter({
       props: true,
     },
     {
+      path: '/org/:orgId/branch/:branchId/invoices/:invoiceId',
+      name: 'branch-invoice-detail',
+      component: () => import('@/views/BranchInvoiceDetailView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
       path: '/org/:orgId/branch/:branchId/expenses',
       name: 'branch-expenses',
       component: () => import('@/views/BranchExpensesView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/branch/:branchId/expenses/:expenseId',
+      name: 'branch-expense-detail',
+      component: () => import('@/views/BranchExpenseDetailView.vue'),
       meta: { requiresAuth: true },
       props: true,
     },
@@ -169,6 +211,69 @@ const router = createRouter({
       name: 'branch-tags',
       component: () => import('@/views/BranchTagsView.vue'),
       meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/branch/:branchId/suppliers',
+      name: 'branch-suppliers',
+      component: () => import('@/views/BranchSuppliersView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/branch/:branchId/suppliers/:supplierId',
+      name: 'branch-supplier-detail',
+      component: () => import('@/views/BranchSupplierDetailView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/branch/:branchId/suppliers-overview',
+      name: 'branch-suppliers-overview',
+      component: () => import('@/views/suppliers/SuppliersModuleView.vue'),
+      meta: { requiresAuth: true, apPanel: 'overview' },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/branch/:branchId/supplier-payables',
+      name: 'branch-supplier-payables',
+      component: () => import('@/views/suppliers/SuppliersModuleView.vue'),
+      meta: { requiresAuth: true, apPanel: 'payables' },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/branch/:branchId/supplier-invoices',
+      name: 'branch-supplier-invoices',
+      component: () => import('@/views/suppliers/SuppliersModuleView.vue'),
+      meta: { requiresAuth: true, apPanel: 'invoices' },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/branch/:branchId/supplier-invoices/:docId',
+      name: 'branch-supplier-invoice-detail',
+      component: () => import('@/views/suppliers/SuppliersModuleView.vue'),
+      meta: { requiresAuth: true, apPanel: 'invoice-detail' },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/branch/:branchId/purchase-orders',
+      name: 'branch-purchase-orders',
+      component: () => import('@/views/suppliers/SuppliersModuleView.vue'),
+      meta: { requiresAuth: true, apPanel: 'purchase-orders' },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/branch/:branchId/purchase-orders/:docId',
+      name: 'branch-purchase-order-detail',
+      component: () => import('@/views/suppliers/SuppliersModuleView.vue'),
+      meta: { requiresAuth: true, apPanel: 'po-detail' },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/branch/:branchId/suppliers-analytics',
+      name: 'branch-suppliers-analytics',
+      component: () => import('@/views/suppliers/SuppliersModuleView.vue'),
+      meta: { requiresAuth: true, apPanel: 'analytics' },
       props: true,
     },
     {
@@ -229,6 +334,20 @@ const router = createRouter({
       meta: { requiresAuth: true },
       props: true,
     },
+    {
+      path: '/org/:orgId/settings',
+      name: 'org-settings',
+      component: () => import('@/views/SettingsHomeView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/branch/:branchId/settings',
+      name: 'branch-settings',
+      component: () => import('@/views/SettingsHomeView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
     
     {
       path: '/org/:orgId/collect',
@@ -275,7 +394,14 @@ const router = createRouter({
       meta: { requiresAuth: true },
       props: true,
     },
-    
+    {
+      path: '/org/:orgId/transactions/:txnId',
+      name: 'org-transaction-detail',
+      component: () => import('@/views/OrgTransactionDetailView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+
     {
       path: '/org/:orgId/limits',
       name: 'org-limits',
@@ -306,9 +432,23 @@ const router = createRouter({
       props: true,
     },
     {
+      path: '/org/:orgId/scheduled-payouts/:scheduleId',
+      name: 'org-scheduled-payout-detail',
+      component: () => import('@/views/OrgScheduledPayoutDetailView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
       path: '/org/:orgId/branch/:branchId/scheduled-payouts',
       name: 'branch-scheduled-payouts',
       component: () => import('@/views/BranchScheduledPayoutsView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/branch/:branchId/scheduled-payouts/:scheduleId',
+      name: 'branch-scheduled-payout-detail',
+      component: () => import('@/views/BranchScheduledPayoutDetailView.vue'),
       meta: { requiresAuth: true },
       props: true,
     },
@@ -350,11 +490,39 @@ const router = createRouter({
       meta: { requiresAuth: true },
       props: true,
     },
+    {
+      path: '/org/:orgId/webhooks',
+      name: 'org-webhooks',
+      component: () => import('@/views/OrgWebhooksView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
   
     {
       path: '/org/:orgId/payouts',
       name: 'org-payouts',
       component: () => import('@/views/OrgPayoutsView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/payouts/:payoutId',
+      name: 'org-payout-detail',
+      component: () => import('@/views/OrgPayoutDetailView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/approvals',
+      name: 'org-approvals',
+      component: () => import('@/views/OrgApprovalsView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/approvals/:kind/:requestId',
+      name: 'org-approval-detail',
+      component: () => import('@/views/OrgApprovalDetailView.vue'),
       meta: { requiresAuth: true },
       props: true,
     },
@@ -381,9 +549,86 @@ const router = createRouter({
       props: true,
     },
     {
+      path: '/org/:orgId/statements/entries/:entryId',
+      name: 'org-statement-entry-detail',
+      component: () => import('@/views/OrgStatementEntryDetailView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
       path: '/org/:orgId/analytics',
       name: 'org-analytics',
       component: () => import('@/views/OrgAnalyticsView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/financial-accounts',
+      name: 'org-financial-accounts',
+      component: () => import('@/views/OrgFinancialAccountsView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/branch/:branchId/financial-accounts',
+      name: 'branch-financial-accounts',
+      component: () => import('@/views/BranchFinancialAccountsView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/settlements',
+      name: 'org-settlements',
+      component: () => import('@/views/OrgSettlementsView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/settlements/:settlementId',
+      name: 'org-settlement-detail',
+      component: () => import('@/views/OrgSettlementDetailView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/branch/:branchId/settlements',
+      name: 'branch-settlements',
+      component: () => import('@/views/BranchSettlementsView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/branch/:branchId/settlements/:settlementId',
+      name: 'branch-settlement-detail',
+      component: () => import('@/views/BranchSettlementDetailView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/refunds',
+      name: 'org-refunds',
+      component: () => import('@/views/OrgRefundsView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/branch/:branchId/refunds',
+      name: 'branch-refunds',
+      component: () => import('@/views/BranchRefundsView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/reversals',
+      name: 'org-reversals',
+      component: () => import('@/views/OrgReversalsView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/branch/:branchId/reversals',
+      name: 'branch-reversals',
+      component: () => import('@/views/BranchReversalsView.vue'),
       meta: { requiresAuth: true },
       props: true,
     },
@@ -395,9 +640,23 @@ const router = createRouter({
       props: true,
     },
     {
+      path: '/org/:orgId/bulk-payouts/:batchId',
+      name: 'org-bulk-payout-detail',
+      component: () => import('@/views/OrgBulkPayoutBatchDetailView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
       path: '/org/:orgId/branch/:branchId/bulk-payouts',
       name: 'branch-bulk-payouts',
       component: () => import('@/views/BranchBulkPayoutsView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/branch/:branchId/bulk-payouts/:batchId',
+      name: 'branch-bulk-payout-detail',
+      component: () => import('@/views/BranchBulkPayoutBatchDetailView.vue'),
       meta: { requiresAuth: true },
       props: true,
     },
@@ -430,9 +689,44 @@ const router = createRouter({
       props: true,
     },
     {
+      path: '/org/:orgId/payment-links/new',
+      name: 'org-payment-link-new',
+      component: () => import('@/views/OrgPaymentLinkCreateView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/payment-links/:linkId',
+      name: 'org-payment-link-detail',
+      component: () => import('@/views/OrgPaymentLinkDetailView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/branch/:branchId/payment-links/new',
+      name: 'branch-payment-link-new',
+      component: () => import('@/views/BranchPaymentLinkCreateView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/branch/:branchId/payment-links/:linkId',
+      name: 'branch-payment-link-detail',
+      component: () => import('@/views/BranchPaymentLinkDetailView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
       path: '/org/:orgId/invoices',
       name: 'org-invoices',
       component: () => import('@/views/OrgInvoicesView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/invoices/:invoiceId',
+      name: 'org-invoice-detail',
+      component: () => import('@/views/OrgInvoiceDetailView.vue'),
       meta: { requiresAuth: true },
       props: true,
     },
@@ -442,6 +736,114 @@ const router = createRouter({
       component: () => import('@/views/OrgExpensesView.vue'),
       meta: { requiresAuth: true },
       props: true,
+    },
+    {
+      path: '/org/:orgId/expenses/:expenseId',
+      name: 'org-expense-detail',
+      component: () => import('@/views/OrgExpenseDetailView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/customers',
+      name: 'org-customers',
+      component: () => import('@/views/OrgCustomersView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/customers/:customerId',
+      name: 'org-customer-detail',
+      component: () => import('@/views/OrgCustomerDetailView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/branch/:branchId/customers',
+      name: 'branch-customers',
+      component: () => import('@/views/BranchCustomersView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/branch/:branchId/customers/:customerId',
+      name: 'branch-customer-detail',
+      component: () => import('@/views/BranchCustomerDetailView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/suppliers',
+      name: 'org-suppliers',
+      component: () => import('@/views/OrgSuppliersView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/suppliers/:supplierId',
+      name: 'org-supplier-detail',
+      component: () => import('@/views/OrgSupplierDetailView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/suppliers-overview',
+      name: 'org-suppliers-overview',
+      component: () => import('@/views/suppliers/SuppliersModuleView.vue'),
+      meta: { requiresAuth: true, apPanel: 'overview' },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/supplier-payables',
+      name: 'org-supplier-payables',
+      component: () => import('@/views/suppliers/SuppliersModuleView.vue'),
+      meta: { requiresAuth: true, apPanel: 'payables' },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/supplier-invoices',
+      name: 'org-supplier-invoices',
+      component: () => import('@/views/suppliers/SuppliersModuleView.vue'),
+      meta: { requiresAuth: true, apPanel: 'invoices' },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/supplier-invoices/:docId',
+      name: 'org-supplier-invoice-detail',
+      component: () => import('@/views/suppliers/SuppliersModuleView.vue'),
+      meta: { requiresAuth: true, apPanel: 'invoice-detail' },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/purchase-orders',
+      name: 'org-purchase-orders',
+      component: () => import('@/views/suppliers/SuppliersModuleView.vue'),
+      meta: { requiresAuth: true, apPanel: 'purchase-orders' },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/purchase-orders/:docId',
+      name: 'org-purchase-order-detail',
+      component: () => import('@/views/suppliers/SuppliersModuleView.vue'),
+      meta: { requiresAuth: true, apPanel: 'po-detail' },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/suppliers-analytics',
+      name: 'org-suppliers-analytics',
+      component: () => import('@/views/suppliers/SuppliersModuleView.vue'),
+      meta: { requiresAuth: true, apPanel: 'analytics' },
+      props: true,
+    },
+    {
+      path: '/suppliers/onboard/:token',
+      name: 'supplier-onboard',
+      component: () => import('@/views/suppliers/SupplierOnboardView.vue'),
+    },
+    {
+      path: '/customers/onboard/:token',
+      name: 'customer-onboard',
+      component: () => import('@/views/customers/CustomerOnboardView.vue'),
     },
     {
       path: '/org/:orgId/tags',
@@ -492,12 +894,18 @@ router.beforeEach((to) => {
   }
 
   const branchOperatorRoutes = [
-    'branch-collect', 'branch-profile', 'branch-security', 'branch-transactions', 'branch-documents',
-    'branch-payouts', 'branch-fraud', 'branch-payment-links', 'branch-invoices',
-    'branch-expenses', 'branch-tags', 'branch-petty-cash', 'branch-analytics',
-    'branch-scheduled-payouts', 'branch-bulk-payouts', 'branch-support',
+    'branch-collect', 'branch-profile', 'branch-security', 'branch-transactions', 'branch-transaction-detail', 'branch-documents', 'branch-settings',
+    'branch-payouts', 'branch-payout-detail', 'branch-approvals', 'branch-approval-detail', 'branch-fraud', 'branch-payment-links', 'branch-payment-link-new', 'branch-payment-link-detail', 'branch-invoices', 'branch-invoice-detail',
+    'branch-expenses', 'branch-expense-detail', 'branch-tags', 'branch-petty-cash', 'branch-analytics',
+    'branch-scheduled-payouts', 'branch-scheduled-payout-detail', 'branch-bulk-payouts', 'branch-bulk-payout-detail', 'branch-transfers', 'branch-support',
     'branch-bulk-invoices', 'branch-invoice-schedules', 'branch-recipient-suppressions',
     'branch-settlement-preferences', 'branch-limits',
+    'branch-suppliers', 'branch-supplier-detail',
+    'branch-customers', 'branch-customer-detail',
+    'branch-suppliers-overview', 'branch-supplier-payables', 'branch-supplier-invoices',
+    'branch-supplier-invoice-detail', 'branch-purchase-orders', 'branch-purchase-order-detail',
+    'branch-suppliers-analytics',
+    'branch-settlements', 'branch-settlement-detail', 'branch-refunds', 'branch-reversals', 'branch-financial-accounts',
   ]
   if (typeof to.name === 'string' && branchOperatorRoutes.includes(to.name)) {
     if (to.params.orgId !== auth.meta.organizationId) {
@@ -509,16 +917,26 @@ router.beforeEach((to) => {
   }
 
   if (
-    to.name === 'org-documents' || to.name === 'org-profile' || to.name === 'org-directors' ||
-    to.name === 'org-members' || to.name === 'org-credentials' || to.name === 'org-payouts' ||
+    to.name === 'org-approvals' || to.name === 'org-approval-detail' ||
+    to.name === 'org-documents' || to.name === 'org-profile' || to.name === 'org-directors' || to.name === 'org-settings' ||
+    to.name === 'org-members' || to.name === 'org-credentials' || to.name === 'org-webhooks' || to.name === 'org-payouts' || to.name === 'org-payout-detail' ||
     to.name === 'org-branches' || to.name === 'org-collect' || to.name === 'org-audit-log' ||
-    to.name === 'org-security' || to.name === 'org-transactions' || to.name === 'org-limits' ||
-    to.name === 'org-vaults' || to.name === 'org-scheduled-payouts' || to.name === 'org-fraud' ||
-    to.name === 'org-transfers' || to.name === 'org-statements' || to.name === 'org-analytics' ||
-    to.name === 'org-bulk-payouts' || to.name === 'org-petty-cash' || to.name === 'org-payment-links' ||
-    to.name === 'org-invoices' || to.name === 'org-expenses' || to.name === 'org-tags' ||
+    to.name === 'org-security' || to.name === 'org-transactions' || to.name === 'org-transaction-detail' || to.name === 'org-limits' ||
+    to.name === 'org-vaults' || to.name === 'org-scheduled-payouts' || to.name === 'org-scheduled-payout-detail' || to.name === 'org-fraud' ||
+    to.name === 'org-transfers' || to.name === 'org-statements' || to.name === 'org-statement-entry-detail' || to.name === 'org-analytics' ||
+    to.name === 'org-bulk-payouts' || to.name === 'org-bulk-payout-detail' || to.name === 'org-petty-cash' || to.name === 'org-payment-links' ||
+    to.name === 'org-payment-link-new' || to.name === 'org-payment-link-detail' ||
+    to.name === 'org-invoices' || to.name === 'org-invoice-detail' || to.name === 'org-expenses' || to.name === 'org-expense-detail' || to.name === 'org-tags' ||
+    to.name === 'org-suppliers' || to.name === 'org-supplier-detail' ||
+    to.name === 'org-customers' || to.name === 'org-customer-detail' ||
+    to.name === 'org-suppliers-overview' || to.name === 'org-supplier-payables' ||
+    to.name === 'org-supplier-invoices' || to.name === 'org-supplier-invoice-detail' ||
+    to.name === 'org-purchase-orders' || to.name === 'org-purchase-order-detail' ||
+    to.name === 'org-suppliers-analytics' ||
     to.name === 'org-support' || to.name === 'org-bulk-invoices' || to.name === 'org-invoice-schedules' ||
-    to.name === 'org-recipient-suppressions' || to.name === 'org-settlement-preferences'
+    to.name === 'org-recipient-suppressions' || to.name === 'org-settlement-preferences' ||
+    to.name === 'org-settlements' || to.name === 'org-settlement-detail' || to.name === 'org-refunds' || to.name === 'org-reversals' ||
+    to.name === 'org-financial-accounts'
   ) {
     if (to.params.orgId !== auth.meta.organizationId || auth.meta.memberType !== 'org_member') {
       return resolveLandingRoute(auth.meta)

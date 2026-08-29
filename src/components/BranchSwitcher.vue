@@ -40,7 +40,7 @@ function goToBranch(branchId: string) {
 
     <div
       v-if="open"
-      class="absolute right-0 mt-2 w-64 bg-surface rounded-2xl shadow-md ring-1 ring-border z-20 py-2 max-h-80 overflow-y-auto"
+      class="absolute right-0 mt-2 w-64 bg-surface rounded-xl shadow-md ring-1 ring-border z-20 py-2 max-h-80 overflow-y-auto"
     >
       <button
         type="button"

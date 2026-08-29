@@ -1,70 +1,66 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import {
   fetchOrgExpenses, createOrgExpense, uploadExpenseReceipt,
-  fetchTags, fetchTagsForSubject, assignTag, unassignTag,
-  type OrgExpense, type OrgTag,
+  type OrgExpense,
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
 import { formatMoney, formatDate } from '@/lib/format'
+import { useResponseModal } from '@/composables/useResponseModal'
 import DashboardLayout from '@/layouts/DashboardLayout.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppInput from '@/components/ui/AppInput.vue'
 import AppModal from '@/components/ui/AppModal.vue'
-import { PlusIcon, ReceiptIcon, PaperclipIcon, ChevronRightIcon, TagIcon, XIcon, FileTextIcon } from 'lucide-vue-next'
-import { useResponseModal } from '@/composables/useResponseModal'
-
-const { showError } = useResponseModal()
+import { PlusIcon, ReceiptIcon, PaperclipIcon, RefreshCwIcon } from 'lucide-vue-next'
 
 const props = defineProps<{ orgId: string }>()
+const router = useRouter()
+const { showError, showSuccess } = useResponseModal()
 
 const loading = ref(true)
-const error = ref<string | null>(null)
 const expenses = ref<OrgExpense[]>([])
 const totalCount = ref(0)
+const page = ref(1)
 
 async function load() {
   loading.value = true
-  error.value = null
   try {
-    const result = await fetchOrgExpenses()
+    const result = await fetchOrgExpenses(page.value)
     expenses.value = result.expenses
     totalCount.value = result.totalCount
   } catch (err) {
-    const msg = extractErrorMessage(err)
-    error.value = msg
-    showError(msg)
+    showError(extractErrorMessage(err))
   } finally {
     loading.value = false
   }
 }
 onMounted(load)
 
-const showCreateForm = ref(false)
+const totalSpend = computed(() => expenses.value.reduce((s, e) => s + e.amount_cents, 0))
+
+const showCreate = ref(false)
 const creating = ref(false)
 const createError = ref<string | null>(null)
-
-const amountKes = ref('')
-const category = ref('')
-const vendor = ref('')
-const date = ref(new Date().toISOString().slice(0, 10))
-const notes = ref('')
-const receiptUrl = ref('')
+const form = ref({ amountKes: '', category: '', vendor: '', date: new Date().toISOString().slice(0, 10), notes: '', receiptUrl: '' })
 const uploadingReceipt = ref(false)
 const receiptFileInput = ref<HTMLInputElement | null>(null)
+
+function openCreate() {
+  form.value = { amountKes: '', category: '', vendor: '', date: new Date().toISOString().slice(0, 10), notes: '', receiptUrl: '' }
+  createError.value = null
+  showCreate.value = true
+}
 
 async function handleReceiptChange(e: Event) {
   const file = (e.target as HTMLInputElement).files?.[0]
   if (!file) return
-  createError.value = null
   uploadingReceipt.value = true
   try {
-    receiptUrl.value = await uploadExpenseReceipt(file)
+    form.value.receiptUrl = await uploadExpenseReceipt(file)
   } catch (err) {
-    const msg = extractErrorMessage(err)
-    createError.value = msg
-    showError(msg)
+    showError(extractErrorMessage(err))
   } finally {
     uploadingReceipt.value = false
   }
@@ -72,242 +68,151 @@ async function handleReceiptChange(e: Event) {
 
 async function submitCreate() {
   createError.value = null
-  const amountCents = Math.round(Number(amountKes.value) * 100)
-  if (!amountCents || amountCents <= 0) {
-    createError.value = 'Enter a valid amount.'
-    return
-  }
-  if (!category.value.trim() || !vendor.value.trim()) {
-    createError.value = 'Category and vendor are required.'
-    return
-  }
+  const amountCents = Math.round(Number(form.value.amountKes) * 100)
+  if (!amountCents || amountCents <= 0) { createError.value = 'Enter a valid amount.'; return }
+  if (!form.value.category.trim() || !form.value.vendor.trim()) { createError.value = 'Category and vendor are required.'; return }
   creating.value = true
   try {
-    await createOrgExpense({
+    const created = await createOrgExpense({
       amount_cents: amountCents,
-      category: category.value.trim(),
-      vendor: vendor.value.trim(),
-      date: date.value,
-      notes: notes.value.trim() || undefined,
-      receipt_url: receiptUrl.value || undefined,
+      category: form.value.category.trim(),
+      vendor: form.value.vendor.trim(),
+      date: form.value.date,
+      notes: form.value.notes.trim() || undefined,
+      receipt_url: form.value.receiptUrl || undefined,
     })
-    amountKes.value = ''
-    category.value = ''
-    vendor.value = ''
-    notes.value = ''
-    receiptUrl.value = ''
     if (receiptFileInput.value) receiptFileInput.value.value = ''
-    showCreateForm.value = false
-    await load()
+    showCreate.value = false
+    showSuccess('Expense logged.')
+    router.push({ name: 'org-expense-detail', params: { orgId: props.orgId, expenseId: created.id } })
   } catch (err) {
-    const msg = extractErrorMessage(err)
-    createError.value = msg
-    showError(msg)
+    createError.value = extractErrorMessage(err)
+    showError(createError.value)
   } finally {
     creating.value = false
   }
 }
 
-const selectedExpense = ref<OrgExpense | null>(null)
-const allTags = ref<OrgTag[]>([])
-const assignedTags = ref<OrgTag[]>([])
-const tagToAssign = ref('')
-const assigningTag = ref(false)
-
-async function openDetails(exp: OrgExpense) {
-  selectedExpense.value = exp
-  tagToAssign.value = ''
-  try {
-    const [tags, assigned] = await Promise.all([
-      allTags.value.length ? Promise.resolve(allTags.value) : fetchTags(),
-      fetchTagsForSubject('expense', exp.id),
-    ])
-    allTags.value = tags
-    assignedTags.value = assigned
-  } catch {
-    assignedTags.value = []
-  }
+function openDetail(exp: OrgExpense) {
+  router.push({ name: 'org-expense-detail', params: { orgId: props.orgId, expenseId: exp.id } })
 }
-
-async function handleAssignTag() {
-  if (!tagToAssign.value || !selectedExpense.value) return
-  assigningTag.value = true
-  try {
-    await assignTag(tagToAssign.value, 'expense', selectedExpense.value.id)
-    assignedTags.value = await fetchTagsForSubject('expense', selectedExpense.value.id)
-    tagToAssign.value = ''
-  } catch (err) {
-    const msg = extractErrorMessage(err)
-    error.value = msg
-    showError(msg)
-  } finally {
-    assigningTag.value = false
-  }
-}
-
-async function handleUnassignTag(tag: OrgTag) {
-  if (!selectedExpense.value) return
-  try {
-    await unassignTag(tag.id, 'expense', selectedExpense.value.id)
-    assignedTags.value = assignedTags.value.filter((t) => t.id !== tag.id)
-  } catch (err) {
-    const msg = extractErrorMessage(err)
-    error.value = msg
-    showError(msg)
-  }
-}
-
-const availableTagsToAssign = () => allTags.value.filter((t) => !assignedTags.value.some((a) => a.id === t.id))
 </script>
 
 <template>
   <DashboardLayout :org-id="props.orgId" title="Expenses">
     <div class="flex flex-col gap-6">
-      <div class="flex items-start justify-between gap-4">
+      <div class="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <span class="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-text-muted mb-1">
-            <ReceiptIcon class="w-3.5 h-3.5 text-primary" />Bookkeeping
-          </span>
-          <h2 class="text-base font-bold text-text-primary">Expenses</h2>
-          <p class="text-xs text-text-muted mt-0.5">Record business spend for your records — {{ totalCount }} logged.</p>
+          <p class="text-[11px] font-semibold uppercase tracking-wider text-text-muted">Bookkeeping</p>
+          <h1 class="text-lg font-bold text-text-primary mt-0.5">Expenses</h1>
+          <p class="text-sm text-text-muted mt-0.5">Record business spend that happens outside the platform.</p>
         </div>
-        <AppButton size="sm" @click="showCreateForm = !showCreateForm">
-          <template #icon><PlusIcon class="w-4 h-4" /></template>
-          Log expense
-        </AppButton>
-      </div>
-
-      <div v-if="showCreateForm" class="rounded-2xl border-2 border-dashed border-primary/25 bg-primary/3 p-5">
-        <span class="block text-[11px] font-bold uppercase tracking-[0.14em] text-text-muted mb-4">New expense</span>
-        <div v-if="createError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ createError }}</div>
-        <form class="flex flex-col gap-4 max-w-sm" @submit.prevent="submitCreate">
-          <AppInput v-model="amountKes" type="number" label="Amount (KES)" required />
-          <AppInput v-model="category" label="Category" placeholder="e.g. Utilities" required />
-          <AppInput v-model="vendor" label="Vendor" placeholder="e.g. Kenya Power" required />
-          <AppInput v-model="date" type="date" label="Date" required />
-          <AppInput v-model="notes" label="Notes (optional)" />
-
-          <div class="flex flex-col gap-1.5">
-            <label class="text-xs font-semibold text-text-secondary uppercase tracking-wide">Receipt (optional)</label>
-            <input
-              ref="receiptFileInput" type="file" accept="image/jpeg,image/png,application/pdf"
-              class="text-xs text-text-muted file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-primary-muted file:text-primary hover:file:opacity-90"
-              @change="handleReceiptChange"
-            />
-            <p v-if="uploadingReceipt" class="text-xs text-text-muted">Uploading…</p>
-            <p v-else-if="receiptUrl" class="text-xs text-success-text flex items-center gap-1">
-              <PaperclipIcon class="w-3 h-3" /> Receipt attached
-            </p>
-          </div>
-
-          <div class="flex gap-2">
-            <AppButton type="submit" :loading="creating" :disabled="uploadingReceipt">Save expense</AppButton>
-            <AppButton type="button" variant="ghost" @click="showCreateForm = false">Cancel</AppButton>
-          </div>
-        </form>
-      </div>
-
-      <div v-if="loading" class="flex flex-col gap-2">
-        <div v-for="i in 4" :key="i" class="h-16 rounded-2xl bg-border/30 animate-pulse" />
-      </div>
-
-      <AppCard v-else-if="!expenses.length" padding="lg">
-        <div class="flex flex-col items-center text-center gap-3 py-6">
-          <span class="flex items-center justify-center w-12 h-12 rounded-full bg-primary/10">
-            <ReceiptIcon class="w-6 h-6 text-primary" />
-          </span>
-          <p class="text-sm font-semibold text-text-primary">No expenses logged yet</p>
-          <p class="text-xs text-text-muted">Track money spent outside the system for your records.</p>
+        <div class="flex gap-2">
+          <AppButton variant="secondary" size="sm" :loading="loading" @click="load">
+            <template #icon><RefreshCwIcon class="w-4 h-4" /></template>
+            Refresh
+          </AppButton>
+          <AppButton size="sm" @click="openCreate">
+            <template #icon><PlusIcon class="w-4 h-4" /></template>
+            Log expense
+          </AppButton>
         </div>
-      </AppCard>
+      </div>
 
-      <div v-else class="flex flex-col gap-2">
-        <AppCard v-for="exp in expenses" :key="exp.id" padding="none">
-          <button
-            type="button"
-            class="flex items-center gap-3 px-5 py-3.5 w-full text-left hover:bg-primary-muted/40 transition-colors"
-            @click="openDetails(exp)"
-          >
-            <span class="flex items-center justify-center w-9 h-9 rounded-full bg-primary/10 text-primary text-xs font-bold shrink-0">
-              {{ exp.category?.[0]?.toUpperCase() }}
-            </span>
-            <div class="min-w-0 flex-1">
-              <p class="text-sm font-semibold text-text-primary truncate">{{ exp.vendor }}</p>
-              <p class="text-xs text-text-muted mt-0.5 flex items-center gap-1">
-                {{ exp.category }} · {{ formatDate(exp.occurred_at) }}
-                <PaperclipIcon v-if="exp.receipt_url" class="w-3 h-3 text-text-muted shrink-0" />
-              </p>
-            </div>
-            <div class="flex items-center gap-2 shrink-0">
-              <span class="text-sm font-semibold text-text-primary tabular-nums">KES {{ formatMoney(exp.amount_cents) }}</span>
-              <ChevronRightIcon class="w-4 h-4 text-text-muted" />
-            </div>
-          </button>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <AppCard>
+          <p class="text-[11px] font-semibold uppercase tracking-wide text-text-muted">Logged expenses</p>
+          <p class="text-lg font-bold text-text-primary mt-1">{{ totalCount }}</p>
+        </AppCard>
+        <AppCard>
+          <p class="text-[11px] font-semibold uppercase tracking-wide text-text-muted">This page total</p>
+          <p class="text-lg font-bold text-text-primary mt-1">KES {{ formatMoney(totalSpend) }}</p>
         </AppCard>
       </div>
+
+      <AppCard padding="none">
+        <p v-if="loading" class="text-sm text-text-muted px-5 py-10 text-center">Loading expenses…</p>
+        <div v-else-if="!expenses.length" class="flex flex-col items-center text-center gap-3 py-14">
+          <div class="w-12 h-12 rounded-xl bg-primary-muted text-primary flex items-center justify-center">
+            <ReceiptIcon class="w-6 h-6" />
+          </div>
+          <p class="text-sm font-semibold text-text-primary">No expenses logged yet</p>
+          <p class="text-xs text-text-muted">Track money spent outside the system for your records.</p>
+          <AppButton size="sm" class="mt-1" @click="openCreate">
+            <template #icon><PlusIcon class="w-4 h-4" /></template>
+            Log expense
+          </AppButton>
+        </div>
+        <div v-else class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="text-left text-[11px] font-semibold uppercase tracking-wider text-text-muted bg-surface-2/40 border-b border-border">
+                <th class="px-5 py-3">Date</th>
+                <th class="px-5 py-3">Vendor</th>
+                <th class="px-5 py-3">Category</th>
+                <th class="px-5 py-3 text-right">Amount</th>
+                <th class="px-5 py-3">Receipt</th>
+                <th class="px-5 py-3">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="exp in expenses" :key="exp.id"
+                class="border-b border-border last:border-0 hover:bg-surface-2/60 cursor-pointer"
+                @click="openDetail(exp)"
+              >
+                <td class="px-5 py-3 text-text-secondary whitespace-nowrap">{{ formatDate(exp.occurred_at) }}</td>
+                <td class="px-5 py-3 font-medium text-text-primary">{{ exp.vendor }}</td>
+                <td class="px-5 py-3 text-text-secondary">{{ exp.category }}</td>
+                <td class="px-5 py-3 text-right font-semibold text-text-primary whitespace-nowrap">KES {{ formatMoney(exp.amount_cents) }}</td>
+                <td class="px-5 py-3">
+                  <PaperclipIcon v-if="exp.receipt_url" class="w-4 h-4 text-text-muted" />
+                  <span v-else class="text-text-muted text-xs">—</span>
+                </td>
+                <td class="px-5 py-3">
+                  <span class="inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold bg-surface-2 text-text-secondary">{{ exp.status || 'RECORDED' }}</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div v-if="!loading && totalCount > 25" class="flex items-center justify-between px-5 py-3.5 border-t border-border">
+          <p class="text-xs text-text-muted">{{ totalCount }} total</p>
+          <div class="flex gap-2">
+            <AppButton size="sm" variant="secondary" :disabled="page <= 1" @click="page--; load()">Previous</AppButton>
+            <AppButton size="sm" variant="secondary" :disabled="expenses.length < 25" @click="page++; load()">Next</AppButton>
+          </div>
+        </div>
+      </AppCard>
     </div>
 
-    <AppModal :model-value="!!selectedExpense" title="Expense details" size="sm" @update:model-value="selectedExpense = null">
-      <div v-if="selectedExpense" class="flex flex-col gap-4 p-6">
-        <div>
-          <span class="block text-[10px] font-bold uppercase tracking-[0.14em] text-text-muted mb-1">{{ selectedExpense.vendor }}</span>
-          <p class="text-3xl font-bold text-text-primary tracking-tight tabular-nums">KES {{ formatMoney(selectedExpense.amount_cents) }}</p>
+    <AppModal v-model="showCreate" title="Log expense" size="md">
+      <form class="flex flex-col gap-4" @submit.prevent="submitCreate">
+        <div v-if="createError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2">{{ createError }}</div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <AppInput v-model="form.amountKes" type="number" label="Amount (KES)" required />
+          <AppInput v-model="form.date" type="date" label="Date" required />
+          <AppInput v-model="form.category" label="Category" placeholder="e.g. Utilities" required />
+          <AppInput v-model="form.vendor" label="Vendor" placeholder="e.g. Kenya Power" required />
         </div>
-
-        <dl class="flex flex-col divide-y divide-border text-sm">
-          <div class="flex justify-between py-2"><dt class="text-text-muted">Vendor</dt><dd class="font-medium text-text-primary">{{ selectedExpense.vendor }}</dd></div>
-          <div class="flex justify-between py-2"><dt class="text-text-muted">Category</dt><dd class="font-medium text-text-primary">{{ selectedExpense.category }}</dd></div>
-          <div class="flex justify-between py-2"><dt class="text-text-muted">Date</dt><dd class="font-medium text-text-primary">{{ formatDate(selectedExpense.occurred_at) }}</dd></div>
-          <div class="flex justify-between py-2"><dt class="text-text-muted">Payment method</dt><dd class="font-medium text-text-primary">{{ selectedExpense.payment_method }}</dd></div>
-          <div class="flex justify-between py-2"><dt class="text-text-muted">Status</dt><dd class="font-medium text-text-primary">{{ selectedExpense.status }}</dd></div>
-          <div v-if="selectedExpense.reference_code" class="flex justify-between py-2"><dt class="text-text-muted">Reference</dt><dd class="font-medium text-text-primary">{{ selectedExpense.reference_code }}</dd></div>
-          <div v-if="selectedExpense.tax_amount_cents" class="flex justify-between py-2"><dt class="text-text-muted">Tax</dt><dd class="font-medium text-text-primary">KES {{ formatMoney(selectedExpense.tax_amount_cents) }}</dd></div>
-        </dl>
-
-        <p v-if="selectedExpense.notes" class="text-xs text-text-muted border-t border-border pt-3">{{ selectedExpense.notes }}</p>
-
-        <div class="border-t border-border pt-3">
-          <span class="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.14em] text-text-muted mb-2.5">
-            <TagIcon class="w-3.5 h-3.5" />Tags
-          </span>
-          <div class="flex flex-wrap gap-1.5 mb-2.5">
-            <span v-if="!assignedTags.length" class="text-xs text-text-muted">No tags yet</span>
-            <span
-              v-for="tag in assignedTags" :key="tag.id"
-              class="flex items-center gap-1 rounded-full pl-2.5 pr-1 py-0.5 text-xs font-semibold"
-              :style="{ backgroundColor: (tag.color || '#9CA3AF') + '22', color: tag.color || '#6B7280' }"
-            >
-              {{ tag.name }}
-              <button type="button" class="hover:opacity-70 rounded-full p-0.5" @click="handleUnassignTag(tag)">
-                <XIcon class="w-3 h-3" />
-              </button>
-            </span>
-          </div>
-          <div v-if="availableTagsToAssign().length" class="flex items-center gap-2">
-            <select v-model="tagToAssign" class="h-8 flex-1 rounded-lg border border-input-border bg-input-bg px-2 text-xs">
-              <option value="" disabled>Add a tag…</option>
-              <option v-for="tag in availableTagsToAssign()" :key="tag.id" :value="tag.id">{{ tag.name }}</option>
-            </select>
-            <AppButton size="sm" variant="ghost" :loading="assigningTag" :disabled="!tagToAssign" @click="handleAssignTag">Add</AppButton>
-          </div>
+        <AppInput v-model="form.notes" label="Notes (optional)" />
+        <div class="flex flex-col gap-1.5">
+          <label class="text-[13px] font-medium text-text-secondary">Receipt (optional)</label>
+          <input
+            ref="receiptFileInput" type="file" accept="image/jpeg,image/png,application/pdf"
+            class="text-xs text-text-muted file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-primary-muted file:text-primary hover:file:opacity-90"
+            @change="handleReceiptChange"
+          />
+          <p v-if="uploadingReceipt" class="text-xs text-text-muted">Uploading…</p>
+          <p v-else-if="form.receiptUrl" class="text-xs text-success flex items-center gap-1">
+            <PaperclipIcon class="w-3 h-3" /> Receipt attached
+          </p>
         </div>
-
-        <div v-if="selectedExpense.receipt_url" class="border-t border-border pt-3">
-          <span class="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.14em] text-text-muted mb-2.5">
-            <FileTextIcon class="w-3.5 h-3.5" />Receipt
-          </span>
-          <a :href="selectedExpense.receipt_url" target="_blank" rel="noopener" class="block">
-            <img
-              v-if="!selectedExpense.receipt_url.endsWith('.pdf')"
-              :src="selectedExpense.receipt_url" alt="Receipt"
-              class="rounded-xl border border-border max-h-64 w-auto"
-            />
-            <span v-else class="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline">
-              <FileTextIcon class="w-3.5 h-3.5" />View receipt PDF
-            </span>
-          </a>
+        <div class="flex gap-2">
+          <AppButton type="submit" :loading="creating" :disabled="uploadingReceipt">Save expense</AppButton>
+          <AppButton type="button" variant="ghost" @click="showCreate = false">Cancel</AppButton>
         </div>
-      </div>
+      </form>
     </AppModal>
   </DashboardLayout>
 </template>

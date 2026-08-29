@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
+import { useRouter } from 'vue-router'
 import {
-  fetchBranchInvoices, createBranchInvoice, sendOrgInvoice, downloadOrgInvoicePdf,
-  fetchOrgInvoiceDetail, markOrgInvoicePaid, cancelOrgInvoice, createRecipientSuppression,
-  type OrgInvoice, type CreateOrgInvoiceItemInput,
+  fetchBranchInvoices, createBranchInvoice, sendOrgInvoice, downloadOrgInvoicePdf, fetchCrmCustomers,
+  type OrgInvoice, type CreateOrgInvoiceItemInput, type CrmCustomer,
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
 import { formatMoney, formatDate } from '@/lib/format'
@@ -15,10 +15,10 @@ import AppCard from '@/components/ui/AppCard.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppInput from '@/components/ui/AppInput.vue'
 import AppBadge from '@/components/ui/AppBadge.vue'
-import AppModal from '@/components/ui/AppModal.vue'
-import { PlusIcon, FileTextIcon, DownloadIcon, SendIcon, BanIcon } from 'lucide-vue-next'
+import { PlusIcon, FileTextIcon, DownloadIcon, SendIcon } from 'lucide-vue-next'
 
 const props = defineProps<{ orgId: string; branchId: string }>()
+const router = useRouter()
 const { showError, showSuccess } = useResponseModal()
 const { confirmAction } = useConfirmModal()
 const { recipients: recipientHistory, loadRecipientHistory } = useRecipientHistory(true)
@@ -56,6 +56,24 @@ const customerPhone = ref('')
 const customerEmail = ref('')
 const dueDate = ref('')
 const notes = ref('')
+const sendOnCreate = ref(true)
+const crmCustomers = ref<CrmCustomer[]>([])
+const selectedCustomerId = ref('')
+
+async function loadCrmCustomers() {
+  if (crmCustomers.value.length) return
+  try {
+    const res = await fetchCrmCustomers(true, { status: 'ACTIVE', page_size: 100 })
+    crmCustomers.value = res.customers
+  } catch { /* ignore */ }
+}
+function applyCrmCustomer() {
+  const c = crmCustomers.value.find((x) => x.id === selectedCustomerId.value)
+  if (!c) return
+  customerName.value = c.trading_name || c.legal_name
+  customerPhone.value = c.phone || customerPhone.value
+  customerEmail.value = c.email || customerEmail.value
+}
 const items = ref<CreateOrgInvoiceItemInput[]>([{ item_name: '', quantity: 1, unit_price_cents: 0, tax_category: 'EXEMPT' }])
 
 function addItem() {
@@ -88,18 +106,31 @@ async function submitCreate() {
   }
   creating.value = true
   try {
-    await createBranchInvoice({
+    const result = await createBranchInvoice({
       customer_name: customerName.value.trim(),
       customer_phone: customerPhone.value.trim(),
       customer_email: customerEmail.value.trim() || undefined,
       currency: 'KES',
       due_date: new Date(dueDate.value).toISOString(),
       notes: notes.value.trim() || undefined,
+      org_customer_id: selectedCustomerId.value || undefined,
       items: items.value,
     })
+
+    if (sendOnCreate.value && result.data?.id) {
+      const channels = ['SMS', ...(customerEmail.value.trim() ? ['EMAIL'] : [])]
+      try {
+        await sendOrgInvoice(result.data.id, channels, true)
+        showSuccess('Invoice created and sent to the customer.')
+      } catch (sendErr) {
+        showError(`Invoice created, but sending failed: ${extractErrorMessage(sendErr)}`)
+      }
+    }
+
     customerName.value = ''
     customerPhone.value = ''
     customerEmail.value = ''
+    selectedCustomerId.value = ''
     dueDate.value = ''
     notes.value = ''
     items.value = [{ item_name: '', quantity: 1, unit_price_cents: 0 }]
@@ -164,87 +195,8 @@ function statusVariant(status: string) {
   return 'neutral'
 }
 
-const selectedInvoice = ref<OrgInvoice | null>(null)
-const detailLoading = ref(false)
-const actionLoading = ref(false)
-
-async function openDetail(invoice: OrgInvoice) {
-  selectedInvoice.value = invoice
-  detailLoading.value = true
-  try {
-    selectedInvoice.value = await fetchOrgInvoiceDetail(invoice.id, true)
-  } catch (err) {
-    showError(extractErrorMessage(err))
-  } finally {
-    detailLoading.value = false
-  }
-}
-
-function closeDetail() {
-  selectedInvoice.value = null
-}
-
-async function handleMarkPaid() {
-  if (!selectedInvoice.value) return
-  const ok = await confirmAction({
-    title: 'Mark this invoice as paid?',
-    message: 'This cannot be undone from here.',
-    confirmLabel: 'Mark as paid',
-  })
-  if (!ok) return
-  actionLoading.value = true
-  try {
-    selectedInvoice.value = await markOrgInvoicePaid(selectedInvoice.value.id, true)
-    await load()
-  } catch (err) {
-    showError(extractErrorMessage(err))
-  } finally {
-    actionLoading.value = false
-  }
-}
-
-async function handleCancel() {
-  if (!selectedInvoice.value) return
-  const ok = await confirmAction({
-    title: 'Cancel this invoice?',
-    message: 'The customer will no longer be able to pay it.',
-    confirmLabel: 'Cancel invoice',
-    cancelLabel: 'Keep it',
-    danger: true,
-  })
-  if (!ok) return
-  actionLoading.value = true
-  try {
-    selectedInvoice.value = await cancelOrgInvoice(selectedInvoice.value.id, true)
-    await load()
-  } catch (err) {
-    showError(extractErrorMessage(err))
-  } finally {
-    actionLoading.value = false
-  }
-}
-
-const blocking = ref(false)
-async function handleBlockSender() {
-  if (!selectedInvoice.value?.customer_email) return
-  const email = selectedInvoice.value.customer_email
-  const ok = await confirmAction({
-    title: 'Block this email from future invoices?',
-    message: `${email} will never be sent another invoice from any bulk batch or recurring schedule this branch runs, until you allow them again.`,
-    confirmLabel: 'Block email',
-    cancelLabel: 'Cancel',
-    danger: true,
-  })
-  if (!ok) return
-  blocking.value = true
-  try {
-    await createRecipientSuppression({ email, reason: 'Blocked from invoice detail' }, true)
-    showSuccess(`${email} is now blocked from receiving invoices.`)
-  } catch (err) {
-    showError(extractErrorMessage(err))
-  } finally {
-    blocking.value = false
-  }
+function openDetail(invoice: OrgInvoice) {
+  router.push({ name: 'branch-invoice-detail', params: { orgId: props.orgId, branchId: props.branchId, invoiceId: invoice.id } })
 }
 </script>
 
@@ -256,7 +208,7 @@ async function handleBlockSender() {
           <h2 class="text-sm font-bold text-text-primary">Invoices</h2>
           <p class="text-xs text-text-muted mt-0.5">Professional invoices with a PDF breakdown and an embedded payment link — billed to this branch's wallet.</p>
         </div>
-        <AppButton size="sm" @click="showCreateForm = !showCreateForm; loadRecipientHistory()">
+        <AppButton size="sm" @click="showCreateForm = !showCreateForm; loadRecipientHistory(); loadCrmCustomers()">
           <template #icon><PlusIcon class="w-4 h-4" /></template>
           New invoice
         </AppButton>
@@ -270,6 +222,19 @@ async function handleBlockSender() {
         <h3 class="text-sm font-bold text-text-primary mb-3">New invoice</h3>
         <div v-if="createError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ createError }}</div>
         <form class="flex flex-col gap-4 max-w-xl" @submit.prevent="submitCreate">
+          <div v-if="crmCustomers.length" class="flex flex-col gap-1.5">
+            <label class="text-[13px] font-medium text-text-secondary">Link to a saved customer (optional)</label>
+            <select
+              v-model="selectedCustomerId"
+              class="h-10 rounded-lg border border-input-border bg-input-bg px-3 text-sm font-medium text-text-primary outline-none focus:border-input-border-focused focus:ring-2 focus:ring-primary/15"
+              @change="applyCrmCustomer"
+            >
+              <option value="">Not linked</option>
+              <option v-for="c in crmCustomers" :key="c.id" :value="c.id">
+                {{ c.customer_code }} — {{ c.trading_name || c.legal_name }}
+              </option>
+            </select>
+          </div>
           <div class="grid grid-cols-2 gap-3">
             <AppInput v-model="customerName" label="Customer name" required />
             <AppInput v-model="customerPhone" label="Customer phone" required />
@@ -294,7 +259,7 @@ async function handleBlockSender() {
               <AppInput v-model.number="it.unit_price_cents" type="number" placeholder="Unit price (cents)" />
               <select
                 v-model="it.tax_category"
-                class="h-10 rounded-xl border border-input-border bg-input-bg px-2 text-xs font-medium text-text-primary outline-none focus:border-input-border-focused"
+                class="h-10 rounded-lg border border-input-border bg-input-bg px-2 text-xs font-medium text-text-primary outline-none focus:border-input-border-focused"
               >
                 <option value="EXEMPT">Exempt (no VAT)</option>
                 <option value="A">Taxable (16% VAT)</option>
@@ -313,8 +278,18 @@ async function handleBlockSender() {
 
           <AppInput v-model="notes" label="Notes (optional)" />
 
+          <label class="flex items-start gap-2 text-sm text-text-primary">
+            <input type="checkbox" v-model="sendOnCreate" class="w-4 h-4 rounded mt-0.5" />
+            <span>
+              Send to the customer now
+              <span class="block text-xs text-text-muted">
+                Delivers a payment link by SMS{{ customerEmail.trim() ? ' and email' : '' }}. SMS is charged at KES 1 per message.
+              </span>
+            </span>
+          </label>
+
           <div class="flex gap-2">
-            <AppButton type="submit" :loading="creating">Create invoice</AppButton>
+            <AppButton type="submit" :loading="creating">{{ sendOnCreate ? 'Create & send invoice' : 'Create invoice' }}</AppButton>
             <AppButton type="button" variant="ghost" @click="showCreateForm = false">Cancel</AppButton>
           </div>
         </form>
@@ -361,70 +336,5 @@ async function handleBlockSender() {
         </AppCard>
       </div>
     </div>
-
-    <!-- Invoice detail modal -->
-    <AppModal :model-value="!!selectedInvoice" title="Invoice detail" size="lg" @update:model-value="closeDetail">
-      <div v-if="detailLoading" class="py-8 text-center text-sm text-text-muted">Loading…</div>
-      <div v-else-if="selectedInvoice" class="flex flex-col gap-5">
-        <div class="flex items-start justify-between">
-          <div>
-            <div class="flex items-center gap-2">
-              <AppBadge :variant="statusVariant(selectedInvoice.status)" size="sm">{{ selectedInvoice.status }}</AppBadge>
-              <span class="text-xs font-mono text-text-muted">{{ selectedInvoice.invoice_number }}</span>
-            </div>
-            <p class="text-base font-bold text-text-primary mt-1">{{ selectedInvoice.customer_name }}</p>
-            <p class="text-xs text-text-muted mt-0.5">{{ selectedInvoice.customer_phone }}<span v-if="selectedInvoice.customer_email"> · {{ selectedInvoice.customer_email }}</span></p>
-          </div>
-          <div class="text-right">
-            <p class="text-xs text-text-muted">Due {{ formatDate(selectedInvoice.due_date) }}</p>
-            <p class="text-xs text-text-muted">Created {{ formatDate(selectedInvoice.created_at) }}</p>
-            <p v-if="selectedInvoice.paid_at" class="text-xs text-success-text">Paid {{ formatDate(selectedInvoice.paid_at) }}</p>
-          </div>
-        </div>
-
-        <div class="rounded-xl border border-border overflow-x-auto">
-          <table class="w-full min-w-125 text-sm">
-            <thead>
-              <tr class="bg-surface-2 text-left text-xs text-text-muted uppercase tracking-wide">
-                <th class="px-3 py-2 font-semibold">Item</th>
-                <th class="px-3 py-2 font-semibold text-right">Qty</th>
-                <th class="px-3 py-2 font-semibold text-right">Unit price</th>
-                <th class="px-3 py-2 font-semibold text-right">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="item in selectedInvoice.items" :key="item.id" class="border-t border-border">
-                <td class="px-3 py-2">
-                  <p class="font-medium text-text-primary">{{ item.item_name }}</p>
-                  <p v-if="item.description" class="text-xs text-text-muted">{{ item.description }}</p>
-                </td>
-                <td class="px-3 py-2 text-right text-text-secondary">{{ item.quantity }}</td>
-                <td class="px-3 py-2 text-right text-text-secondary">KES {{ formatMoney(item.unit_price_cents) }}</td>
-                <td class="px-3 py-2 text-right font-semibold text-text-primary">KES {{ formatMoney(item.total_cents) }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <div class="flex flex-col gap-1 items-end text-sm">
-          <div class="flex justify-between w-48"><span class="text-text-muted">Subtotal</span><span>KES {{ formatMoney(selectedInvoice.sub_total_cents) }}</span></div>
-          <div v-if="selectedInvoice.tax_amount_cents > 0" class="flex justify-between w-48"><span class="text-text-muted">VAT</span><span>KES {{ formatMoney(selectedInvoice.tax_amount_cents) }}</span></div>
-          <div class="flex justify-between w-48 font-bold text-text-primary border-t border-border pt-1"><span>Total</span><span>KES {{ formatMoney(selectedInvoice.total_cents) }}</span></div>
-        </div>
-
-        <p v-if="selectedInvoice.notes" class="text-xs text-text-muted bg-surface-2 rounded-lg px-3 py-2">{{ selectedInvoice.notes }}</p>
-
-        <div v-if="selectedInvoice.status !== 'PAID' && selectedInvoice.status !== 'CANCELLED'" class="flex gap-2 pt-2 border-t border-border">
-          <AppButton size="sm" :loading="actionLoading" @click="handleMarkPaid">Mark as paid</AppButton>
-          <AppButton size="sm" variant="ghost" :loading="actionLoading" @click="handleCancel">Cancel invoice</AppButton>
-        </div>
-        <div v-if="selectedInvoice.customer_email" class="pt-2 border-t border-border">
-          <AppButton size="sm" variant="ghost" :loading="blocking" @click="handleBlockSender">
-            <template #icon><BanIcon class="w-3.5 h-3.5" /></template>
-            Block this email from future invoices
-          </AppButton>
-        </div>
-      </div>
-    </AppModal>
   </DashboardLayout>
 </template>

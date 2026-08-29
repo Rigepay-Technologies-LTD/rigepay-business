@@ -57,7 +57,7 @@ function onDrop(e: DragEvent) {
 <template>
   <div
     :class="[
-      'relative rounded-2xl border-2 border-dashed p-5 flex flex-col gap-3 transition-colors bg-surface',
+      'relative rounded-xl border-2 border-dashed p-5 flex flex-col gap-3 transition-colors bg-surface',
       dragOver ? 'border-primary bg-primary-light' : 'border-border',
     ]"
     @dragover.prevent="dragOver = true"

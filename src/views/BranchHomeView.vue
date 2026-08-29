@@ -8,29 +8,39 @@ import {
   fetchOrgTransactions,
   fetchBranchProfile,
   fetchBranchCashFlow,
+  fetchOrgDashboardKpis,
+  fetchBranchDashboardKpis,
+  fetchBranchAnalyticsDetail,
+  fetchBranchFinancialAccounts,
   type WalletBalances,
   type PaginatedTransactions,
   type BranchSummary,
   type BranchProfileDetail,
   type Transaction,
   type CashFlowDayPoint,
+  type DashboardKpis,
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
-import { formatMoney, formatDate, txnReference, riskTier } from '@/lib/format'
+import { formatMoney, formatDate, txnReference } from '@/lib/format'
 import { useResponseModal } from '@/composables/useResponseModal'
 import DashboardLayout from '@/layouts/DashboardLayout.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppTable from '@/components/ui/AppTable.vue'
 import AppBadge from '@/components/ui/AppBadge.vue'
 import CashFlowChart from '@/components/CashFlowChart.vue'
-import QuickActions, { type QuickAction } from '@/components/QuickActions.vue'
-import { WalletIcon, BanknoteIcon, LinkIcon, ReceiptIcon, CoinsIcon, ArrowLeftRightIcon, ShieldCheckIcon, AlertOctagonIcon } from 'lucide-vue-next'
+import DashboardHero from '@/components/DashboardHero.vue'
+import DashboardKpiRow from '@/components/DashboardKpiRow.vue'
+import DashboardSecondaryStats from '@/components/DashboardSecondaryStats.vue'
+import type { QuickAction } from '@/components/QuickActions.vue'
+import {
+  WalletIcon, BanknoteIcon, LinkIcon, ReceiptIcon, CoinsIcon, ArrowLeftRightIcon,
+  SparklesIcon, CheckCircle2Icon,
+} from 'lucide-vue-next'
 
 const props = defineProps<{ orgId: string; branchId: string }>()
 
 const auth = useAuthStore()
 const { showError } = useResponseModal()
-
 
 const isOrgMemberView = computed(() => auth.meta?.memberType === 'org_member')
 
@@ -46,6 +56,38 @@ const txns = ref<PaginatedTransactions | null>(null)
 
 const cashFlow = ref<CashFlowDayPoint[]>([])
 const cashFlowLoading = ref(true)
+
+const kpis = ref<DashboardKpis | null>(null)
+const kpiLoading = ref(true)
+const refreshing = ref(false)
+
+const greeting = computed(() => {
+  const hour = new Date().getHours()
+  if (hour < 12) return 'Good morning'
+  if (hour < 17) return 'Good afternoon'
+  return 'Good evening'
+})
+
+const branchStatus = computed(() => {
+  const s = branchProfile.value?.status ?? branchInfo.value?.status
+  if (s === 'active') return { label: 'Active', variant: 'success' as const }
+  if (s === 'suspended') return { label: 'Suspended', variant: 'error' as const }
+  if (s) return { label: s.replace(/_/g, ' '), variant: 'warning' as const }
+  return undefined
+})
+
+const insights = computed<string[]>(() => {
+  const out: string[] = []
+  const c = kpis.value?.todays_collections
+  if (c && c.delta_dir !== 'flat') {
+    out.push(
+      `Today's collections are ${c.delta_dir === 'up' ? 'up' : 'down'} ${Math.abs(c.delta_pct) >= 100 ? '100+' : Math.abs(c.delta_pct).toFixed(0)}% versus yesterday.`,
+    )
+  }
+  const due = kpis.value?.settlement_due_cents ?? 0
+  if (due > 0) out.push(`KES ${formatMoney(due)} is held on high-risk rails and will settle to this branch's main wallet within 72h.`)
+  return out
+})
 
 async function loadWallets() {
   loading.value = true
@@ -102,10 +144,29 @@ async function loadCashFlow() {
   }
 }
 
+async function loadKpis() {
+  kpiLoading.value = true
+  try {
+    kpis.value = isOrgMemberView.value
+      ? await fetchOrgDashboardKpis(props.branchId)
+      : await fetchBranchDashboardKpis()
+  } catch {
+    kpis.value = null
+  } finally {
+    kpiLoading.value = false
+  }
+}
+
+async function refreshAll() {
+  refreshing.value = true
+  await Promise.allSettled([loadWallets(), loadTransactions(), loadCashFlow(), loadKpis()])
+  refreshing.value = false
+}
+
 const quickActions = computed<QuickAction[]>(() => {
   const base = { orgId: props.orgId, branchId: props.branchId }
   return [
-    { label: 'Collect', icon: WalletIcon, to: { name: 'branch-collect', params: base } },
+    { label: 'New collection', icon: WalletIcon, to: { name: 'branch-collect', params: base } },
     {
       label: 'Send payout', icon: BanknoteIcon,
       to: isOrgMemberView.value
@@ -128,6 +189,7 @@ onMounted(() => {
   loadWallets()
   loadTransactions()
   loadCashFlow()
+  loadKpis()
 })
 
 const txnColumns = [
@@ -156,44 +218,49 @@ function statusVariant(status: string) {
     <div class="flex flex-col gap-6">
       <div v-if="error" class="text-sm text-error-text bg-error-light rounded-xl px-4 py-3">{{ error }}</div>
 
-      <QuickActions :actions="quickActions" />
+      <DashboardHero
+        :greeting="greeting"
+        :name="branchInfo?.name ?? branchProfile?.name"
+        subtitle="Here's this branch's summary for today."
+        :status-label="branchStatus?.label"
+        :status-variant="branchStatus?.variant"
+        :actions="quickActions"
+        :refreshing="refreshing"
+        @refresh="refreshAll"
+      />
 
-      <section class="grid grid-cols-1 sm:grid-cols-4 gap-4">
-        <div class="rounded-2xl bg-linear-to-br from-primary to-primary/80 text-white p-5 flex flex-col gap-3 shadow-sm sm:col-span-2">
-          <div class="flex items-center justify-between">
-            <span class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-white/80">
-              <WalletIcon class="w-4 h-4" />Branch main balance
+      <DashboardKpiRow :kpis="kpis" :loading="kpiLoading" settlement-hint="No settlement scheduled" />
+
+      <DashboardSecondaryStats :analytics-fetcher="() => fetchBranchAnalyticsDetail()" :accounts-fetcher="() => fetchBranchFinancialAccounts()" />
+
+      <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
+        <AppCard class="xl:col-span-2">
+          <h2 class="text-sm font-bold text-text-primary mb-1">Cash flow — last 14 days</h2>
+          <p class="text-xs text-text-muted mb-4">Collections and payouts through this branch's own wallet.</p>
+          <p v-if="cashFlowLoading" class="text-sm text-text-muted">Loading chart…</p>
+          <p v-else-if="!cashFlow.length" class="text-sm text-text-muted">No activity in the last 14 days.</p>
+          <CashFlowChart v-else :points="cashFlow" />
+        </AppCard>
+
+        <AppCard>
+          <div class="flex items-center gap-2 mb-3">
+            <span class="w-8 h-8 rounded-xl bg-primary-muted text-primary flex items-center justify-center">
+              <SparklesIcon class="w-4 h-4" />
             </span>
-            <span v-if="branchProfile?.collection_code" class="text-[10px] font-bold uppercase tracking-wide bg-white/15 rounded-full px-2 py-1">
-              Code {{ branchProfile.collection_code }}
-            </span>
+            <h2 class="text-sm font-bold text-text-primary">Insights</h2>
           </div>
-          <p class="text-3xl font-bold tracking-tight">KES {{ formatMoney(wallets?.main_cents) }}</p>
-          <AppBadge v-if="branchProfile" :variant="riskTier(branchProfile.risk_score).variant" size="sm" class="self-start">
-            {{ riskTier(branchProfile.risk_score).label }}{{ branchProfile.risk_score > 0 ? ` (${branchProfile.risk_score}/100)` : '' }}
-          </AppBadge>
-        </div>
-        <div class="rounded-2xl bg-surface border border-border p-5 flex flex-col gap-3 shadow-sm">
-          <span class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-text-muted">
-            <ShieldCheckIcon class="w-4 h-4 text-info" />Escrow balance
-          </span>
-          <p class="text-2xl font-bold text-text-primary tracking-tight">KES {{ formatMoney(wallets?.escrow_cents) }}</p>
-        </div>
-        <div class="rounded-2xl bg-surface border border-border p-5 flex flex-col gap-3 shadow-sm">
-          <span class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-text-muted">
-            <AlertOctagonIcon class="w-4 h-4 text-warning" />Chargeback holding
-          </span>
-          <p class="text-2xl font-bold text-text-primary tracking-tight">KES {{ formatMoney(wallets?.chargeback_cents) }}</p>
-        </div>
-      </section>
-
-      <AppCard>
-        <h2 class="text-sm font-bold text-text-primary mb-1">Cash flow — last 14 days</h2>
-        <p class="text-xs text-text-muted mb-4">Collections and payouts through this branch's own wallet.</p>
-        <p v-if="cashFlowLoading" class="text-sm text-text-muted">Loading chart…</p>
-        <p v-else-if="!cashFlow.length" class="text-sm text-text-muted">No activity in the last 14 days.</p>
-        <CashFlowChart v-else :points="cashFlow" />
-      </AppCard>
+          <div v-if="insights.length" class="flex flex-col gap-2">
+            <p v-for="(line, i) in insights" :key="i" class="text-[13px] text-text-secondary bg-surface-2 rounded-xl px-3.5 py-2.5 leading-snug">
+              {{ line }}
+            </p>
+          </div>
+          <div v-else class="flex flex-col items-start gap-2 rounded-xl bg-success-light px-3.5 py-4">
+            <CheckCircle2Icon class="w-6 h-6 text-success" />
+            <p class="text-sm font-semibold text-text-primary">You're all caught up</p>
+            <p class="text-xs text-text-muted">There are no urgent updates requiring your attention.</p>
+          </div>
+        </AppCard>
+      </div>
 
       <AppCard>
         <div class="flex items-center justify-between mb-4">

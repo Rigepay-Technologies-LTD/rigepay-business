@@ -70,10 +70,6 @@ export function setupTokenHttp(setupToken: string) {
       'Content-Type': 'application/json',
       'X-Setup-Token': setupToken,
     },
-    // Required — this instance carries the 2FA-verify requests that
-    // actually receive the Set-Cookie session headers from the backend.
-    // Without withCredentials, the browser silently drops Set-Cookie on
-    // cross-origin responses and no session cookie is ever stored.
     withCredentials: true,
   })
 }

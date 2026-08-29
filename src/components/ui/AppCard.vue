@@ -11,9 +11,9 @@ defineProps<{
   <component
     :is="as ?? 'div'"
     :class="[
-      'bg-surface rounded-2xl shadow-sm transition-all duration-200',
-      border === true ? 'ring-1 ring-border' : '',
-      hover ? 'hover:-translate-y-0.5 hover:shadow-md cursor-pointer' : '',
+      'bg-surface rounded-xl border border-border transition-colors duration-150',
+      border === true ? 'border-border-strong' : '',
+      hover ? 'hover:border-border-strong hover:shadow-sm cursor-pointer' : '',
       padding === 'none' ? ''
         : padding === 'sm' ? 'p-4'
         : padding === 'lg' ? 'p-8'

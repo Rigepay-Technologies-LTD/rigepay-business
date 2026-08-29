@@ -7,9 +7,10 @@ import {
   fetchOrgBranches, validateOrgBankAccount, validateOrgMobileMoney, validateOrgShortcode, validateOrgScreenName, fetchOrgBankCodes,
   fetchOrgProfile, fetchOrgBeneficiaries, createOrgBeneficiary, deleteOrgBeneficiary, fetchRecentSettlements,
   fetchApprovalThreshold, setApprovalThreshold, fetchPayoutFeeEstimate,
-  fetchRoleApprovalThresholds, setRoleApprovalThreshold,
+  fetchRoleApprovalThresholds, setRoleApprovalThreshold, fetchOrgSettlementPreferences,
   type PayoutApproval, type BranchSummary, type ProfileResponse, type Beneficiary, type RecentSettlement,
   type ApprovalThreshold, type PayoutFeeEstimate, type RoleApprovalThreshold, type ScreenNameMatch,
+  type SettlementPreferences,
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
 import { formatMoney, formatDate } from '@/lib/format'
@@ -20,9 +21,11 @@ import AppButton from '@/components/ui/AppButton.vue'
 import AppInput from '@/components/ui/AppInput.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import AppBadge from '@/components/ui/AppBadge.vue'
+import AppModal from '@/components/ui/AppModal.vue'
+import PayoutsHistoryTable from '@/components/PayoutsHistoryTable.vue'
 import OtpConfirmCard from '@/components/OtpConfirmCard.vue'
 import ConfirmSecretInput from '@/components/ConfirmSecretInput.vue'
-import { CheckIcon, AlertTriangleIcon, XIcon, RepeatIcon } from 'lucide-vue-next'
+import { CheckIcon, AlertTriangleIcon, XIcon, RepeatIcon, SendIcon } from 'lucide-vue-next'
 
 const props = defineProps<{ orgId: string }>()
 const route = useRoute()
@@ -60,6 +63,64 @@ async function loadProfile() {
     showError(msg)
   }
 }
+
+const showRequestModal = ref(false)
+const payoutsReloadKey = ref(0)
+const settlementPrefs = ref<SettlementPreferences | null>(null)
+
+async function loadSettlementPrefs() {
+  if (isBranchSession) return
+  try {
+    settlementPrefs.value = await fetchOrgSettlementPreferences()
+  } catch {
+    settlementPrefs.value = null
+  }
+}
+
+const settlementPrefLabel = computed(() => {
+  const p = settlementPrefs.value
+  if (!p || !p.destination_type) return ''
+  const detail = p.destination_type === 'BANK_ACCOUNT'
+    ? `${p.bank_code || ''} ${p.bank_account_number || ''}`.trim()
+    : (p.phone_number || '')
+  const kind = {
+    BANK_ACCOUNT: 'Bank account', PAYBILL: 'Paybill', TILL_NUMBER: 'Till number', PHONE_NUMBER: 'M-Pesa',
+  }[p.destination_type] || p.destination_type
+  return `${kind} · ${detail}`
+})
+
+function applySettlementPref() {
+  const p = settlementPrefs.value
+  if (!p || !p.destination_type) return
+  destinationType.value = p.destination_type as typeof destinationType.value
+  if (p.destination_type === 'BANK_ACCOUNT') {
+    bankCode.value = p.bank_code || ''
+    bankAccountNumber.value = p.bank_account_number || ''
+    phoneNumber.value = ''
+    shortcode.value = ''
+  } else if (p.destination_type === 'PAYBILL' || p.destination_type === 'TILL_NUMBER') {
+    shortcode.value = p.phone_number || ''
+    phoneNumber.value = ''
+    bankCode.value = ''
+    bankAccountNumber.value = ''
+  } else {
+    phoneNumber.value = p.phone_number || ''
+    shortcode.value = ''
+    bankCode.value = ''
+    bankAccountNumber.value = ''
+  }
+}
+
+watch(showRequestModal, (open) => {
+  if (!open) return
+  const untouched = !phoneNumber.value && !bankAccountNumber.value && !shortcode.value && !recipientName.value
+  if (untouched) applySettlementPref()
+})
+
+const historyBranchOptions = computed(() => [
+  { value: '', label: 'Organization (this business)' },
+  ...branches.value.map((b) => ({ value: b.id, label: b.name })),
+])
 
 const requesting = ref(false)
 const requestError = ref<string | null>(null)
@@ -371,6 +432,8 @@ async function submitPayout() {
     showSuccess(requestResult.value)
 
     resetPayoutForm()
+    showRequestModal.value = false
+    payoutsReloadKey.value++
     if (isOwner) await loadApprovals()
     await loadRecentSettlements()
   } catch (err) {
@@ -395,6 +458,8 @@ async function submitOtp() {
     showSuccess(requestResult.value)
     otpStep.value = false
     resetPayoutForm()
+    showRequestModal.value = false
+    payoutsReloadKey.value++
     if (isOwner) await loadApprovals()
     await loadRecentSettlements()
   } catch (err) {
@@ -569,6 +634,7 @@ onMounted(() => {
   loadRecentSettlements()
   loadThreshold()
   loadRoleCeilings()
+  loadSettlementPrefs()
   const branchQuery = route.query.branch
   if (typeof branchQuery === 'string' && branchQuery) {
     branchId.value = branchQuery
@@ -596,12 +662,23 @@ watch([amountKes, destinationType], () => {
 <template>
   <DashboardLayout :org-id="props.orgId" title="Payouts">
     <div class="flex flex-col gap-6 page-in">
-      <p class="text-xs text-text-muted -mt-2">Send money out via M-Pesa or bank transfer, straight from the organization's own wallet.</p>
+      <div class="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 class="text-lg font-bold text-text-primary">Payouts</h1>
+          <p class="text-sm text-text-muted mt-0.5">Review beneficiary payouts, destination details, fees, and processing status.</p>
+        </div>
+        <AppButton @click="showRequestModal = true">
+          <template #icon><SendIcon class="w-4 h-4" /></template>
+          Send money
+        </AppButton>
+      </div>
 
-      <!-- Primary action + sidebar -->
-      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-        <!-- Sidebar: recent settlements + saved payees -->
-        <div class="order-2 lg:order-1 lg:col-span-1 flex flex-col gap-6">
+      <PayoutsHistoryTable :is-branch="false" :branch-options="historyBranchOptions" :reload-key="payoutsReloadKey" />
+
+      <AppModal v-model="showRequestModal" title="Send money" size="lg">
+        <div class="flex flex-col gap-4">
+        <!-- Recent settlements + saved payees quick-pick -->
+        <div class="flex flex-col gap-4">
           <AppCard v-if="!isBranchSession && recentSettlements.length">
             <h2 class="text-sm font-bold text-text-primary mb-1">Recent settlements</h2>
             <p class="text-xs text-text-muted mb-4">Click one to repeat it — prefills the form.</p>
@@ -648,8 +725,6 @@ watch([amountKes, destinationType], () => {
           </AppCard>
         </div>
 
-        <!-- Main: OTP step or payout request form -->
-        <div class="order-1 lg:order-2 lg:col-span-2">
           <OtpConfirmCard
             v-if="otpStep"
             v-model="otp"
@@ -671,6 +746,11 @@ watch([amountKes, destinationType], () => {
               with your account password below — you cannot approve your own request.
             </p>
             <div v-if="requestError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ requestError }}</div>
+
+            <div v-if="settlementPrefLabel" class="flex flex-wrap items-center justify-between gap-2 text-xs bg-surface-2 rounded-lg px-3 py-2 mb-3">
+              <span class="text-text-secondary">Settlement preference: <span class="font-semibold text-text-primary">{{ settlementPrefLabel }}</span></span>
+              <button type="button" class="font-semibold text-primary hover:underline" @click="applySettlementPref">Use this destination</button>
+            </div>
 
             <form class="flex flex-col gap-4" @submit.prevent="submitPayout">
               <!-- Group 1: who / where -->
@@ -778,7 +858,7 @@ watch([amountKes, destinationType], () => {
             </form>
           </AppCard>
         </div>
-      </div>
+      </AppModal>
 
       <!-- Pending approvals: full width -->
       <AppCard v-if="isOwner">

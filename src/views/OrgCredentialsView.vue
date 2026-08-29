@@ -1,13 +1,10 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import {
-  fetchOrgCredentials, createOrgCredential, revokeOrgCredential,
-  fetchOrgApiKeys, createOrgApiKey, revokeOrgApiKey,
-  fetchOrgBranches,
-  fetchOrgWebhookEndpoints, createOrgWebhookEndpoint, deleteOrgWebhookEndpoint, fetchOrgWebhookDeliveries,
-  rotateOrgCredential, rotateOrgApiKey,
-  WEBHOOK_EVENT_TYPES,
-  type OrgCredential, type OrgApiKey, type ApiKeyAuthScheme, type BranchSummary, type OrgWebhookEndpoint, type OrgWebhookDelivery,
+  fetchOrgCredentials, createOrgCredential, revokeOrgCredential, rotateOrgCredential,
+  fetchOrgApiKeys, createOrgApiKey, revokeOrgApiKey, rotateOrgApiKey,
+  fetchOrgBranches, API_CLIENT_SCOPES,
+  type OrgCredential, type OrgApiKey, type ApiKeyAuthScheme, type BranchSummary,
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
 import { formatDate } from '@/lib/format'
@@ -16,620 +13,447 @@ import AppCard from '@/components/ui/AppCard.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppInput from '@/components/ui/AppInput.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
-import AppTable from '@/components/ui/AppTable.vue'
 import AppBadge from '@/components/ui/AppBadge.vue'
+import AppModal from '@/components/ui/AppModal.vue'
 import {
-  PlusIcon, ShieldCheckIcon, KeyRoundIcon, FingerprintIcon, WebhookIcon,
-  CheckCircle2Icon, RefreshCwIcon, BanIcon, Trash2Icon, EyeIcon, EyeOffIcon,
+  PlusIcon, KeyRoundIcon, SearchIcon, RefreshCwIcon, BanIcon, ChevronRightIcon,
+  WebhookIcon, CheckCircle2Icon,
 } from 'lucide-vue-next'
 import { useResponseModal } from '@/composables/useResponseModal'
+import { useConfirmModal } from '@/composables/useConfirmModal'
 
 const { showError } = useResponseModal()
-
+const { confirmAction } = useConfirmModal()
 const props = defineProps<{ orgId: string }>()
 
 const loading = ref(true)
-const error = ref<string | null>(null)
 const credentials = ref<OrgCredential[]>([])
 const apiKeys = ref<OrgApiKey[]>([])
 const branches = ref<BranchSummary[]>([])
-const webhookEndpoints = ref<OrgWebhookEndpoint[]>([])
 
-const availableScopes = [
-  'payouts:write',
-  'payouts:read',
-  'collections:write',
-  'collections:read',
-  'balance:read',
-  'transactions:read',
-  'transfers:write',
-  'transfers:read',
-  'checkout:write',
-  'checkout:read',
-  'utils:read',
-  'screening:read',
-]
+const search = ref('')
+const statusFilter = ref('')
 
 async function load() {
   loading.value = true
-  error.value = null
   try {
-    const [c, k, b, w] = await Promise.all([fetchOrgCredentials(), fetchOrgApiKeys(), fetchOrgBranches(), fetchOrgWebhookEndpoints()])
+    const [c, k, b] = await Promise.all([fetchOrgCredentials(), fetchOrgApiKeys(), fetchOrgBranches()])
     credentials.value = c
     apiKeys.value = k
     branches.value = b.branches
-    webhookEndpoints.value = w
   } catch (err) {
-    const msg = extractErrorMessage(err)
-    error.value = msg
-    showError(msg)
+    showError(extractErrorMessage(err))
   } finally {
     loading.value = false
   }
 }
 onMounted(load)
 
-const showKeyForm = ref(false)
+const filteredCredentials = computed(() => {
+  const q = search.value.trim().toLowerCase()
+  return credentials.value.filter((c) => {
+    if (statusFilter.value && c.status !== statusFilter.value) return false
+    if (!q) return true
+    return (c.name || '').toLowerCase().includes(q) || c.client_id.toLowerCase().includes(q)
+  })
+})
+
+// ── create API client ──
+const showCreate = ref(false)
+const creating = ref(false)
+const createError = ref<string | null>(null)
+const form = ref<{ name: string; description: string; branch_id: string; scopes: string[] }>({
+  name: '', description: '', branch_id: '', scopes: ['collections:read'],
+})
+const revealedCred = ref<{ client_id: string; client_secret: string } | null>(null)
+
+function openCreate() {
+  form.value = { name: '', description: '', branch_id: '', scopes: ['collections:read'] }
+  createError.value = null
+  showCreate.value = true
+}
+function toggleScope(scope: string) {
+  const i = form.value.scopes.indexOf(scope)
+  if (i >= 0) form.value.scopes.splice(i, 1)
+  else form.value.scopes.push(scope)
+}
+
+async function submitCreate() {
+  createError.value = null
+  if (!form.value.name.trim()) { createError.value = 'Name is required.'; return }
+  if (form.value.scopes.length === 0) { createError.value = 'Select at least one scope.'; return }
+  creating.value = true
+  try {
+    const result = await createOrgCredential({
+      name: form.value.name.trim(),
+      description: form.value.description.trim() || undefined,
+      branch_ids: form.value.branch_id ? [form.value.branch_id] : undefined,
+      scopes: form.value.scopes,
+    })
+    revealedCred.value = { client_id: result.client_id, client_secret: result.client_secret }
+    showCreate.value = false
+    await load()
+  } catch (err) {
+    createError.value = extractErrorMessage(err)
+  } finally {
+    creating.value = false
+  }
+}
+
+const rotatingCredId = ref<string | null>(null)
+async function rotateCred(cred: OrgCredential) {
+  rotatingCredId.value = cred.id
+  try {
+    const result = await rotateOrgCredential(cred.id)
+    revealedCred.value = { client_id: cred.client_id, client_secret: result.client_secret }
+    await load()
+  } catch (err) {
+    showError(extractErrorMessage(err))
+  } finally {
+    rotatingCredId.value = null
+  }
+}
+async function revokeCred(cred: OrgCredential) {
+  const ok = await confirmAction({
+    title: 'Revoke this API client?', message: `Any integration using ${cred.client_id} will stop working immediately.`,
+    confirmLabel: 'Revoke', danger: true,
+  })
+  if (!ok) return
+  try {
+    await revokeOrgCredential(cred.id)
+    await load()
+  } catch (err) {
+    showError(extractErrorMessage(err))
+  }
+}
+
+const showIntegrationExample = ref(false)
+const tokenSnippet = `curl --request POST \\
+  "https://api.rigepay.co.ke/api/v1/oauth/token" \\
+  --header "Content-Type: application/x-www-form-urlencoded" \\
+  --data-urlencode "grant_type=client_credentials" \\
+  --data-urlencode "client_id=YOUR_CLIENT_ID" \\
+  --data-urlencode "client_secret=YOUR_CLIENT_SECRET" \\
+  --data-urlencode "scope=collections:read payouts:write"`
+const callSnippet = `curl --request GET \\
+  "https://api.rigepay.co.ke/api/v1/collections" \\
+  --header "Authorization: Bearer YOUR_ACCESS_TOKEN"`
+
+// ── API keys (kept) ──
+const showKeyModal = ref(false)
 const creatingKey = ref(false)
 const keyError = ref<string | null>(null)
 const revealedKey = ref<{ name: string; auth_scheme: ApiKeyAuthScheme; full_key?: string; key_id?: string; secret?: string } | null>(null)
-const newKeyName = ref('')
-const newKeyBranchId = ref('')
-const newKeyScopes = ref<string[]>([])
-const newKeyAuthScheme = ref<ApiKeyAuthScheme>('bearer')
-
+const keyForm = ref<{ name: string; branch_id: string; scopes: string[]; auth_scheme: ApiKeyAuthScheme }>({
+  name: '', branch_id: '', scopes: [], auth_scheme: 'bearer',
+})
+function openKeyModal() {
+  keyForm.value = { name: '', branch_id: '', scopes: [], auth_scheme: 'bearer' }
+  keyError.value = null
+  showKeyModal.value = true
+}
+function toggleKeyScope(scope: string) {
+  const i = keyForm.value.scopes.indexOf(scope)
+  if (i >= 0) keyForm.value.scopes.splice(i, 1)
+  else keyForm.value.scopes.push(scope)
+}
 async function createKey() {
   keyError.value = null
-  if (!newKeyName.value.trim() || newKeyScopes.value.length === 0) {
+  if (!keyForm.value.name.trim() || keyForm.value.scopes.length === 0) {
     keyError.value = 'Name and at least one scope are required.'
     return
   }
   creatingKey.value = true
   try {
     const result = await createOrgApiKey({
-      name: newKeyName.value.trim(),
-      branch_id: newKeyBranchId.value || undefined,
-      scopes: newKeyScopes.value,
-      auth_scheme: newKeyAuthScheme.value,
+      name: keyForm.value.name.trim(),
+      branch_id: keyForm.value.branch_id || undefined,
+      scopes: keyForm.value.scopes,
+      auth_scheme: keyForm.value.auth_scheme,
     })
-    revealedKey.value = {
-      name: result.name,
-      auth_scheme: result.auth_scheme,
-      full_key: result.full_key,
-      key_id: result.key_id,
-      secret: result.secret,
-    }
-    newKeyName.value = ''
-    newKeyBranchId.value = ''
-    newKeyScopes.value = []
-    newKeyAuthScheme.value = 'bearer'
-    showKeyForm.value = false
+    revealedKey.value = { name: result.name, auth_scheme: result.auth_scheme, full_key: result.full_key, key_id: result.key_id, secret: result.secret }
+    showKeyModal.value = false
     await load()
   } catch (err) {
-    const msg = extractErrorMessage(err)
-    keyError.value = msg
-    showError(msg)
+    keyError.value = extractErrorMessage(err)
   } finally {
     creatingKey.value = false
   }
 }
-
-async function revokeKey(id: string) {
-  try {
-    await revokeOrgApiKey(id)
-    await load()
-  } catch (err) {
-    const msg = extractErrorMessage(err)
-    error.value = msg
-    showError(msg)
-  }
-}
-
 const rotatingKeyId = ref<string | null>(null)
-
 async function rotateKey(key: OrgApiKey) {
   rotatingKeyId.value = key.id
   try {
     const result = await rotateOrgApiKey(key.id)
-    revealedKey.value = {
-      name: key.name,
-      auth_scheme: result.auth_scheme,
-      full_key: result.full_key,
-      key_id: result.key_id,
-      secret: result.secret,
-    }
+    revealedKey.value = { name: key.name, auth_scheme: result.auth_scheme, full_key: result.full_key, key_id: result.key_id, secret: result.secret }
     await load()
   } catch (err) {
-    const msg = extractErrorMessage(err)
-    error.value = msg
-    showError(msg)
+    showError(extractErrorMessage(err))
   } finally {
     rotatingKeyId.value = null
   }
 }
-
-const showCredForm = ref(false)
-const creatingCred = ref(false)
-const credError = ref<string | null>(null)
-const revealedCred = ref<{ client_id: string; client_secret: string } | null>(null)
-const newCredBranchId = ref('')
-const newCredScopes = ref<string[]>([])
-
-async function createCred() {
-  credError.value = null
-  if (newCredScopes.value.length === 0) {
-    credError.value = 'At least one scope is required.'
-    return
-  }
-  creatingCred.value = true
+async function revokeKey(key: OrgApiKey) {
+  const ok = await confirmAction({ title: 'Revoke this API key?', message: `"${key.name}" will stop working immediately.`, confirmLabel: 'Revoke', danger: true })
+  if (!ok) return
   try {
-    const result = await createOrgCredential({
-      branch_ids: newCredBranchId.value ? [newCredBranchId.value] : undefined,
-      scopes: newCredScopes.value,
-    })
-    revealedCred.value = { client_id: result.client_id, client_secret: result.client_secret }
-    newCredBranchId.value = ''
-    newCredScopes.value = []
-    showCredForm.value = false
+    await revokeOrgApiKey(key.id)
     await load()
   } catch (err) {
-    const msg = extractErrorMessage(err)
-    credError.value = msg
-    showError(msg)
-  } finally {
-    creatingCred.value = false
+    showError(extractErrorMessage(err))
   }
 }
 
-async function revokeCred(id: string) {
-  try {
-    await revokeOrgCredential(id)
-    await load()
-  } catch (err) {
-    const msg = extractErrorMessage(err)
-    error.value = msg
-    showError(msg)
-  }
-}
-
-const rotatingCredId = ref<string | null>(null)
-
-async function rotateCred(cred: OrgCredential) {
-  rotatingCredId.value = cred.id
-  try {
-    const result = await rotateOrgCredential(cred.id)
-    revealedCred.value = {
-      client_id: cred.client_id,
-      client_secret: result.client_secret
-    }
-    await load()
-  } catch (err) {
-    const msg = extractErrorMessage(err)
-    error.value = msg
-    showError(msg)
-  } finally {
-    rotatingCredId.value = null
-  }
-}
-
-const showWebhookForm = ref(false)
-const creatingWebhook = ref(false)
-const webhookError = ref<string | null>(null)
-const revealedWebhookSecret = ref<{ url: string; secret: string } | null>(null)
-const newWebhookUrl = ref('')
-const newWebhookEvents = ref<string[]>([])
-const webhookDeliveries = ref<Record<string, OrgWebhookDelivery[]>>({})
-const expandedWebhookId = ref<string | null>(null)
-
-async function createWebhook() {
-  webhookError.value = null
-  if (!newWebhookUrl.value.trim() || newWebhookEvents.value.length === 0) {
-    webhookError.value = 'URL and at least one event type are required.'
-    return
-  }
-  creatingWebhook.value = true
-  try {
-    const result = await createOrgWebhookEndpoint({
-      url: newWebhookUrl.value.trim(),
-      event_types: newWebhookEvents.value,
-    })
-    revealedWebhookSecret.value = {
-      url: result.url,
-      secret: result.secret
-    }
-    newWebhookUrl.value = ''
-    newWebhookEvents.value = []
-    showWebhookForm.value = false
-    await load()
-  } catch (err) {
-    const msg = extractErrorMessage(err)
-    webhookError.value = msg
-    showError(msg)
-  } finally {
-    creatingWebhook.value = false
-  }
-}
-
-async function deleteWebhook(id: string) {
-  try {
-    await deleteOrgWebhookEndpoint(id)
-    await load()
-  } catch (err) {
-    const msg = extractErrorMessage(err)
-    error.value = msg
-    showError(msg)
-  }
-}
-
-function toggleWebhookEvent(eventType: string) {
-  const i = newWebhookEvents.value.indexOf(eventType)
-  if (i >= 0) newWebhookEvents.value.splice(i, 1)
-  else newWebhookEvents.value.push(eventType)
-}
-
-async function toggleDeliveries(endpointId: string) {
-  if (expandedWebhookId.value === endpointId) {
-    expandedWebhookId.value = null
-    return
-  }
-  expandedWebhookId.value = endpointId
-  if (!webhookDeliveries.value[endpointId]) {
-    try {
-      webhookDeliveries.value[endpointId] = await fetchOrgWebhookDeliveries(endpointId)
-    } catch (err) {
-      const msg = extractErrorMessage(err)
-      error.value = msg
-      showError(msg)
-    }
-  }
-}
-
-function toggleKeyScope(scope: string) {
-  const i = newKeyScopes.value.indexOf(scope)
-  if (i >= 0) newKeyScopes.value.splice(i, 1)
-  else newKeyScopes.value.push(scope)
-}
-
-function toggleCredScope(scope: string) {
-  const i = newCredScopes.value.indexOf(scope)
-  if (i >= 0) newCredScopes.value.splice(i, 1)
-  else newCredScopes.value.push(scope)
-}
-
-const apiKeyColumns = [
-  { key: 'name', label: 'Name' },
-  { key: 'auth_scheme', label: 'Scheme' },
-  { key: 'display', label: 'Key' },
-  { key: 'scopes', label: 'Scopes' },
-  { key: 'status', label: 'Status' },
-  { key: 'created_at', label: 'Created' },
-]
-
-const credColumns = [
-  { key: 'client_id', label: 'Client ID' },
-  { key: 'scopes', label: 'Scopes' },
-  { key: 'status', label: 'Status' },
-  { key: 'created_at', label: 'Created' },
-]
+const branchOptions = computed(() => [{ value: '', label: 'Org-wide' }, ...branches.value.map((b) => ({ value: b.id, label: b.name }))])
 </script>
 
 <template>
-  <DashboardLayout :org-id="props.orgId" title="API credentials">
-    <div class="flex flex-col gap-8">
-
-      <!-- Page intro -->
-      <div class="flex items-start gap-3 rounded-2xl bg-info/5 border border-info/20 px-4 py-3.5">
-        <ShieldCheckIcon class="w-4 h-4 text-info shrink-0 mt-0.5" />
-        <p class="text-xs text-text-secondary leading-relaxed">
-          These credentials are for <span class="font-semibold text-text-primary">machine-to-machine integration</span>
-          — your own systems calling the RigePay API directly — not for logging into this dashboard.
-        </p>
+  <DashboardLayout :org-id="props.orgId" title="API Clients">
+    <div class="flex flex-col gap-6">
+      <div class="flex items-start justify-between gap-4">
+        <div>
+          <p class="text-[11px] font-semibold uppercase tracking-wider text-text-muted">Developers</p>
+          <h1 class="text-lg font-bold text-text-primary mt-0.5">API Clients</h1>
+          <p class="text-sm text-text-muted mt-0.5 max-w-xl">
+            Create confidential clients for server-to-server RigePay API access using the OAuth2 client-credentials grant.
+          </p>
+        </div>
+        <AppButton size="md" @click="openCreate">
+          <template #icon><PlusIcon class="w-4 h-4" /></template>
+          Create API Client
+        </AppButton>
       </div>
 
-      <!-- API keys -->
-      <AppCard>
-        <div class="flex items-start justify-between gap-4 mb-5 pb-4 border-b border-border">
-          <div>
-            <span class="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-text-muted mb-1">
-              <KeyRoundIcon class="w-3.5 h-3.5 text-primary" />Authentication
-            </span>
-            <h2 class="text-base font-bold text-text-primary">API keys</h2>
-            <p class="text-xs text-text-muted mt-0.5">Bearer tokens or HMAC-signed keys for direct API access.</p>
+      <div v-if="revealedCred" class="flex items-start gap-3 rounded-xl border border-success/30 bg-success-light px-4 py-4">
+        <CheckCircle2Icon class="w-4 h-4 text-success-text shrink-0 mt-0.5" />
+        <div class="flex flex-col gap-1.5 min-w-0 text-sm text-success-text">
+          <p class="font-semibold">API client secret ready — shown once.</p>
+          <div class="rounded-lg bg-white/50 px-3 py-2 flex flex-col gap-1">
+            <p class="font-mono text-xs break-all"><span class="font-sans font-semibold">Client ID </span>{{ revealedCred.client_id }}</p>
+            <p class="font-mono text-xs break-all"><span class="font-sans font-semibold">Secret </span>{{ revealedCred.client_secret }}</p>
           </div>
-          <AppButton size="sm" @click="showKeyForm = !showKeyForm">
-            <template #icon><PlusIcon class="w-4 h-4" /></template>
-            New API key
+          <button class="text-xs font-semibold self-start underline" @click="revealedCred = null">Dismiss</button>
+        </div>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-3">
+        <div class="relative flex-1 min-w-56">
+          <SearchIcon class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+          <input v-model="search" type="text" placeholder="Search clients" class="h-10 w-full rounded-lg border border-input-border bg-input-bg pl-10 pr-3.5 text-sm font-medium text-text-primary outline-none focus:border-input-border-focused focus:ring-2 focus:ring-primary/15" />
+        </div>
+        <AppSelect
+          v-model="statusFilter"
+          class="w-40"
+          :options="[{ value: '', label: 'All statuses' }, { value: 'active', label: 'Active' }, { value: 'revoked', label: 'Revoked' }]"
+        />
+        <AppButton size="sm" variant="secondary" :loading="loading" @click="load">
+          <template #icon><RefreshCwIcon class="w-4 h-4" /></template>Refresh
+        </AppButton>
+      </div>
+
+      <AppCard padding="none">
+        <div v-if="loading" class="px-5 py-10 text-center text-sm text-text-muted">Loading…</div>
+        <div v-else-if="!filteredCredentials.length" class="px-5 py-14 text-center">
+          <KeyRoundIcon class="w-9 h-9 mx-auto text-text-muted/40" />
+          <p class="text-sm font-bold text-text-primary mt-3">No API clients yet</p>
+          <p class="text-sm text-text-muted mt-1">Create a client to issue OAuth2 tokens for server integrations.</p>
+          <AppButton size="sm" class="mt-4" @click="openCreate">
+            <template #icon><PlusIcon class="w-4 h-4" /></template>Create API Client
+          </AppButton>
+        </div>
+        <div v-else class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="text-left text-[11px] font-semibold uppercase tracking-wider text-text-muted bg-surface-2/40 border-b border-border">
+                <th class="px-5 py-2.5">Name</th>
+                <th class="px-5 py-2.5">Client ID</th>
+                <th class="px-5 py-2.5">Scopes</th>
+                <th class="px-5 py-2.5">Status</th>
+                <th class="px-5 py-2.5">Created</th>
+                <th class="px-5 py-2.5 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="c in filteredCredentials" :key="c.id" class="border-b border-border last:border-0">
+                <td class="px-5 py-3">
+                  <p class="font-semibold text-text-primary">{{ c.name || '—' }}</p>
+                  <p v-if="c.description" class="text-xs text-text-muted">{{ c.description }}</p>
+                </td>
+                <td class="px-5 py-3 font-mono text-xs text-text-secondary">{{ c.client_id }}</td>
+                <td class="px-5 py-3 text-xs text-text-muted max-w-60">{{ c.scopes.join(', ') }}</td>
+                <td class="px-5 py-3"><AppBadge :variant="c.status === 'active' ? 'success' : 'neutral'" size="sm">{{ c.status }}</AppBadge></td>
+                <td class="px-5 py-3 text-text-muted text-xs whitespace-nowrap">{{ formatDate(c.created_at) }}</td>
+                <td class="px-5 py-3 text-right whitespace-nowrap">
+                  <template v-if="c.status === 'active'">
+                    <button class="text-xs font-medium text-text-secondary hover:text-primary px-2 py-1" :disabled="rotatingCredId === c.id" @click="rotateCred(c)">
+                      <RefreshCwIcon class="w-3.5 h-3.5 inline" :class="{ 'animate-spin': rotatingCredId === c.id }" /> Rotate
+                    </button>
+                    <button class="text-xs font-medium text-error-text hover:bg-error-light rounded px-2 py-1" @click="revokeCred(c)">
+                      <BanIcon class="w-3.5 h-3.5 inline" /> Revoke
+                    </button>
+                  </template>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </AppCard>
+
+      <AppCard>
+        <button type="button" class="flex items-center gap-1.5 text-sm font-bold text-text-primary" @click="showIntegrationExample = !showIntegrationExample">
+          <ChevronRightIcon class="w-4 h-4 transition-transform" :class="{ 'rotate-90': showIntegrationExample }" />
+          Integration example
+        </button>
+        <div v-if="showIntegrationExample" class="grid grid-cols-1 lg:grid-cols-2 gap-3 mt-3">
+          <pre class="text-[11px] bg-[#0d1117] text-[#c9d1d9] rounded-xl p-4 overflow-x-auto">{{ tokenSnippet }}</pre>
+          <pre class="text-[11px] bg-[#0d1117] text-[#c9d1d9] rounded-xl p-4 overflow-x-auto">{{ callSnippet }}</pre>
+        </div>
+      </AppCard>
+
+      <!-- API keys (RigePay-specific, kept) -->
+      <AppCard padding="none">
+        <div class="flex items-start justify-between gap-4 px-5 pt-5 pb-4 border-b border-border">
+          <div>
+            <p class="text-[10px] font-bold uppercase tracking-widest text-text-muted mb-1">Also available</p>
+            <h2 class="text-base font-bold text-text-primary">API keys</h2>
+            <p class="text-xs text-text-muted mt-0.5">Long-lived bearer tokens or HMAC-signed keys — simpler than OAuth for single integrations.</p>
+          </div>
+          <AppButton size="sm" variant="secondary" @click="openKeyModal">
+            <template #icon><PlusIcon class="w-4 h-4" /></template>New API key
           </AppButton>
         </div>
 
-        <div v-if="revealedKey" class="flex items-start gap-3 rounded-2xl border border-success/30 bg-success-light px-4 py-4 mb-4">
+        <div v-if="revealedKey" class="mx-5 mt-4 flex items-start gap-3 rounded-xl border border-success/30 bg-success-light px-4 py-4">
           <CheckCircle2Icon class="w-4 h-4 text-success-text shrink-0 mt-0.5" />
           <div class="flex flex-col gap-1.5 min-w-0 text-sm text-success-text">
             <p class="font-semibold">API key "{{ revealedKey.name }}" — new secret ready.</p>
-            <template v-if="revealedKey.auth_scheme === 'hmac'">
-              <div class="rounded-lg bg-white/50 px-3 py-2 flex flex-col gap-1">
-                <p class="font-mono text-xs break-all"><span class="font-sans font-semibold not-italic">Key ID </span>{{ revealedKey.key_id }}</p>
-                <p class="font-mono text-xs break-all"><span class="font-sans font-semibold not-italic">Secret </span>{{ revealedKey.secret }}</p>
-              </div>
-              <p class="text-xs">Copy the secret now — it will not be shown again. Use it to sign requests (see docs for the X-RigePay-Key-Id / Timestamp / Request-Id / Signature headers) — never send it directly.</p>
-            </template>
-            <template v-else>
-              <p class="rounded-lg bg-white/50 px-3 py-2 font-mono text-xs break-all">{{ revealedKey.full_key }}</p>
-              <p class="text-xs">Copy this now — it will not be shown again.</p>
-            </template>
+            <div v-if="revealedKey.auth_scheme === 'hmac'" class="rounded-lg bg-white/50 px-3 py-2 flex flex-col gap-1">
+              <p class="font-mono text-xs break-all"><span class="font-sans font-semibold">Key ID </span>{{ revealedKey.key_id }}</p>
+              <p class="font-mono text-xs break-all"><span class="font-sans font-semibold">Secret </span>{{ revealedKey.secret }}</p>
+            </div>
+            <p v-else class="rounded-lg bg-white/50 px-3 py-2 font-mono text-xs break-all">{{ revealedKey.full_key }}</p>
+            <button class="text-xs font-semibold self-start underline" @click="revealedKey = null">Dismiss</button>
           </div>
         </div>
 
-        <div v-if="showKeyForm" class="rounded-2xl border-2 border-dashed border-primary/25 bg-primary3 p-5 mb-4">
-          <div v-if="keyError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ keyError }}</div>
-          <form class="flex flex-col gap-4" @submit.prevent="createKey">
-            <AppInput v-model="newKeyName" label="Key name" placeholder="e.g. Backend integration" required />
-            <AppSelect
-              v-model="newKeyAuthScheme"
-              label="Authentication scheme"
-              :options="[
-                { value: 'bearer', label: 'Bearer token — send the key directly (simplest)' },
-                { value: 'hmac', label: 'HMAC request signing — sign each request, secret never sent' },
-              ]"
-            />
-            <AppSelect
-              v-model="newKeyBranchId"
-              label="Branch (optional — leave unset for org-wide)"
-              :options="[{ value: '', label: 'Org-wide' }, ...branches.map((b) => ({ value: b.id, label: b.name }))]"
-            />
-            <div class="flex flex-col gap-2">
-              <label class="text-[11px] font-bold uppercase tracking-[0.14em] text-text-muted">Scopes</label>
-              <div class="flex flex-wrap gap-2">
-                <label
-                  v-for="s in availableScopes" :key="s"
-                  class="cursor-pointer select-none text-xs font-medium px-3 py-1.5 rounded-full border transition-colors"
-                  :class="newKeyScopes.includes(s) ? 'bg-primary/10 border-primary/40 text-primary' : 'bg-surface border-border text-text-secondary hover:border-primary/30'"
-                >
-                  <input type="checkbox" :checked="newKeyScopes.includes(s)" class="sr-only" @change="toggleKeyScope(s)" />
-                  {{ s }}
-                </label>
-              </div>
-            </div>
-            <div class="flex gap-2">
-              <AppButton type="submit" :loading="creatingKey">Create key</AppButton>
-              <AppButton type="button" variant="ghost" @click="showKeyForm = false">Cancel</AppButton>
-            </div>
-          </form>
-        </div>
-
-        <AppTable :columns="apiKeyColumns" :rows="apiKeys" :loading="loading" empty-message="No API keys yet.">
-          <template #cell-auth_scheme="{ value }">
-            <AppBadge :variant="value === 'hmac' ? 'info' : 'neutral'" size="sm">{{ value === 'hmac' ? 'HMAC' : 'Bearer' }}</AppBadge>
-          </template>
-          <template #cell-scopes="{ value }">
-            <span class="text-xs">{{ (value as string[]).join(', ') }}</span>
-          </template>
-          <template #cell-status="{ value }">
-            <AppBadge :variant="value === 'active' ? 'success' : 'neutral'" size="sm">{{ value }}</AppBadge>
-          </template>
-          <template #cell-created_at="{ value }">{{ formatDate(value as string) }}</template>
-        </AppTable>
-
-        <div v-if="apiKeys.some((k) => k.status === 'active')" class="flex flex-col divide-y divide-border mt-4 pt-1">
-          <div v-for="k in apiKeys.filter((k) => k.status === 'active')" :key="k.id" class="flex items-center justify-between py-2.5">
-            <span class="text-sm font-medium text-text-primary truncate">{{ k.name }}</span>
-            <div class="flex items-center gap-1 shrink-0">
-              <button
-                type="button"
-                class="inline-flex items-center gap-1.5 text-xs font-medium text-text-secondary hover:text-primary hover:bg-primary/5 rounded-lg px-2.5 py-1.5 transition-colors disabled:opacity-50"
-                :disabled="rotatingKeyId === k.id"
-                @click="rotateKey(k)"
-              >
-                <RefreshCwIcon class="w-3.5 h-3.5" :class="{ 'animate-spin': rotatingKeyId === k.id }" />
-                {{ rotatingKeyId === k.id ? 'Rotating…' : 'Rotate' }}
-              </button>
-              <button
-                type="button"
-                class="inline-flex items-center gap-1.5 text-xs font-medium text-error-text hover:bg-error-light rounded-lg px-2.5 py-1.5 transition-colors"
-                @click="revokeKey(k.id)"
-              >
-                <BanIcon class="w-3.5 h-3.5" />Revoke
-              </button>
-            </div>
-          </div>
+        <div v-if="!loading && !apiKeys.length" class="px-5 py-8 text-sm text-text-muted">No API keys yet.</div>
+        <div v-else-if="apiKeys.length" class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="text-left text-[11px] font-semibold uppercase tracking-wider text-text-muted bg-surface-2/40 border-y border-border">
+                <th class="px-5 py-2.5">Name</th>
+                <th class="px-5 py-2.5">Scheme</th>
+                <th class="px-5 py-2.5">Scopes</th>
+                <th class="px-5 py-2.5">Status</th>
+                <th class="px-5 py-2.5">Created</th>
+                <th class="px-5 py-2.5 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="k in apiKeys" :key="k.id" class="border-b border-border last:border-0">
+                <td class="px-5 py-3 font-semibold text-text-primary">{{ k.name }}</td>
+                <td class="px-5 py-3"><AppBadge :variant="k.auth_scheme === 'hmac' ? 'info' : 'neutral'" size="sm">{{ k.auth_scheme === 'hmac' ? 'HMAC' : 'Bearer' }}</AppBadge></td>
+                <td class="px-5 py-3 text-xs text-text-muted max-w-60">{{ k.scopes.join(', ') }}</td>
+                <td class="px-5 py-3"><AppBadge :variant="k.status === 'active' ? 'success' : 'neutral'" size="sm">{{ k.status }}</AppBadge></td>
+                <td class="px-5 py-3 text-text-muted text-xs whitespace-nowrap">{{ formatDate(k.created_at) }}</td>
+                <td class="px-5 py-3 text-right whitespace-nowrap">
+                  <template v-if="k.status === 'active'">
+                    <button class="text-xs font-medium text-text-secondary hover:text-primary px-2 py-1" :disabled="rotatingKeyId === k.id" @click="rotateKey(k)">
+                      <RefreshCwIcon class="w-3.5 h-3.5 inline" :class="{ 'animate-spin': rotatingKeyId === k.id }" /> Rotate
+                    </button>
+                    <button class="text-xs font-medium text-error-text hover:bg-error-light rounded px-2 py-1" @click="revokeKey(k)">
+                      <BanIcon class="w-3.5 h-3.5 inline" /> Revoke
+                    </button>
+                  </template>
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </AppCard>
 
-      <!-- OAuth credentials -->
-      <AppCard>
-        <div class="flex items-start justify-between gap-4 mb-5 pb-4 border-b border-border">
+      <RouterLink
+        :to="{ name: 'org-webhooks', params: { orgId: props.orgId } }"
+        class="flex items-center justify-between gap-3 rounded-xl border border-border bg-surface px-4 py-3.5 hover:border-border-strong transition-colors"
+      >
+        <div class="flex items-center gap-3">
+          <span class="w-9 h-9 rounded-lg bg-primary-muted text-primary flex items-center justify-center shrink-0"><WebhookIcon class="w-4.5 h-4.5" /></span>
           <div>
-            <span class="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-text-muted mb-1">
-              <FingerprintIcon class="w-3.5 h-3.5 text-primary" />Authentication
-            </span>
-            <h2 class="text-base font-bold text-text-primary">OAuth credentials</h2>
-            <p class="text-xs text-text-muted mt-0.5">Client ID / secret pairs for OAuth 2.0 client-credentials flows.</p>
-          </div>
-          <AppButton size="sm" @click="showCredForm = !showCredForm">
-            <template #icon><PlusIcon class="w-4 h-4" /></template>
-            New credential
-          </AppButton>
-        </div>
-
-        <div v-if="revealedCred" class="flex items-start gap-3 rounded-2xl border border-success/30 bg-success-light px-4 py-4 mb-4">
-          <CheckCircle2Icon class="w-4 h-4 text-success-text shrink-0 mt-0.5" />
-          <div class="flex flex-col gap-1.5 min-w-0 text-sm text-success-text">
-            <p class="font-semibold">Credential — new secret ready.</p>
-            <div class="rounded-lg bg-white/50 px-3 py-2 flex flex-col gap-1">
-              <p class="font-mono text-xs break-all"><span class="font-sans font-semibold not-italic">Client ID </span>{{ revealedCred.client_id }}</p>
-              <p class="font-mono text-xs break-all"><span class="font-sans font-semibold not-italic">Secret </span>{{ revealedCred.client_secret }}</p>
-            </div>
-            <p class="text-xs">Copy the secret now — it will not be shown again.</p>
+            <p class="text-sm font-semibold text-text-primary">Webhooks</p>
+            <p class="text-xs text-text-muted">Manage endpoints, deliveries and event types</p>
           </div>
         </div>
-
-        <div v-if="showCredForm" class="rounded-2xl border-2 border-dashed border-primary/25 bg-primary/3 p-5 mb-4">
-          <div v-if="credError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ credError }}</div>
-          <form class="flex flex-col gap-4" @submit.prevent="createCred">
-            <AppSelect
-              v-model="newCredBranchId"
-              label="Branch (optional — leave unset for org-wide)"
-              :options="[{ value: '', label: 'Org-wide' }, ...branches.map((b) => ({ value: b.id, label: b.name }))]"
-            />
-            <div class="flex flex-col gap-2">
-              <label class="text-[11px] font-bold uppercase tracking-[0.14em] text-text-muted">Scopes</label>
-              <div class="flex flex-wrap gap-2">
-                <label
-                  v-for="s in availableScopes" :key="s"
-                  class="cursor-pointer select-none text-xs font-medium px-3 py-1.5 rounded-full border transition-colors"
-                  :class="newCredScopes.includes(s) ? 'bg-primary/10 border-primary/40 text-primary' : 'bg-surface border-border text-text-secondary hover:border-primary/30'"
-                >
-                  <input type="checkbox" :checked="newCredScopes.includes(s)" class="sr-only" @change="toggleCredScope(s)" />
-                  {{ s }}
-                </label>
-              </div>
-            </div>
-            <div class="flex gap-2">
-              <AppButton type="submit" :loading="creatingCred">Create credential</AppButton>
-              <AppButton type="button" variant="ghost" @click="showCredForm = false">Cancel</AppButton>
-            </div>
-          </form>
-        </div>
-
-        <AppTable :columns="credColumns" :rows="credentials" :loading="loading" empty-message="No OAuth credentials yet.">
-          <template #cell-client_id="{ value }">
-            <span class="font-mono text-xs text-text-primary">{{ value }}</span>
-          </template>
-          <template #cell-scopes="{ value }">
-            <span class="text-xs">{{ (value as string[]).join(', ') }}</span>
-          </template>
-          <template #cell-status="{ value }">
-            <AppBadge :variant="value === 'active' ? 'success' : 'neutral'" size="sm">{{ value }}</AppBadge>
-          </template>
-          <template #cell-created_at="{ value }">{{ formatDate(value as string) }}</template>
-        </AppTable>
-
-        <div v-if="credentials.some((c) => c.status === 'active')" class="flex flex-col divide-y divide-border mt-4 pt-1">
-          <div v-for="c in credentials.filter((c) => c.status === 'active')" :key="c.id" class="flex items-center justify-between py-2.5 gap-3">
-            <span class="text-sm font-mono text-text-primary truncate">{{ c.client_id }}</span>
-            <div class="flex items-center gap-1 shrink-0">
-              <button
-                type="button"
-                class="inline-flex items-center gap-1.5 text-xs font-medium text-text-secondary hover:text-primary hover:bg-primary/5 rounded-lg px-2.5 py-1.5 transition-colors disabled:opacity-50"
-                :disabled="rotatingCredId === c.id"
-                @click="rotateCred(c)"
-              >
-                <RefreshCwIcon class="w-3.5 h-3.5" :class="{ 'animate-spin': rotatingCredId === c.id }" />
-                {{ rotatingCredId === c.id ? 'Rotating…' : 'Rotate' }}
-              </button>
-              <button
-                type="button"
-                class="inline-flex items-center gap-1.5 text-xs font-medium text-error-text hover:bg-error-light rounded-lg px-2.5 py-1.5 transition-colors"
-                @click="revokeCred(c.id)"
-              >
-                <BanIcon class="w-3.5 h-3.5" />Revoke
-              </button>
-            </div>
-          </div>
-        </div>
-      </AppCard>
-
-      <!-- Webhook endpoints -->
-      <AppCard>
-        <div class="flex items-start justify-between gap-4 mb-5 pb-4 border-b border-border">
-          <div>
-            <span class="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-text-muted mb-1">
-              <WebhookIcon class="w-3.5 h-3.5 text-primary" />Events
-            </span>
-            <h2 class="text-base font-bold text-text-primary">Webhook endpoints</h2>
-            <p class="text-xs text-text-muted mt-0.5">
-              RigePay POSTs an event to your URL when something you've subscribed to happens — a collection settles, a payout completes, a transfer finishes. Every delivery is HMAC-signed and retried on failure.
-            </p>
-          </div>
-          <AppButton size="sm" @click="showWebhookForm = !showWebhookForm">
-            <template #icon><PlusIcon class="w-4 h-4" /></template>
-            New endpoint
-          </AppButton>
-        </div>
-
-        <div v-if="revealedWebhookSecret" class="flex items-start gap-3 rounded-2xl border border-success/30 bg-success-light px-4 py-4 mb-4">
-          <CheckCircle2Icon class="w-4 h-4 text-success-text shrink-0 mt-0.5" />
-          <div class="flex flex-col gap-1.5 min-w-0 text-sm text-success-text">
-            <p class="font-semibold">Webhook endpoint created for {{ revealedWebhookSecret.url }}.</p>
-            <p class="rounded-lg bg-white/50 px-3 py-2 font-mono text-xs break-all">{{ revealedWebhookSecret.secret }}</p>
-            <p class="text-xs">Copy this now — it will not be shown again. Use it to verify the X-RigePay-Signature header on every delivery.</p>
-          </div>
-        </div>
-
-        <div v-if="showWebhookForm" class="rounded-2xl border-2 border-dashed border-primary/25 bg-primary/3 p-5 mb-4">
-          <div v-if="webhookError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ webhookError }}</div>
-          <form class="flex flex-col gap-4" @submit.prevent="createWebhook">
-            <AppInput v-model="newWebhookUrl" label="Endpoint URL" placeholder="https://your-system.example.com/webhooks/rigepay" required />
-            <div class="flex flex-col gap-2">
-              <label class="text-[11px] font-bold uppercase tracking-[0.14em] text-text-muted">Event types</label>
-              <div class="flex flex-wrap gap-2">
-                <label
-                  v-for="e in WEBHOOK_EVENT_TYPES" :key="e"
-                  class="cursor-pointer select-none text-xs font-mono font-medium px-3 py-1.5 rounded-full border transition-colors"
-                  :class="newWebhookEvents.includes(e) ? 'bg-primary/10 border-primary/40 text-primary' : 'bg-surface border-border text-text-secondary hover:border-primary/30'"
-                >
-                  <input type="checkbox" :checked="newWebhookEvents.includes(e)" class="sr-only" @change="toggleWebhookEvent(e)" />
-                  {{ e }}
-                </label>
-              </div>
-            </div>
-            <div class="flex gap-2">
-              <AppButton type="submit" :loading="creatingWebhook">Create endpoint</AppButton>
-              <AppButton type="button" variant="ghost" @click="showWebhookForm = false">Cancel</AppButton>
-            </div>
-          </form>
-        </div>
-
-        <div v-if="!webhookEndpoints.length && !loading" class="text-sm text-text-muted py-8 text-center">No webhook endpoints yet.</div>
-
-        <div class="flex flex-col gap-3">
-          <div v-for="ep in webhookEndpoints" :key="ep.id" class="rounded-2xl border border-border overflow-hidden">
-            <div class="p-4 flex items-center justify-between gap-4 flex-wrap">
-              <div class="flex items-center gap-3 min-w-0">
-                <span class="flex items-center justify-center w-9 h-9 rounded-full bg-primary/10 shrink-0">
-                  <WebhookIcon class="w-4 h-4 text-primary" />
-                </span>
-                <div class="min-w-0">
-                  <p class="text-sm font-semibold text-text-primary font-mono truncate">{{ ep.url }}</p>
-                  <p class="text-xs text-text-muted mt-0.5">{{ ep.event_types.join(', ') }} · {{ formatDate(ep.created_at) }}</p>
-                </div>
-              </div>
-              <div class="flex items-center gap-2 shrink-0">
-                <AppBadge :variant="ep.is_active ? 'success' : 'neutral'" size="sm">{{ ep.is_active ? 'active' : 'inactive' }}</AppBadge>
-                <button
-                  type="button"
-                  class="inline-flex items-center gap-1.5 text-xs font-medium text-text-secondary hover:text-primary hover:bg-primary/5 rounded-lg px-2.5 py-1.5 transition-colors"
-                  @click="toggleDeliveries(ep.id)"
-                >
-                  <component :is="expandedWebhookId === ep.id ? EyeOffIcon : EyeIcon" class="w-3.5 h-3.5" />
-                  {{ expandedWebhookId === ep.id ? 'Hide' : 'View' }} deliveries
-                </button>
-                <button
-                  type="button"
-                  class="inline-flex items-center gap-1.5 text-xs font-medium text-error-text hover:bg-error-light rounded-lg px-2.5 py-1.5 transition-colors"
-                  @click="deleteWebhook(ep.id)"
-                >
-                  <Trash2Icon class="w-3.5 h-3.5" />Delete
-                </button>
-              </div>
-            </div>
-            <div v-if="expandedWebhookId === ep.id" class="border-t border-border bg-surface/60 px-4 py-3">
-              <div v-if="!webhookDeliveries[ep.id]?.length" class="text-xs text-text-muted py-2">No deliveries yet.</div>
-              <div v-else class="flex flex-col divide-y divide-border">
-                <div v-for="d in webhookDeliveries[ep.id]" :key="d.id" class="flex items-center justify-between gap-3 text-xs py-2">
-                  <span class="font-mono text-text-primary truncate">{{ d.event_type }}</span>
-                  <span class="text-text-muted whitespace-nowrap">attempt {{ d.attempt_count }}{{ d.last_response_code ? ` · HTTP ${d.last_response_code}` : '' }}</span>
-                  <AppBadge
-                    :variant="d.status === 'delivered' ? 'success' : d.status === 'exhausted' ? 'error' : 'neutral'"
-                    size="sm"
-                  >{{ d.status }}</AppBadge>
-                  <span class="text-text-muted whitespace-nowrap">{{ formatDate(d.created_at) }}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </AppCard>
+        <ChevronRightIcon class="w-4 h-4 text-text-muted" />
+      </RouterLink>
     </div>
+
+    <AppModal v-model="showCreate" title="Create API Client" size="md">
+      <div class="flex flex-col gap-4">
+        <p class="text-xs text-text-muted">Secrets are shown once after creation.</p>
+        <div v-if="createError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2">{{ createError }}</div>
+        <AppInput v-model="form.name" label="Name" placeholder="e.g. Production integration" required />
+        <div class="flex flex-col gap-1.5">
+          <label class="text-[13px] font-medium text-text-secondary">Description</label>
+          <textarea v-model="form.description" rows="2" class="rounded-lg border border-input-border bg-input-bg px-3 py-2 text-sm text-text-primary outline-none focus:border-input-border-focused focus:ring-2 focus:ring-primary/15" />
+        </div>
+        <AppSelect v-model="form.branch_id" label="Branch scope" :options="branchOptions" />
+        <div class="flex flex-col gap-2">
+          <label class="text-[13px] font-medium text-text-secondary">Scopes <span class="text-error">*</span></label>
+          <div class="grid grid-cols-2 gap-2">
+            <label
+              v-for="s in API_CLIENT_SCOPES" :key="s.value"
+              class="flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium cursor-pointer transition-colors"
+              :class="form.scopes.includes(s.value) ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border text-text-secondary hover:border-primary/30'"
+            >
+              <input type="checkbox" :checked="form.scopes.includes(s.value)" class="rounded border-border" @change="toggleScope(s.value)" />
+              {{ s.label }}
+            </label>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <div class="flex justify-end gap-2">
+          <AppButton variant="secondary" @click="showCreate = false">Cancel</AppButton>
+          <AppButton :loading="creating" @click="submitCreate">
+            <template #icon><PlusIcon class="w-4 h-4" /></template>Create API Client
+          </AppButton>
+        </div>
+      </template>
+    </AppModal>
+
+    <AppModal v-model="showKeyModal" title="New API key" size="md">
+      <div class="flex flex-col gap-4">
+        <div v-if="keyError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2">{{ keyError }}</div>
+        <AppInput v-model="keyForm.name" label="Key name" placeholder="e.g. Backend integration" required />
+        <AppSelect
+          v-model="keyForm.auth_scheme"
+          label="Authentication scheme"
+          :options="[
+            { value: 'bearer', label: 'Bearer token — send the key directly (simplest)' },
+            { value: 'hmac', label: 'HMAC request signing — secret never sent' },
+          ]"
+        />
+        <AppSelect v-model="keyForm.branch_id" label="Branch scope" :options="branchOptions" />
+        <div class="flex flex-col gap-2">
+          <label class="text-[13px] font-medium text-text-secondary">Scopes</label>
+          <div class="grid grid-cols-2 gap-2">
+            <label
+              v-for="s in API_CLIENT_SCOPES" :key="s.value"
+              class="flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium cursor-pointer transition-colors"
+              :class="keyForm.scopes.includes(s.value) ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border text-text-secondary hover:border-primary/30'"
+            >
+              <input type="checkbox" :checked="keyForm.scopes.includes(s.value)" class="rounded border-border" @change="toggleKeyScope(s.value)" />
+              {{ s.label }}
+            </label>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <div class="flex justify-end gap-2">
+          <AppButton variant="secondary" @click="showKeyModal = false">Cancel</AppButton>
+          <AppButton :loading="creatingKey" @click="createKey">Create key</AppButton>
+        </div>
+      </template>
+    </AppModal>
   </DashboardLayout>
 </template>

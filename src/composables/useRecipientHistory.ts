@@ -11,7 +11,7 @@ export function useRecipientHistory(isBranch = false) {
       recipients.value = await fetchInvoiceRecipientHistory(isBranch)
       loaded.value = true
     } catch {
-      // Non-critical — the compose form still works without autocomplete.
+      console.log("failed to load")
     }
   }
 

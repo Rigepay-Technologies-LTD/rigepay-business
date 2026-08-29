@@ -20,7 +20,7 @@ defineEmits<{ (e: 'update:modelValue', v: string): void }>()
 
 <template>
   <div class="flex flex-col gap-1.5">
-    <label v-if="label" class="text-xs font-semibold text-text-secondary uppercase tracking-wide inline-flex items-center">
+    <label v-if="label" class="text-[13px] font-medium text-text-secondary inline-flex items-center">
       {{ label }}<span v-if="required" class="text-error ml-0.5">*</span>
       <AppTooltip v-if="tooltip" :text="tooltip" />
     </label>
@@ -39,14 +39,14 @@ defineEmits<{ (e: 'update:modelValue', v: string): void }>()
         :required="required"
         :list="list"
         :class="[
-          'w-full h-10 rounded-xl border text-sm font-medium text-text-primary placeholder:text-input-placeholder',
-          'bg-input-bg outline-none transition-all duration-200',
-          'focus:ring-2 focus:ring-primary/20',
-          $slots.icon ? 'pl-9 pr-3.5' : 'px-3.5',
+          'w-full h-10 rounded-lg border text-sm text-text-primary placeholder:text-input-placeholder',
+          'bg-input-bg outline-none transition-colors duration-150',
+          'focus:ring-2 focus:ring-primary/15',
+          $slots.icon ? 'pl-9 pr-3' : 'px-3',
           error
             ? 'border-error focus:border-error'
             : 'border-input-border focus:border-input-border-focused',
-          disabled ? 'opacity-50 cursor-not-allowed' : '',
+          disabled ? 'opacity-50 cursor-not-allowed bg-surface-2' : '',
         ]"
         @input="$emit('update:modelValue', ($event.target as HTMLInputElement).value)"
       />

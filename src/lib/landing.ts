@@ -11,7 +11,17 @@ export function resolveLandingRoute(meta: SessionMeta): ResolvedLanding {
     if (!meta.branchId) {
       throw new Error('branch_member session is missing branch_id')
     }
-    return { name: 'branch-dashboard', params: { orgId: meta.organizationId, branchId: meta.branchId } }
+    return {
+      name: 'branch-dashboard',
+      params: {
+        orgId: meta.organizationId,
+        branchId: meta.branchId
+      }
+    }
   }
-  return { name: 'org-dashboard', params: { orgId: meta.organizationId } }
+  return {
+    name: 'org-dashboard', params: {
+      orgId: meta.organizationId
+    }
+  }
 }

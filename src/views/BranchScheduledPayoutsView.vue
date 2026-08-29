@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import {
-  fetchScheduledPayouts, createScheduledPayout, confirmScheduledPayout, pauseScheduledPayout, resumeScheduledPayout, cancelScheduledPayout,
+  fetchScheduledPayouts, createScheduledPayout, confirmScheduledPayout,
   fetchOrgBankCodes, fetchBranchPayoutFeeEstimate, validateOrgShortcode,
   type ScheduledPayout, type BankCode, type PayoutFeeEstimate,
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
 import { formatMoney, formatDate } from '@/lib/format'
 import { useResponseModal } from '@/composables/useResponseModal'
-import { useConfirmModal } from '@/composables/useConfirmModal'
 import DashboardLayout from '@/layouts/DashboardLayout.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppButton from '@/components/ui/AppButton.vue'
@@ -16,13 +16,23 @@ import AppInput from '@/components/ui/AppInput.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import AppTable from '@/components/ui/AppTable.vue'
 import AppBadge from '@/components/ui/AppBadge.vue'
+import AppModal from '@/components/ui/AppModal.vue'
 import ConfirmSecretInput from '@/components/ConfirmSecretInput.vue'
 import OtpConfirmCard from '@/components/OtpConfirmCard.vue'
 import { PlusIcon } from 'lucide-vue-next'
 
 const props = defineProps<{ orgId: string; branchId: string }>()
+const router = useRouter()
 const { showError } = useResponseModal()
-const { confirmAction } = useConfirmModal()
+
+function openDetail(id: string) {
+  router.push({ name: 'branch-scheduled-payout-detail', params: { orgId: props.orgId, branchId: props.branchId, scheduleId: id } })
+}
+const summary = computed(() => ({
+  active: schedules.value.filter((s) => s.status === 'ACTIVE').length,
+  paused: schedules.value.filter((s) => s.status === 'PAUSED').length,
+  total: schedules.value.length,
+}))
 
 const loading = ref(true)
 const error = ref<string | null>(null)
@@ -321,60 +331,6 @@ function cancelOtp() {
   otpError.value = null
 }
 
-const actionLoading = ref<string | null>(null)
-const actionError = ref<Record<string, string>>({})
-
-async function handlePause(id: string) {
-  actionLoading.value = id
-  actionError.value = { ...actionError.value, [id]: '' }
-  try {
-    await pauseScheduledPayout(id, true)
-    await load()
-  } catch (err) {
-    const msg = extractErrorMessage(err)
-    actionError.value = { ...actionError.value, [id]: msg }
-    showError(msg)
-  } finally {
-    actionLoading.value = null
-  }
-}
-async function handleResume(id: string) {
-  actionLoading.value = id
-  actionError.value = { ...actionError.value, [id]: '' }
-  try {
-    await resumeScheduledPayout(id, true)
-    await load()
-  } catch (err) {
-    const msg = extractErrorMessage(err)
-    actionError.value = { ...actionError.value, [id]: msg }
-    showError(msg)
-  } finally {
-    actionLoading.value = null
-  }
-}
-async function handleCancel(id: string) {
-  const ok = await confirmAction({
-    title: 'Cancel this scheduled payout?',
-    message: 'This cannot be undone.',
-    confirmLabel: 'Cancel payout',
-    cancelLabel: 'Keep it',
-    danger: true,
-  })
-  if (!ok) return
-  actionLoading.value = id
-  actionError.value = { ...actionError.value, [id]: '' }
-  try {
-    await cancelScheduledPayout(id, true)
-    await load()
-  } catch (err) {
-    const msg = extractErrorMessage(err)
-    actionError.value = { ...actionError.value, [id]: msg }
-    showError(msg)
-  } finally {
-    actionLoading.value = null
-  }
-}
-
 const scheduleColumns = [
   { key: 'recipient_name', label: 'Recipient' },
   { key: 'amount_cents', label: 'Amount', class: 'text-right' },
@@ -394,21 +350,47 @@ function statusVariant(status: string) {
 <template>
   <DashboardLayout :org-id="props.orgId" :branch-id="props.branchId" title="Scheduled payouts">
     <div class="flex flex-col gap-6">
-      <div class="flex items-center justify-between">
+      <div class="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h2 class="text-sm font-bold text-text-primary">Pay as you go</h2>
-          <p class="text-xs text-text-muted mt-0.5">
-            Schedule a one-time future payout or a recurring one, funded from this branch's own MAIN wallet.
+          <p class="text-[11px] font-semibold uppercase tracking-wider text-text-muted">Automation</p>
+          <h1 class="text-lg font-bold text-text-primary mt-0.5">Scheduled payouts</h1>
+          <p class="text-sm text-text-muted mt-0.5">
+            One-time or recurring payouts, funded from this branch's own MAIN wallet.
           </p>
         </div>
-        <AppButton size="sm" @click="showCreateForm = !showCreateForm">
+        <AppButton size="sm" @click="showCreateForm = true">
           <template #icon><PlusIcon class="w-4 h-4" /></template>
           New schedule
         </AppButton>
       </div>
 
+      <div class="grid grid-cols-3 gap-3">
+        <AppCard><p class="text-[11px] font-semibold uppercase tracking-wide text-text-muted">Active</p><p class="text-lg font-bold text-text-primary mt-1">{{ summary.active }}</p></AppCard>
+        <AppCard><p class="text-[11px] font-semibold uppercase tracking-wide text-text-muted">Paused</p><p class="text-lg font-bold text-text-primary mt-1">{{ summary.paused }}</p></AppCard>
+        <AppCard><p class="text-[11px] font-semibold uppercase tracking-wide text-text-muted">Total</p><p class="text-lg font-bold text-text-primary mt-1">{{ summary.total }}</p></AppCard>
+      </div>
+
+      <AppCard padding="none">
+        <div class="px-5 pt-5"><h2 class="text-sm font-bold text-text-primary mb-4">All schedules</h2></div>
+        <AppTable :columns="scheduleColumns" :rows="schedules" :loading="loading" empty-message="No scheduled payouts yet." clickable @row-click="(r) => openDetail((r as unknown as ScheduledPayout).id)">
+          <template #cell-amount_cents="{ value, row }">
+            {{ (row as unknown as ScheduledPayout).sweep_full_balance ? 'Full balance' : `KES ${formatMoney(value as number)}` }}
+          </template>
+          <template #cell-schedule_type="{ row }">
+            {{ row.schedule_type === 'RECURRING' ? `Recurring (${(row as unknown as ScheduledPayout).recurrence_interval?.toLowerCase()})` : 'One-time' }}
+          </template>
+          <template #cell-next_run_at="{ value, row }">
+            {{ row.status === 'COMPLETED' || row.status === 'CANCELLED' ? '—' : formatDate(value as string) }}
+          </template>
+          <template #cell-status="{ value }">
+            <AppBadge :variant="statusVariant(value as string)" size="sm">{{ value }}</AppBadge>
+          </template>
+        </AppTable>
+      </AppCard>
+    </div>
+
+    <AppModal v-model="otpStep" title="Confirm scheduled payout" size="sm" @update:model-value="(v: boolean) => { if (!v) cancelOtp() }">
       <OtpConfirmCard
-        v-if="otpStep"
         v-model="otp"
         subject="scheduled payout"
         :confirming="otpConfirming"
@@ -416,9 +398,10 @@ function statusVariant(status: string) {
         @confirm="submitOtp"
         @cancel="cancelOtp"
       />
+    </AppModal>
 
-      <AppCard v-else-if="showCreateForm">
-        <h3 class="text-sm font-bold text-text-primary mb-4">New scheduled payout</h3>
+    <AppModal v-model="showCreateForm" title="New scheduled payout" size="lg">
+      <div>
         <div v-if="createError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ createError }}</div>
         <form class="flex flex-col gap-4" @submit.prevent="submitCreate">
           <label class="flex items-start gap-2.5 text-sm text-text-secondary rounded-xl bg-surface-2 px-4 py-3">
@@ -512,63 +495,7 @@ function statusVariant(status: string) {
             <AppButton type="button" variant="ghost" @click="showCreateForm = false">Cancel</AppButton>
           </div>
         </form>
-      </AppCard>
-
-      <AppCard padding="none">
-        <div class="px-5 pt-5">
-          <h2 class="text-sm font-bold text-text-primary mb-4">All schedules</h2>
-        </div>
-        <AppTable :columns="scheduleColumns" :rows="schedules" :loading="loading" empty-message="No scheduled payouts yet.">
-          <template #cell-amount_cents="{ value, row }">
-            {{ (row as unknown as ScheduledPayout).sweep_full_balance ? 'Full balance' : `KES ${formatMoney(value as number)}` }}
-          </template>
-          <template #cell-schedule_type="{ row }">
-            <template v-if="(row as unknown as ScheduledPayout).trigger_type === 'THRESHOLD'">
-              Threshold (KES {{ formatMoney((row as unknown as ScheduledPayout).threshold_cents || 0) }})
-            </template>
-            <template v-else>
-              {{ row.schedule_type === 'RECURRING' ? `Recurring (${(row as unknown as ScheduledPayout).recurrence_interval?.toLowerCase()})` : 'One-time' }}
-            </template>
-          </template>
-          <template #cell-next_run_at="{ value, row }">
-            <template v-if="(row as unknown as ScheduledPayout).trigger_type === 'THRESHOLD'">
-              {{ (row as unknown as ScheduledPayout).threshold_armed === false ? 'Waiting to re-arm' : 'Armed' }}
-            </template>
-            <template v-else>
-              {{ row.status === 'COMPLETED' || row.status === 'CANCELLED' ? '—' : formatDate(value as string) }}
-            </template>
-          </template>
-          <template #cell-status="{ value }">
-            <AppBadge :variant="statusVariant(value as string)" size="sm">{{ value }}</AppBadge>
-          </template>
-        </AppTable>
-      </AppCard>
-
-      <AppCard v-if="schedules.length">
-        <h2 class="text-sm font-bold text-text-primary mb-4">Manage schedules</h2>
-        <div class="flex flex-col gap-3">
-          <div v-for="sp in schedules" :key="`actions-${sp.id}`" class="flex flex-col gap-2">
-            <div class="flex items-center justify-between gap-3 rounded-xl bg-surface-2 px-4 py-3">
-              <div class="min-w-0">
-                <p class="text-sm font-semibold text-text-primary truncate">
-                  {{ sp.recipient_name }} — {{ sp.sweep_full_balance ? 'Full balance' : `KES ${formatMoney(sp.amount_cents)}` }}
-                </p>
-                <p class="text-xs text-text-muted mt-0.5">
-                  <template v-if="sp.trigger_type === 'THRESHOLD'">Threshold (KES {{ formatMoney(sp.threshold_cents || 0) }})</template>
-                  <template v-else>{{ sp.schedule_type === 'RECURRING' ? `Recurring (${sp.recurrence_interval?.toLowerCase()})` : 'One-time' }}</template>
-                  <template v-if="sp.last_run_status"> · last run: {{ sp.last_run_status }}</template>
-                </p>
-              </div>
-              <div class="flex gap-2 shrink-0">
-                <AppButton v-if="sp.status === 'ACTIVE'" size="sm" variant="secondary" :loading="actionLoading === sp.id" @click="handlePause(sp.id)">Pause</AppButton>
-                <AppButton v-if="sp.status === 'PAUSED'" size="sm" variant="secondary" :loading="actionLoading === sp.id" @click="handleResume(sp.id)">Resume</AppButton>
-                <AppButton v-if="sp.status === 'ACTIVE' || sp.status === 'PAUSED'" size="sm" variant="ghost" :loading="actionLoading === sp.id" @click="handleCancel(sp.id)">Cancel</AppButton>
-              </div>
-            </div>
-            <div v-if="actionError[sp.id]" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2">{{ actionError[sp.id] }}</div>
-          </div>
-        </div>
-      </AppCard>
-    </div>
+      </div>
+    </AppModal>
   </DashboardLayout>
 </template>

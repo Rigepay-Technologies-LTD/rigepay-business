@@ -9,13 +9,13 @@ defineProps<{
 </script>
 
 <template>
-  <div class="bg-surface rounded-2xl shadow-sm p-5 flex flex-col gap-3 min-w-0">
+  <div class="bg-surface rounded-xl border border-border p-5 flex flex-col gap-3 min-w-0">
     <div class="flex items-start justify-between gap-2">
-      <p class="text-xs font-bold text-text-muted uppercase tracking-wider leading-none">{{ label }}</p>
+      <p class="text-[11px] font-bold text-text-muted uppercase tracking-wider leading-none">{{ label }}</p>
       <div
         v-if="$slots.icon"
         :class="[
-          'w-9 h-9 rounded-xl flex items-center justify-center shrink-0',
+          'w-9 h-9 rounded-lg flex items-center justify-center shrink-0',
           iconColor === 'success' ? 'bg-success-light text-success'
             : iconColor === 'warning' ? 'bg-warning-light text-warning'
             : iconColor === 'error'   ? 'bg-error-light text-error'

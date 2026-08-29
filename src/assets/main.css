@@ -3,20 +3,20 @@
 
 @theme {
   /* Backgrounds */
-  --color-bg:        #EEF2F8;
+  --color-bg:        #F7F8FA;
   --color-surface:   #FFFFFF;
-  --color-surface-2: #F4F7FA;
+  --color-surface-2: #F3F4F6;
   --color-sidebar:   #FFFFFF;
 
   /* Borders */
-  --color-border:        #E2E8F0;
-  --color-border-strong: #CBD5E1;
+  --color-border:        #E5E7EB;
+  --color-border-strong: #D1D5DB;
 
   /* Text */
-  --color-text-primary:   #0F172A;
-  --color-text-secondary: #475569;
-  --color-text-muted:     #94A3B8;
-  --color-text-disabled:  #CBD5E1;
+  --color-text-primary:   #111827;
+  --color-text-secondary: #4B5563;
+  --color-text-muted:     #9CA3AF;
+  --color-text-disabled:  #D1D5DB;
   --color-text-inverse:   #FFFFFF;
 
   /* Brand — primary blue */
@@ -47,9 +47,9 @@
 
   /* Inputs */
   --color-input-bg:              #FFFFFF;
-  --color-input-border:          #E2E8F0;
+  --color-input-border:          #D1D5DB;
   --color-input-border-focused:  #2563EB;
-  --color-input-placeholder:     #94A3B8;
+  --color-input-placeholder:     #9CA3AF;
 
   /* Tabs */
   --color-tab-bar:     #FFFFFF;
@@ -61,9 +61,7 @@
   --color-skeleton-highlight: #F4F7FA;
 }
 
-/* ─────────────────────────────────────────────────────────────────
-   NON-UTILITY CSS VARS (overlays, scrollbar — used inline/in CSS)
-   ───────────────────────────────────────────────────────────────── */
+
 :root {
   --color-overlay:        rgba(0, 0, 0, 0.45);
   --color-overlay-light:  rgba(0, 0, 0, 0.12);
@@ -71,9 +69,7 @@
   --scrollbar-track:      transparent;
 }
 
-/* ─────────────────────────────────────────────────────────────────
-   DARK MODE OVERRIDES
-   ───────────────────────────────────────────────────────────────── */
+
 .dark {
   /* Backgrounds */
   --color-bg:        #090E1A;
@@ -141,9 +137,6 @@
   --scrollbar-thumb: #1F2D45;
 }
 
-/* ─────────────────────────────────────────────────────────────────
-   BASE RESET & GLOBALS
-   ───────────────────────────────────────────────────────────────── */
 @layer base {
   *, *::before, *::after {
     box-sizing: border-box;
@@ -188,17 +181,13 @@
   }
 }
 
-/* ─────────────────────────────────────────────────────────────────
-   PAGE TRANSITION
-   ───────────────────────────────────────────────────────────────── */
+
 .page-enter-active,
 .page-leave-active { transition: opacity .15s ease, transform .15s ease; }
 .page-enter-from,
 .page-leave-to     { opacity: 0; transform: translateY(6px); }
 
-/* ─────────────────────────────────────────────────────────────────
-   KEYFRAMES
-   ───────────────────────────────────────────────────────────────── */
+
 @keyframes fadeUp    { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
 @keyframes shake {
   0%, 100% { transform: translateX(0); }
@@ -207,3 +196,7 @@
 }
 .animate-fade-in   { animation: fadeUp 0.4s ease-out; }
 .animate-shake     { animation: shake 0.4s ease-in-out; }
+
+
+html.modal-open { overflow: hidden; }
+html.modal-open .app-main-scroll { overflow: hidden !important; }

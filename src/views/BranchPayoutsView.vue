@@ -5,7 +5,9 @@ import {
   requestOrgPayoutAsMember, confirmOrgPayoutAsMember, fetchPayoutFeeEstimate,
   fetchOrgBankCodes, fetchOrgBeneficiaries, createOrgBeneficiary, deleteOrgBeneficiary, fetchRecentSettlements,
   validateOrgScreenName, validateOrgShortcode, validateOrgBankAccount, validateOrgMobileMoney,
+  fetchOrgSettlementPreferences,
   type BankCode, type PayoutFeeEstimate, type Beneficiary, type RecentSettlement, type ScreenNameMatch,
+  type SettlementPreferences,
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
 import { formatMoney, formatDate } from '@/lib/format'
@@ -16,9 +18,11 @@ import AppCard from '@/components/ui/AppCard.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppInput from '@/components/ui/AppInput.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
+import AppModal from '@/components/ui/AppModal.vue'
+import PayoutsHistoryTable from '@/components/PayoutsHistoryTable.vue'
 import OtpConfirmCard from '@/components/OtpConfirmCard.vue'
 import ConfirmSecretInput from '@/components/ConfirmSecretInput.vue'
-import { RepeatIcon, XIcon, AlertTriangleIcon } from 'lucide-vue-next'
+import { RepeatIcon, XIcon, AlertTriangleIcon, SendIcon } from 'lucide-vue-next'
 
 const props = defineProps<{ orgId: string; branchId: string }>()
 const auth = useAuthStore()
@@ -139,10 +143,35 @@ function repeatSettlement(s: RecentSettlement) {
   shortcodeValidation.value = null
 }
 
-onMounted(() => {
+const settlementPrefs = ref<SettlementPreferences | null>(null)
+const settlementPrefLabel = computed(() => {
+  const p = settlementPrefs.value
+  if (!p || !p.destination_type) return ''
+  const detail = p.destination_type === 'BANK_ACCOUNT'
+    ? `${p.bank_code || ''} ${p.bank_account_number || ''}`.trim()
+    : (p.phone_number || '')
+  const kind = { BANK_ACCOUNT: 'Bank account', PAYBILL: 'Paybill', TILL_NUMBER: 'Till number', PHONE_NUMBER: 'M-Pesa' }[p.destination_type] || p.destination_type
+  return `${kind} · ${detail}`
+})
+function applySettlementPref() {
+  const p = settlementPrefs.value
+  if (!p || !p.destination_type) return
+  destinationType.value = p.destination_type as typeof destinationType.value
+  if (p.destination_type === 'BANK_ACCOUNT') {
+    bankCode.value = p.bank_code || ''; bankAccountNumber.value = p.bank_account_number || ''
+    phoneNumber.value = ''; shortcode.value = ''
+  } else if (p.destination_type === 'PAYBILL' || p.destination_type === 'TILL_NUMBER') {
+    shortcode.value = p.phone_number || ''; phoneNumber.value = ''; bankCode.value = ''; bankAccountNumber.value = ''
+  } else {
+    phoneNumber.value = p.phone_number || ''; shortcode.value = ''; bankCode.value = ''; bankAccountNumber.value = ''
+  }
+}
+
+onMounted(async () => {
   loadBankCodes()
   loadBeneficiaries()
   loadRecentSettlements()
+  try { settlementPrefs.value = await fetchOrgSettlementPreferences(true) } catch { settlementPrefs.value = null }
 })
 
 const amountKes = ref('')
@@ -252,6 +281,14 @@ watch([amountKes, destinationType], () => {
   }, 400)
 })
 
+const showRequestModal = ref(false)
+const payoutsReloadKey = ref(0)
+
+watch(showRequestModal, (open) => {
+  if (!open) return
+  if (!phoneNumber.value && !bankAccountNumber.value && !shortcode.value && !recipientName.value) applySettlementPref()
+})
+
 const requesting = ref(false)
 const requestError = ref<string | null>(null)
 const requestSuccess = ref<string | null>(null)
@@ -359,12 +396,16 @@ async function submitPayout() {
       requestSuccess.value = msg
       showSuccess(msg)
       resetForm()
+      showRequestModal.value = false
+      payoutsReloadKey.value++
       await loadRecentSettlements()
     } else {
       const msg = result.message || 'Payout queued for execution.'
       requestSuccess.value = msg
       showSuccess(msg)
       resetForm()
+      showRequestModal.value = false
+      payoutsReloadKey.value++
       await loadRecentSettlements()
     }
   } catch (err) {
@@ -392,6 +433,8 @@ async function submitOtp() {
     showSuccess(msg)
     otpStep.value = false
     resetForm()
+    showRequestModal.value = false
+    payoutsReloadKey.value++
     await loadRecentSettlements()
   } catch (err) {
     const msg = extractErrorMessage(err)
@@ -412,7 +455,21 @@ function cancelOtp() {
 <template>
   <DashboardLayout :org-id="props.orgId" :branch-id="props.branchId" title="Payouts">
     <div class="flex flex-col gap-6">
-      <p class="text-xs text-text-muted -mt-2">Send money out via M-Pesa or bank transfer, straight from this branch's own wallet.</p>
+      <div class="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 class="text-lg font-bold text-text-primary">Payouts</h1>
+          <p class="text-sm text-text-muted mt-0.5">Review beneficiary payouts, destination details, fees, and processing status.</p>
+        </div>
+        <AppButton @click="showRequestModal = true">
+          <template #icon><SendIcon class="w-4 h-4" /></template>
+          Send money
+        </AppButton>
+      </div>
+
+      <PayoutsHistoryTable :is-branch="true" :reload-key="payoutsReloadKey" />
+
+      <AppModal v-model="showRequestModal" title="Send money" size="lg">
+        <div class="flex flex-col gap-4">
       <AppCard v-if="recentSettlements.length">
         <h2 class="text-sm font-bold text-text-primary mb-1">Recent settlements</h2>
         <p class="text-xs text-text-muted mb-4">Click one to repeat it — prefills the form below.</p>
@@ -476,6 +533,11 @@ function cancelOtp() {
         </p>
         <div v-if="requestError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ requestError }}</div>
         <div v-if="requestSuccess" class="text-xs text-success-text bg-success-light rounded-lg px-3 py-2 mb-3">{{ requestSuccess }}</div>
+
+        <div v-if="settlementPrefLabel" class="flex flex-wrap items-center justify-between gap-2 text-xs bg-surface-2 rounded-lg px-3 py-2 mb-3">
+          <span class="text-text-secondary">Settlement preference: <span class="font-semibold text-text-primary">{{ settlementPrefLabel }}</span></span>
+          <button type="button" class="font-semibold text-primary hover:underline" @click="applySettlementPref">Use this destination</button>
+        </div>
 
         <form class="flex flex-col gap-4 max-w-md" @submit.prevent="submitPayout">
           <AppSelect
@@ -560,6 +622,8 @@ function cancelOtp() {
           <AppButton type="submit" :loading="requesting" class="self-start">Request payout</AppButton>
         </form>
       </AppCard>
+        </div>
+      </AppModal>
     </div>
   </DashboardLayout>
 </template>

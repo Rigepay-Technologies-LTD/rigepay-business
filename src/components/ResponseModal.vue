@@ -33,7 +33,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKey))
         >
           <div
             v-if="state.visible"
-            class="relative w-full sm:max-w-md bg-surface shadow-2xl rounded-2xl overflow-hidden"
+            class="relative w-full sm:max-w-md bg-surface shadow-2xl rounded-xl overflow-hidden"
           >
             <div class="flex items-start gap-3 px-6 pt-6 pb-2">
               <div
