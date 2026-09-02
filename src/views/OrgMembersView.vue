@@ -383,23 +383,43 @@ const memberColumns = [
       </div>
 
       <AppCard v-if="showInviteForm">
-        <h3 class="text-sm font-bold text-text-primary mb-1">New invite</h3>
+        <h3 class="text-sm font-bold text-text-primary mb-1">Invite a new member</h3>
         <p class="text-xs text-text-muted mb-4">
           Leave "Branch" unset to invite an org-wide member; select a branch to invite them as that branch's member instead.
         </p>
-        <div v-if="inviteError" class="text-xs text-error-text bg-error-light rounded-lg px-3 py-2 mb-3">{{ inviteError }}</div>
-        <form class="flex flex-col gap-4" @submit.prevent="sendInvite">
-          <AppInput v-model="newEmail" type="email" label="Email address" required />
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <AppSelect v-model="newRole" label="Role" :options="roleOptions" />
-            <AppSelect
-              v-model="newBranchId"
-              label="Branch (optional)"
-              :options="[{ value: '', label: 'Org-wide member' }, ...branches.map((b) => ({ value: b.id, label: b.name }))]"
-            />
+        <div v-if="inviteError" class="text-xs text-error-text bg-error-light border border-error/20 rounded-lg px-3 py-2 mb-3">{{ inviteError }}</div>
+        <form class="flex flex-col gap-5" @submit.prevent="sendInvite">
+          <AppInput v-model="newEmail" type="email" label="Email address" placeholder="colleague@company.co.ke" required />
+
+          <div>
+            <p class="text-[13px] font-medium text-text-secondary mb-2">Role</p>
+            <div class="grid grid-cols-3 gap-2">
+              <button
+                v-for="r in roleOptions"
+                :key="r.value"
+                type="button"
+                :class="[
+                  'rounded-xl border px-3 py-2.5 text-left transition-colors',
+                  newRole === r.value ? 'border-primary bg-primary-light/50 ring-1 ring-primary' : 'border-border hover:border-border-strong',
+                ]"
+                @click="newRole = r.value"
+              >
+                <span class="block text-[13px] font-semibold text-text-primary">{{ r.label }}</span>
+                <span class="block text-[11px] text-text-muted mt-0.5">
+                  {{ r.value === 'owner' ? 'Full control' : r.value === 'manager' ? 'Manage branch ops' : 'Day-to-day tasks' }}
+                </span>
+              </button>
+            </div>
           </div>
-          <label class="flex items-start gap-2.5 text-sm text-text-secondary">
-            <input v-model="newCanInitiatePayments" type="checkbox" class="w-4 h-4 mt-0.5 rounded border-input-border" />
+
+          <AppSelect
+            v-model="newBranchId"
+            label="Branch (optional)"
+            :options="[{ value: '', label: 'Org-wide member' }, ...branches.map((b) => ({ value: b.id, label: b.name }))]"
+          />
+
+          <label class="flex items-start gap-2.5 text-sm text-text-secondary rounded-xl border border-border bg-surface-2/50 px-3.5 py-3">
+            <input v-model="newCanInitiatePayments" type="checkbox" class="w-4 h-4 mt-0.5 rounded border-input-border accent-primary shrink-0" />
             <span>
               <span class="font-semibold text-text-primary">Can initiate payments</span><br />
               <span class="text-xs text-text-muted">They'll be able to request payouts (re-confirmed with their own password each time), subject to owner approval. Off by default.</span>

@@ -20,6 +20,7 @@ import AppCard from '@/components/ui/AppCard.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppInput from '@/components/ui/AppInput.vue'
 import AppBadge from '@/components/ui/AppBadge.vue'
+import BackupCodesPanel from '@/components/auth/BackupCodesPanel.vue'
 import {
   KeyRoundIcon, ShieldAlertIcon, ShieldCheckIcon, MonitorSmartphoneIcon, HistoryIcon,
   TriangleAlertIcon, FingerprintIcon, QrCodeIcon, LogOutIcon,
@@ -554,13 +555,11 @@ const activeSection = ref<SectionTab>(sectionTabs[0]?.key ?? 'twofa')
         enter-from-class="opacity-0 -translate-y-1"
         enter-to-class="opacity-100 translate-y-0"
       >
-        <div v-if="revealedBackupCodes" class="text-sm bg-warning-light text-warning-text rounded-xl px-4 py-3 flex flex-col gap-2">
-          <p class="font-semibold">Save these backup codes now — they will not be shown again.</p>
-          <div class="grid grid-cols-2 sm:grid-cols-5 gap-2 font-mono text-xs">
-            <span v-for="code in revealedBackupCodes" :key="code" class="bg-surface rounded-lg px-2 py-1 text-center">{{ code }}</span>
-          </div>
-          <button type="button" class="text-xs font-semibold self-start hover:underline" @click="revealedBackupCodes = null">Dismiss</button>
-        </div>
+        <BackupCodesPanel
+          v-if="revealedBackupCodes"
+          :codes="revealedBackupCodes"
+          @dismiss="revealedBackupCodes = null"
+        />
       </Transition>
 
       <!-- Tab bar -->

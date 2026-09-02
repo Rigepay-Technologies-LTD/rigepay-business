@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import { computed, ref } from 'vue'
 import AppTooltip from '@/components/ui/AppTooltip.vue'
 
-defineProps<{
+const props = defineProps<{
   modelValue?: string | number
   label?: string
   placeholder?: string
@@ -13,9 +14,19 @@ defineProps<{
   required?: boolean
   tooltip?: string
   list?: string
+  /** show a show/hide toggle for password fields */
+  revealable?: boolean
 }>()
 
 defineEmits<{ (e: 'update:modelValue', v: string): void }>()
+
+const revealed = ref(false)
+const resolvedType = computed(() => {
+  const base = props.type ?? 'text'
+  if (props.revealable && base === 'password') return revealed.value ? 'text' : 'password'
+  return base
+})
+const showToggle = computed(() => props.revealable && (props.type ?? 'text') === 'password')
 </script>
 
 <template>
@@ -32,7 +43,7 @@ defineEmits<{ (e: 'update:modelValue', v: string): void }>()
 
       <input
         :value="modelValue"
-        :type="type ?? 'text'"
+        :type="resolvedType"
         :placeholder="placeholder"
         :disabled="disabled"
         :readonly="readonly"
@@ -42,7 +53,8 @@ defineEmits<{ (e: 'update:modelValue', v: string): void }>()
           'w-full h-10 rounded-lg border text-sm text-text-primary placeholder:text-input-placeholder',
           'bg-input-bg outline-none transition-colors duration-150',
           'focus:ring-2 focus:ring-primary/15',
-          $slots.icon ? 'pl-9 pr-3' : 'px-3',
+          $slots.icon ? 'pl-9' : 'pl-3',
+          $slots.trailing || showToggle ? 'pr-10' : 'pr-3',
           error
             ? 'border-error focus:border-error'
             : 'border-input-border focus:border-input-border-focused',
@@ -51,7 +63,23 @@ defineEmits<{ (e: 'update:modelValue', v: string): void }>()
         @input="$emit('update:modelValue', ($event.target as HTMLInputElement).value)"
       />
 
-      <div v-if="$slots.trailing" class="absolute right-3 top-1/2 -translate-y-1/2">
+      <button
+        v-if="showToggle"
+        type="button"
+        tabindex="-1"
+        class="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-secondary transition-colors"
+        :aria-label="revealed ? 'Hide password' : 'Show password'"
+        @click="revealed = !revealed"
+      >
+        <svg v-if="revealed" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" /><circle cx="12" cy="12" r="3" />
+        </svg>
+        <svg v-else class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-10-8-10-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 10 8 10 8a18.5 18.5 0 0 1-2.16 3.19M1 1l22 22" />
+        </svg>
+      </button>
+
+      <div v-else-if="$slots.trailing" class="absolute right-3 top-1/2 -translate-y-1/2">
         <slot name="trailing" />
       </div>
     </div>

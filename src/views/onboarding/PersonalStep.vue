@@ -72,25 +72,32 @@ async function submit() {
 </script>
 
 <template>
-  <AuthLayout title="Personal details" subtitle="Step 3 of 5 — tell us a bit about yourself">
+  <AuthLayout
+    title="Personal details"
+    subtitle="Tell us a bit about yourself — this is the person who owns the account."
+    :step="3"
+    :steps="['Email', 'Verify', 'Details', 'Business', 'Security']"
+  >
     <form class="flex flex-col gap-4" @submit.prevent="submit">
       <div class="grid grid-cols-2 gap-3">
         <AppInput v-model="firstName" label="First name" required />
         <AppInput v-model="lastName" label="Last name" required />
       </div>
 
-      <AppInput v-model="idNumber" label="National ID number" required />
+      <AppInput v-model="idNumber" label="National ID number" placeholder="12345678" required />
 
       <AppInput v-model="dob" type="date" label="Date of birth" required />
 
-      <label class="flex items-start gap-2 text-xs text-text-secondary cursor-pointer">
-        <input v-model="termsAccepted" type="checkbox" class="mt-0.5 accent-primary" />
-        <span>I agree to the RigePay Terms &amp; Conditions and Privacy Policy.</span>
+      <label
+        class="flex items-start gap-2.5 text-[13px] text-text-secondary cursor-pointer rounded-xl border border-border bg-surface-2/50 px-3.5 py-3 hover:border-border-strong transition-colors"
+      >
+        <input v-model="termsAccepted" type="checkbox" class="mt-0.5 w-4 h-4 accent-primary shrink-0" />
+        <span>I agree to the RigePay <span class="font-semibold text-text-primary">Terms &amp; Conditions</span> and <span class="font-semibold text-text-primary">Privacy Policy</span>.</span>
       </label>
 
       <ErrorBanner :message="error" />
 
-      <AppButton type="submit" :loading="loading" block>Continue</AppButton>
+      <AppButton type="submit" :loading="loading" size="lg" block>Continue</AppButton>
     </form>
   </AuthLayout>
 </template>

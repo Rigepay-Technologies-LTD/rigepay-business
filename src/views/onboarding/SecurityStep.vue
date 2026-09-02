@@ -66,19 +66,24 @@ async function submit() {
 </script>
 
 <template>
-  <AuthLayout title="Secure your account" subtitle="Step 5 of 5 — set a password and PIN">
+  <AuthLayout
+    title="Secure your account"
+    subtitle="Set a login password and a 4-digit PIN for confirming sensitive actions."
+    :step="5"
+    :steps="['Email', 'Verify', 'Details', 'Business', 'Security']"
+  >
     <form class="flex flex-col gap-4" @submit.prevent="submit">
-      <AppInput v-model="password" type="password" label="Password" hint="At least 8 characters" required />
-      <AppInput v-model="passwordConfirm" type="password" label="Confirm password" required />
+      <AppInput v-model="password" type="password" label="Password" hint="At least 8 characters" required revealable />
+      <AppInput v-model="passwordConfirm" type="password" label="Confirm password" required revealable />
 
       <div class="grid grid-cols-2 gap-3">
-        <AppInput v-model="pin" type="password" label="4-digit PIN" required />
-        <AppInput v-model="pinConfirm" type="password" label="Confirm PIN" required />
+        <AppInput v-model="pin" type="password" label="4-digit PIN" placeholder="••••" required revealable />
+        <AppInput v-model="pinConfirm" type="password" label="Confirm PIN" placeholder="••••" required revealable />
       </div>
 
       <ErrorBanner :message="error" />
 
-      <AppButton type="submit" :loading="loading" block>Finish setup</AppButton>
+      <AppButton type="submit" :loading="loading" size="lg" block>Finish setup</AppButton>
     </form>
   </AuthLayout>
 </template>

@@ -65,22 +65,37 @@ async function submit() {
 </script>
 
 <template>
-  <AuthLayout title="Log in" subtitle="Access your organization's RigePay dashboard">
+  <AuthLayout title="Welcome back" subtitle="Log in to your organization's RigePay dashboard.">
     <form class="flex flex-col gap-4" @submit.prevent="submit">
-      <AppInput v-model="email" type="email" label="Email address" required />
-      <AppInput v-model="password" type="password" label="Password" required />
+      <AppInput v-model="email" type="email" label="Email address" placeholder="you@company.co.ke" required>
+        <template #icon>
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="4" width="20" height="16" rx="2" /><path d="m22 7-10 6L2 7" />
+          </svg>
+        </template>
+      </AppInput>
+
+      <div class="flex flex-col gap-1.5">
+        <AppInput v-model="password" type="password" label="Password" placeholder="••••••••" required revealable>
+          <template #icon>
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" />
+            </svg>
+          </template>
+        </AppInput>
+        <router-link
+          :to="{ name: 'org-forgot-password' }"
+          class="self-end text-xs text-primary font-semibold hover:underline"
+        >
+          Forgot your password?
+        </router-link>
+      </div>
 
       <ErrorBanner :message="error" />
 
-      <AppButton type="submit" :loading="loading" block>Log in</AppButton>
+      <AppButton type="submit" :loading="loading" size="lg" block>Log in</AppButton>
 
-      <p class="text-xs text-text-muted text-center">
-        <router-link :to="{ name: 'org-forgot-password' }" class="text-primary font-semibold hover:underline">
-          Forgot your password?
-        </router-link>
-      </p>
-
-      <p class="text-xs text-text-muted text-center">
+      <p class="text-sm text-text-secondary text-center pt-1">
         New organization?
         <router-link :to="{ name: 'onboard-email' }" class="text-primary font-semibold hover:underline">
           Create an account

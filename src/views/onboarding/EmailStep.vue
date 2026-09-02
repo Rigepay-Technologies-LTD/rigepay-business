@@ -45,21 +45,29 @@ async function submit() {
   <AuthLayout
     title="Create your business account"
     subtitle="Enter your email to get started — we'll send you a verification code."
+    :step="1"
+    :steps="['Email', 'Verify', 'Details', 'Business', 'Security']"
   >
     <form class="flex flex-col gap-4" @submit.prevent="submit">
       <AppInput
         v-model="email"
         label="Email address"
         type="email"
-        placeholder="you@company.com"
+        placeholder="you@company.co.ke"
         required
-      />
+      >
+        <template #icon>
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="4" width="20" height="16" rx="2" /><path d="m22 7-10 6L2 7" />
+          </svg>
+        </template>
+      </AppInput>
 
       <ErrorBanner :message="error" />
 
-      <AppButton type="submit" :loading="loading" block>Continue</AppButton>
+      <AppButton type="submit" :loading="loading" size="lg" block>Continue</AppButton>
 
-      <p class="text-xs text-text-muted text-center">
+      <p class="text-sm text-text-secondary text-center pt-1">
         Already have an account?
         <router-link :to="{ name: 'login' }" class="text-primary font-semibold hover:underline">Log in</router-link>
       </p>

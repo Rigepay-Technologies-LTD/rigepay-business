@@ -20,6 +20,7 @@ import AppCard from '@/components/ui/AppCard.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppInput from '@/components/ui/AppInput.vue'
 import AppBadge from '@/components/ui/AppBadge.vue'
+import BackupCodesPanel from '@/components/auth/BackupCodesPanel.vue'
 
 const props = defineProps<{ orgId: string; branchId: string }>()
 const auth = useAuthStore()
@@ -472,13 +473,11 @@ function severityVariant(severity: string) {
 <template>
   <DashboardLayout :org-id="props.orgId" :branch-id="props.branchId" title="Security">
     <div class="flex flex-col gap-6">
-      <div v-if="revealedBackupCodes" class="text-sm bg-warning-light text-warning-text rounded-xl px-4 py-3 flex flex-col gap-2">
-        <p class="font-semibold">Save these backup codes now — they will not be shown again.</p>
-        <div class="grid grid-cols-2 sm:grid-cols-5 gap-2 font-mono text-xs">
-          <span v-for="code in revealedBackupCodes" :key="code" class="bg-surface rounded-lg px-2 py-1 text-center">{{ code }}</span>
-        </div>
-        <button type="button" class="text-xs font-semibold self-start hover:underline" @click="revealedBackupCodes = null">Dismiss</button>
-      </div>
+      <BackupCodesPanel
+        v-if="revealedBackupCodes"
+        :codes="revealedBackupCodes"
+        @dismiss="revealedBackupCodes = null"
+      />
 
       <AppCard>
         <h2 class="text-sm font-bold text-text-primary mb-1">Panic password</h2>
