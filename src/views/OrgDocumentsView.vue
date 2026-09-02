@@ -99,7 +99,7 @@ async function load() {
   loading.value = true
   error.value = null
   try {
-    docs.value = await fetchOrgDocuments()
+    docs.value = (await fetchOrgDocuments()) ?? []
   } catch (err) {
     const msg = extractErrorMessage(err)
     error.value = msg

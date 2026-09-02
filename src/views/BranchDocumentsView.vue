@@ -68,7 +68,7 @@ async function load() {
   loading.value = true
   error.value = null
   try {
-    docs.value = await fetchOwnBranchMemberDocuments()
+    docs.value = (await fetchOwnBranchMemberDocuments()) ?? []
   } catch (err) {
     const msg = extractErrorMessage(err)
     error.value = msg

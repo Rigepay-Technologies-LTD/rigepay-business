@@ -26,7 +26,7 @@ async function load() {
     const data = await fetchBranchFraudActivity()
     openBlocks.value = data.open_blocks
     openHolds.value = data.open_holds
-    decisions.value = data.decisions
+    decisions.value = data.decisions ?? []
   } catch (err) {
     const msg = extractErrorMessage(err)
     error.value = msg

@@ -349,7 +349,7 @@ const loggingOutAll = ref(false)
 async function loadSessions() {
   sessionsLoading.value = true
   try {
-    sessions.value = await fetchActiveSessions(isBranchSession.value)
+    sessions.value = (await fetchActiveSessions(isBranchSession.value)) ?? []
   } catch (err) {
     showError(extractErrorMessage(err))
   } finally {

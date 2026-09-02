@@ -27,7 +27,7 @@ const batches = ref<InvoiceBatch[]>([])
 async function load() {
   loading.value = true
   try {
-    batches.value = await fetchInvoiceBatches(props.isBranch)
+    batches.value = (await fetchInvoiceBatches(props.isBranch)) ?? []
   } catch (err) {
     showError(extractErrorMessage(err))
   } finally {

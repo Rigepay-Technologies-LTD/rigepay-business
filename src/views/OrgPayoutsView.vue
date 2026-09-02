@@ -193,7 +193,7 @@ async function loadBeneficiaries() {
   if (isBranchSession) return
   beneficiariesLoading.value = true
   try {
-    beneficiaries.value = await fetchOrgBeneficiaries()
+    beneficiaries.value = (await fetchOrgBeneficiaries()) ?? []
   } catch (err) {
     const msg = extractErrorMessage(err)
     beneficiaryError.value = msg
@@ -245,7 +245,7 @@ async function loadRecentSettlements() {
   if (isBranchSession) return
   recentSettlementsLoading.value = true
   try {
-    recentSettlements.value = await fetchRecentSettlements()
+    recentSettlements.value = (await fetchRecentSettlements()) ?? []
   } catch (err) {
     const msg = extractErrorMessage(err)
     error.value = msg
@@ -486,7 +486,7 @@ async function loadApprovals() {
   if (!isOwner) return
   approvalsLoading.value = true
   try {
-    approvals.value = await fetchPendingPayoutApprovals()
+    approvals.value = (await fetchPendingPayoutApprovals()) ?? []
   } catch (err) {
     const msg = extractErrorMessage(err)
     error.value = msg

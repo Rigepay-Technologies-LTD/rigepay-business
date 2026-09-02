@@ -44,8 +44,8 @@ async function load() {
   error.value = null
   try {
     const [s, v] = await Promise.all([fetchScheduledPayouts(), fetchOrgVaults()])
-    schedules.value = s
-    vaults.value = v
+    schedules.value = s ?? []
+    vaults.value = v ?? []
   } catch (err) {
     const msg = extractErrorMessage(err)
     error.value = msg

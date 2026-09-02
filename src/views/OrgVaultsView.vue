@@ -30,7 +30,7 @@ const totalVaulted = computed(() => vaults.value.reduce((s, v) => s + v.balance_
 async function load() {
   loading.value = true
   try {
-    vaults.value = await fetchOrgVaults()
+    vaults.value = (await fetchOrgVaults()) ?? []
   } catch (err) {
     showError(extractErrorMessage(err))
   } finally {

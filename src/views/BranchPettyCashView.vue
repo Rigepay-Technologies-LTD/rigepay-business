@@ -33,7 +33,7 @@ async function load() {
   loading.value = true
   error.value = null
   try {
-    floats.value = await fetchPettyCashFloats(true)
+    floats.value = (await fetchPettyCashFloats(true)) ?? []
   } catch (err) {
     const msg = extractErrorMessage(err)
     error.value = msg
@@ -68,7 +68,7 @@ async function openHistory(float: PettyCashFloat) {
   historyFloat.value = float
   historyLoading.value = true
   try {
-    history.value = await fetchPettyCashHistory(float.id, true)
+    history.value = (await fetchPettyCashHistory(float.id, true)) ?? []
   } catch (err) {
     const msg = extractErrorMessage(err)
     error.value = msg
@@ -252,7 +252,7 @@ async function submitPayout() {
       showSuccess(msg)
       closePayout()
       await load()
-      if (historyFloat.value) history.value = await fetchPettyCashHistory(historyFloat.value.id, true)
+      if (historyFloat.value) history.value = (await fetchPettyCashHistory(historyFloat.value.id, true)) ?? []
     }
   } catch (err) {
     const msg = extractErrorMessage(err)
@@ -277,7 +277,7 @@ async function submitPayoutOtp() {
     showSuccess(msg)
     closePayout()
     await load()
-    if (historyFloat.value) history.value = await fetchPettyCashHistory(historyFloat.value.id, true)
+    if (historyFloat.value) history.value = (await fetchPettyCashHistory(historyFloat.value.id, true)) ?? []
   } catch (err) {
     const msg = extractErrorMessage(err)
     payoutOtpError.value = msg
