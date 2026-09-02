@@ -170,7 +170,7 @@ function statusVariant(s: string): 'success' | 'error' | 'warning' | 'neutral' {
 
     <AppCard padding="none">
       <p v-if="loading" class="text-sm text-text-muted px-5 py-6">Loading {{ noun }}s…</p>
-      <div v-else-if="!list || !list.rows.length" class="px-5 py-12 text-center">
+      <div v-else-if="!list?.rows?.length" class="px-5 py-12 text-center">
         <RotateCcwIcon class="w-8 h-8 mx-auto text-text-muted/40" />
         <p class="text-sm text-text-muted mt-2">No {{ noun }}s in this period.</p>
         <AppButton v-if="canCreate" size="sm" class="mt-4" @click="openCreate">
