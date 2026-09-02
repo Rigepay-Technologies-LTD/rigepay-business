@@ -134,7 +134,7 @@ const headerRows = computed(() => {
           <h2 class="text-sm font-bold text-text-primary">Settled items</h2>
           <span class="text-xs text-text-muted">{{ s.item_count }} transaction(s)</span>
         </div>
-        <p v-if="!s.items.length" class="text-sm text-text-muted px-5 pb-5">
+        <p v-if="!s.items?.length" class="text-sm text-text-muted px-5 pb-5">
           No individual transactions are linked to this settlement (older or aggregate settlement).
         </p>
         <div v-else class="overflow-x-auto">
