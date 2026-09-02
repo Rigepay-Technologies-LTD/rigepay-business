@@ -31,7 +31,7 @@ const scopeOptions = [
 async function load() {
   loading.value = true
   try {
-    schedules.value = await fetchStatementSchedules()
+    schedules.value = (await fetchStatementSchedules()) ?? []
   } catch (err) {
     showError(extractErrorMessage(err))
   } finally {

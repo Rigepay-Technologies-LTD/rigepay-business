@@ -65,7 +65,7 @@ const beneficiaryOptions = computed(() => [
 async function loadBeneficiaries() {
   beneficiariesLoading.value = true
   try {
-    beneficiaries.value = await fetchOrgBeneficiaries(true)
+    beneficiaries.value = (await fetchOrgBeneficiaries(true)) ?? []
   } catch (err) {
     const msg = extractErrorMessage(err)
     beneficiaryError.value = msg
@@ -115,7 +115,7 @@ const recentSettlementsLoading = ref(false)
 async function loadRecentSettlements() {
   recentSettlementsLoading.value = true
   try {
-    recentSettlements.value = await fetchRecentSettlements(true)
+    recentSettlements.value = (await fetchRecentSettlements(true)) ?? []
   } catch (err) {
     const msg = extractErrorMessage(err)
     error.value = msg

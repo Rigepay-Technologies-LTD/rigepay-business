@@ -52,7 +52,7 @@ async function load() {
     const data = await fetchOrgFraudActivity()
     openBlocks.value = data.open_blocks
     openHolds.value = data.open_holds
-    decisions.value = data.decisions
+    decisions.value = data.decisions ?? []
   } catch (err) {
     const msg = extractErrorMessage(err)
     error.value = msg
@@ -65,7 +65,7 @@ async function load() {
 async function loadBreakdown() {
   breakdownLoading.value = true
   try {
-    breakdown.value = await fetchFraudBranchBreakdown()
+    breakdown.value = (await fetchFraudBranchBreakdown()) ?? []
   } catch (err) {
     const msg = extractErrorMessage(err)
     error.value = msg

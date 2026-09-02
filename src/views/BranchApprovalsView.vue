@@ -46,7 +46,7 @@ async function load() {
       page: page.value,
       page_size: 20,
     })
-    rows.value = res.approvals
+    rows.value = res.approvals ?? []
     total.value = res.total_count
     totalPages.value = res.total_pages || 1
     page.value = res.page || 1

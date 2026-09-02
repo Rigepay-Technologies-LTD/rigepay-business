@@ -29,7 +29,7 @@ const bankOptions = ref<{ value: string; label: string }[]>([])
 async function load() {
   loading.value = true
   try {
-    batches.value = await fetchBulkPayoutBatches(true)
+    batches.value = (await fetchBulkPayoutBatches(true)) ?? []
   } catch (err) {
     showError(extractErrorMessage(err))
   } finally {

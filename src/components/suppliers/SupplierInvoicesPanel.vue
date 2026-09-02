@@ -39,7 +39,7 @@ async function loadList() {
   loading.value = true
   try {
     const res = await fetchSupplierInvoices(props.isBranch, { status: statusFilter.value || undefined })
-    invoices.value = res.invoices
+    invoices.value = res.invoices ?? []
     total.value = res.total
   } catch (err) { showError(extractErrorMessage(err)) } finally { loading.value = false }
 }

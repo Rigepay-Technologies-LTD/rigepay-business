@@ -28,7 +28,7 @@ async function load() {
   error.value = null
   try {
     const res = await fetchOrgAuditLogs({ page: page.value, page_size: 20, search: searchText.value || undefined })
-    logs.value = res.logs
+    logs.value = res.logs ?? []
     totalPages.value = res.total_pages
   } catch (err) {
     const msg = extractErrorMessage(err)

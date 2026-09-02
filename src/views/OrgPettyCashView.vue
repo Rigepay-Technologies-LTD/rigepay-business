@@ -39,8 +39,8 @@ async function load() {
   error.value = null
   try {
     const [f, b, codes] = await Promise.all([fetchPettyCashFloats(), fetchOrgBranches(), fetchOrgBankCodes(false).catch(() => [] as BankCode[])])
-    floats.value = f
-    branches.value = b.branches
+    floats.value = f ?? []
+    branches.value = b.branches ?? []
     bankOptions.value = codes.map((c) => ({ value: c.code, label: c.name }))
   } catch (err) {
     const msg = extractErrorMessage(err)
@@ -140,7 +140,7 @@ async function openHistory(float: PettyCashFloat) {
   historyFloat.value = float
   historyLoading.value = true
   try {
-    history.value = await fetchPettyCashHistory(float.id)
+    history.value = (await fetchPettyCashHistory(float.id)) ?? []
   } catch (err) {
     const msg = extractErrorMessage(err)
     error.value = msg
@@ -319,7 +319,7 @@ async function submitPayout() {
       showSuccess(msg)
       closePayout()
       await load()
-      if (historyFloat.value) history.value = await fetchPettyCashHistory(historyFloat.value.id)
+      if (historyFloat.value) history.value = (await fetchPettyCashHistory(historyFloat.value.id)) ?? []
     }
   } catch (err) {
     const msg = extractErrorMessage(err)
@@ -344,7 +344,7 @@ async function submitPayoutOtp() {
     showSuccess(msg)
     closePayout()
     await load()
-    if (historyFloat.value) history.value = await fetchPettyCashHistory(historyFloat.value.id)
+    if (historyFloat.value) history.value = (await fetchPettyCashHistory(historyFloat.value.id)) ?? []
   } catch (err) {
     const msg = extractErrorMessage(err)
     payoutOtpError.value = msg

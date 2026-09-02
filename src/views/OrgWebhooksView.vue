@@ -38,10 +38,10 @@ async function load() {
     const [e, s, et] = await Promise.all([
       fetchOrgWebhookEndpoints(), fetchOrgWebhookStats(), fetchOrgWebhookEventTypes(),
     ])
-    endpoints.value = e
+    endpoints.value = e ?? []
     stats.value = s
-    eventTypes.value = et
-    if (tab.value === 'deliveries') deliveries.value = await fetchOrgAllWebhookDeliveries()
+    eventTypes.value = et ?? []
+    if (tab.value === 'deliveries') deliveries.value = (await fetchOrgAllWebhookDeliveries()) ?? []
   } catch (err) {
     showError(extractErrorMessage(err))
   } finally {
@@ -53,7 +53,7 @@ onMounted(load)
 async function selectTab(t: typeof tab.value) {
   tab.value = t
   if (t === 'deliveries' && !deliveries.value.length) {
-    try { deliveries.value = await fetchOrgAllWebhookDeliveries() }
+    try { deliveries.value = (await fetchOrgAllWebhookDeliveries()) ?? [] }
     catch (err) { showError(extractErrorMessage(err)) }
   }
 }

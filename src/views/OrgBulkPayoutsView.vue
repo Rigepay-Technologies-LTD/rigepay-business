@@ -34,8 +34,8 @@ async function load() {
   loading.value = true
   try {
     const [b, v] = await Promise.all([fetchBulkPayoutBatches(), fetchOrgVaults()])
-    batches.value = b
-    vaults.value = v
+    batches.value = b ?? []
+    vaults.value = v ?? []
   } catch (err) {
     showError(extractErrorMessage(err))
   } finally {

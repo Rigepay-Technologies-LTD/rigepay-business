@@ -23,7 +23,7 @@ const contactsLoading = ref(true)
 async function loadContacts() {
   contactsLoading.value = true
   try {
-    contacts.value = await fetchOrgSupportContacts(true)
+    contacts.value = (await fetchOrgSupportContacts(true)) ?? []
   } catch {
     // non-critical — ticket list still works without this
   } finally {
@@ -40,7 +40,7 @@ async function load() {
   loading.value = true
   error.value = null
   try {
-    tickets.value = await fetchOrgSupportTickets(true)
+    tickets.value = (await fetchOrgSupportTickets(true)) ?? []
   } catch (err) {
     const msg = extractErrorMessage(err)
     error.value = msg

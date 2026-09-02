@@ -36,10 +36,10 @@ async function load() {
   error.value = null
   try {
     const [m, b] = await Promise.all([fetchOrgMembers(), fetchOrgBranches()])
-    members.value = m
-    branches.value = b.branches
+    members.value = m ?? []
+    branches.value = b.branches ?? []
     if (isOwner) {
-      try { customRoles.value = await fetchCustomRoles() } catch { /* rbac optional */ }
+      try { customRoles.value = (await fetchCustomRoles()) ?? [] } catch { /* rbac optional */ }
     }
   } catch (err) {
     const msg = extractErrorMessage(err)

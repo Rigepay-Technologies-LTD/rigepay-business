@@ -29,7 +29,7 @@ async function load() {
   loading.value = true
   error.value = null
   try {
-    directors.value = await fetchOrgDirectors()
+    directors.value = (await fetchOrgDirectors()) ?? []
   } catch (err) {
     const msg = extractErrorMessage(err)
     error.value = msg

@@ -132,7 +132,7 @@ const identityFieldOptions = [
 async function loadIdentityRequests() {
   identityRequestsLoading.value = true
   try {
-    identityRequests.value = await fetchOrgIdentityChangeRequests()
+    identityRequests.value = (await fetchOrgIdentityChangeRequests()) ?? []
   } catch (err) {
     const msg = extractErrorMessage(err)
     identityRequestError.value = msg

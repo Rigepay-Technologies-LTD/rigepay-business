@@ -27,7 +27,7 @@ async function load() {
   loading.value = true
   error.value = null
   try {
-    suppressions.value = await fetchRecipientSuppressions()
+    suppressions.value = (await fetchRecipientSuppressions()) ?? []
   } catch (err) {
     const msg = extractErrorMessage(err)
     error.value = msg

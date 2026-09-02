@@ -36,7 +36,7 @@ async function load() {
   loading.value = true
   error.value = null
   try {
-    invoices.value = await fetchBranchInvoices()
+    invoices.value = (await fetchBranchInvoices()) ?? []
   } catch (err) {
     const msg = extractErrorMessage(err)
     error.value = msg
@@ -64,7 +64,7 @@ async function loadCrmCustomers() {
   if (crmCustomers.value.length) return
   try {
     const res = await fetchCrmCustomers(true, { status: 'ACTIVE', page_size: 100 })
-    crmCustomers.value = res.customers
+    crmCustomers.value = res.customers ?? []
   } catch { /* ignore */ }
 }
 function applyCrmCustomer() {

@@ -404,7 +404,7 @@ const loggingOutAll = ref(false)
 async function loadSessions() {
   sessionsLoading.value = true
   try {
-    sessions.value = await fetchActiveSessions(isBranchSession)
+    sessions.value = (await fetchActiveSessions(isBranchSession)) ?? []
   } catch (err) {
     showError(extractErrorMessage(err))
   } finally {

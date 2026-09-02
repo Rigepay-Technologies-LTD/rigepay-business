@@ -51,8 +51,8 @@ async function load() {
   loading.value = true
   try {
     supplier.value = await fetchSupplier(isBranch.value, props.supplierId)
-    payoutMethods.value = supplier.value.payout_methods ?? await fetchSupplierPayoutMethods(isBranch.value, props.supplierId)
-    contacts.value = supplier.value.contacts ?? await fetchSupplierContacts(isBranch.value, props.supplierId)
+    payoutMethods.value = (supplier.value.payout_methods ?? await fetchSupplierPayoutMethods(isBranch.value, props.supplierId)) ?? []
+    contacts.value = (supplier.value.contacts ?? await fetchSupplierContacts(isBranch.value, props.supplierId)) ?? []
   } catch (err) {
     showError(extractErrorMessage(err))
   } finally {
@@ -197,7 +197,7 @@ function addPayoutRow() {
 async function savePayout() {
   acting.value = true
   try {
-    payoutMethods.value = await replaceSupplierPayoutMethods(isBranch.value, props.supplierId, payoutDraft.value)
+    payoutMethods.value = (await replaceSupplierPayoutMethods(isBranch.value, props.supplierId, payoutDraft.value)) ?? []
     editingPayout.value = false
     showSuccess('Payout details saved.')
   } catch (err) {
@@ -217,7 +217,7 @@ async function addContact() {
     await createSupplierContact(isBranch.value, props.supplierId, contactForm.value)
     contactForm.value = { name: '', email: '', phone: '', role: '', is_primary: false }
     showContactForm.value = false
-    contacts.value = await fetchSupplierContacts(isBranch.value, props.supplierId)
+    contacts.value = (await fetchSupplierContacts(isBranch.value, props.supplierId)) ?? []
   } catch (err) {
     showError(extractErrorMessage(err))
   } finally {
