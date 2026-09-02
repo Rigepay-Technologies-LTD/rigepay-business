@@ -3,6 +3,8 @@ import { ref, computed, nextTick, onBeforeUnmount, watch } from 'vue'
 import AppTooltip from '@/components/ui/AppTooltip.vue'
 import { ChevronDownIcon, CheckIcon } from 'lucide-vue-next'
 
+defineOptions({ inheritAttrs: false })
+
 const props = defineProps<{
   modelValue?: string
   label?: string
@@ -131,7 +133,7 @@ onBeforeUnmount(close)
 </script>
 
 <template>
-  <div class="flex flex-col gap-1.5">
+  <div v-bind="$attrs" class="flex flex-col gap-1.5">
     <label v-if="label" class="text-[13px] font-medium text-text-secondary inline-flex items-center">
       {{ label }}<span v-if="required" class="text-error ml-0.5">*</span>
       <AppTooltip v-if="tooltip" :text="tooltip" />

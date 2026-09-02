@@ -238,7 +238,7 @@ onMounted(async () => {
           </AppCard>
         </div>
 
-        <AppCard v-if="statement.by_type.length" padding="none">
+        <AppCard v-if="statement.by_type?.length" padding="none">
           <h2 class="text-sm font-bold text-text-primary px-5 pt-5 mb-3">Breakdown by type</h2>
           <div class="overflow-x-auto">
           <table class="w-full text-sm">
@@ -285,7 +285,7 @@ onMounted(async () => {
         </div>
 
         <p v-if="entriesLoading" class="text-sm text-text-muted px-5 py-6">Loading entries…</p>
-        <p v-else-if="!entries || !entries.entries.length" class="text-sm text-text-muted px-5 py-6">No statement entries for this selection.</p>
+        <p v-else-if="!entries?.entries?.length" class="text-sm text-text-muted px-5 py-6">No statement entries for this selection.</p>
         <div v-else class="overflow-x-auto mt-3">
           <table class="w-full text-sm">
             <thead>
