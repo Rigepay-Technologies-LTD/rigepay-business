@@ -36,10 +36,10 @@ onMounted(async () => {
 
       <AppCard>
         <h2 class="text-sm font-bold text-text-primary mb-3">Spend over time</h2>
-        <p v-if="!a.spend_over_time.length" class="text-sm text-text-muted">No supplier spend in this period.</p>
+        <p v-if="!a.spend_over_time?.length" class="text-sm text-text-muted">No supplier spend in this period.</p>
         <div v-else class="flex items-end gap-2 h-40">
           <div v-for="p in a.spend_over_time" :key="p.month" class="flex-1 flex flex-col items-center gap-1">
-            <div class="w-full bg-primary/70 rounded-t" :style="{ height: (Math.max(4, (p.spend_cents / Math.max(...a.spend_over_time.map(x => x.spend_cents), 1)) * 140)) + 'px' }" />
+            <div class="w-full bg-primary/70 rounded-t" :style="{ height: (Math.max(4, (p.spend_cents / Math.max(...(a.spend_over_time ?? []).map(x => x.spend_cents), 1)) * 140)) + 'px' }" />
             <span class="text-[10px] text-text-muted">{{ p.month.slice(5) }}</span>
           </div>
         </div>

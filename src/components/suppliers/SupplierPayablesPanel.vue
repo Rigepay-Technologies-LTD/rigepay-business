@@ -29,7 +29,7 @@ async function load() {
   loading.value = true
   try {
     const res = await fetchSupplierPayables(props.isBranch)
-    invoices.value = res.invoices
+    invoices.value = res.invoices ?? []
     summary.value = res.summary
   } catch (err) { showError(extractErrorMessage(err)) } finally { loading.value = false }
 }

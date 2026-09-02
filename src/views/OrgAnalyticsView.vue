@@ -85,7 +85,7 @@ onMounted(loadMonthlySections)
 
         <p v-if="branchLoading" class="text-sm text-text-muted">Loading branch breakdown…</p>
         <template v-else-if="branchData">
-          <div v-if="branchData.highlights.length" class="flex flex-col gap-2">
+          <div v-if="branchData.highlights?.length" class="flex flex-col gap-2">
             <div v-for="(h, i) in branchData.highlights" :key="i" class="text-xs text-text-secondary bg-surface-2 rounded-xl px-4 py-2.5">{{ h }}</div>
           </div>
 

@@ -115,7 +115,7 @@ onMounted(load)
 
     <AppCard padding="none">
       <p v-if="loading" class="text-sm text-text-muted px-5 py-6">Loading settlements…</p>
-      <p v-else-if="!list || !list.settlements.length" class="text-sm text-text-muted px-5 py-6">
+      <p v-else-if="!list || !list.settlements?.length" class="text-sm text-text-muted px-5 py-6">
         No settlements in this period. Matured high-risk-rail holds are released to your main wallet automatically after 72 hours.
       </p>
       <div v-else class="overflow-x-auto">

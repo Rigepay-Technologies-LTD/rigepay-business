@@ -266,7 +266,7 @@ async function openTxnDetail(row: Record<string, unknown>) {
 
       <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
         <AppCard
-          v-if="branchAnalyticsLoading || branchAnalytics?.branches.length"
+          v-if="branchAnalyticsLoading || branchAnalytics?.branches?.length"
           class="xl:col-span-1"
         >
           <div class="flex items-center justify-between mb-1">
