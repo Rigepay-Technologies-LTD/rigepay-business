@@ -8,6 +8,7 @@ import { applyDashboardToken, type DashboardTokenData } from '@/lib/dashboardTok
 import { decodeRequestOptions, encodeAssertionResponse, isWebAuthnSupported } from '@/lib/webauthn'
 import AuthLayout from '@/components/auth/AuthLayout.vue'
 import ErrorBanner from '@/components/auth/ErrorBanner.vue'
+import OtpInput from '@/components/auth/OtpInput.vue'
 import AppInput from '@/components/ui/AppInput.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 
@@ -125,47 +126,60 @@ async function submitPasskey() {
 
 <template>
   <AuthLayout title="Verify it's you" subtitle="Two-factor authentication is required to continue.">
-    <div class="flex flex-col gap-4">
-      <div v-if="hasTotp && hasPasskey" class="flex gap-2 rounded-xl bg-surface-2 p-1">
+    <div class="flex flex-col gap-5">
+      <div v-if="hasTotp && hasPasskey" class="flex gap-1 rounded-xl bg-surface-2 p-1">
         <button
           type="button"
-          :class="['flex-1 text-xs font-semibold rounded-lg py-1.5', mode === 'totp' || mode === 'recover' ? 'bg-surface shadow-sm text-text-primary' : 'text-text-muted']"
+          :class="['flex-1 text-[13px] font-semibold rounded-lg py-2 transition-colors', mode === 'totp' || mode === 'recover' ? 'bg-surface shadow-sm text-text-primary' : 'text-text-muted hover:text-text-secondary']"
           @click="mode = 'totp'"
         >
           Authenticator app
         </button>
         <button
           type="button"
-          :class="['flex-1 text-xs font-semibold rounded-lg py-1.5', mode === 'passkey' ? 'bg-surface shadow-sm text-text-primary' : 'text-text-muted']"
+          :class="['flex-1 text-[13px] font-semibold rounded-lg py-2 transition-colors', mode === 'passkey' ? 'bg-surface shadow-sm text-text-primary' : 'text-text-muted hover:text-text-secondary']"
           @click="mode = 'passkey'"
         >
           Passkey
         </button>
       </div>
 
-      <form v-if="mode === 'totp'" class="flex flex-col gap-4" @submit.prevent="submitTotp">
-        <AppInput v-model="code" label="6-digit code" placeholder="123456" required />
+      <form v-if="mode === 'totp'" class="flex flex-col gap-5" @submit.prevent="submitTotp">
+        <OtpInput
+          v-model="code"
+          label="Enter the 6-digit code from your authenticator app"
+          :error="error ?? undefined"
+          autofocus
+          @complete="submitTotp"
+        />
         <ErrorBanner :message="error" />
-        <AppButton type="submit" :loading="loading" block>Verify</AppButton>
-        <button type="button" class="text-xs text-primary font-semibold hover:underline" @click="mode = 'recover'">
+        <AppButton type="submit" :loading="loading" size="lg" block>Verify</AppButton>
+        <button type="button" class="text-sm text-text-secondary hover:text-primary transition-colors" @click="mode = 'recover'">
           Use a backup code instead
         </button>
       </form>
 
       <form v-else-if="mode === 'recover'" class="flex flex-col gap-4" @submit.prevent="submitRecovery">
-        <AppInput v-model="backupCode" label="Backup code" required />
+        <AppInput v-model="backupCode" label="Backup code" placeholder="XXXX-XXXX" required />
         <ErrorBanner :message="error" />
-        <AppButton type="submit" :loading="loading" block>Verify</AppButton>
-        <button type="button" class="text-xs text-text-muted hover:underline" @click="mode = 'totp'">
-          Back
+        <AppButton type="submit" :loading="loading" size="lg" block>Verify</AppButton>
+        <button type="button" class="text-sm text-text-muted hover:text-text-secondary transition-colors" @click="mode = 'totp'">
+          ← Back to authenticator
         </button>
       </form>
 
       <div v-else-if="mode === 'passkey'" class="flex flex-col gap-4">
-        <p class="text-sm text-text-secondary text-center">Use your device's passkey to verify it's you.</p>
+        <div class="flex flex-col items-center gap-3 text-center py-3">
+          <div class="w-14 h-14 rounded-2xl bg-primary-light flex items-center justify-center">
+            <svg class="w-7 h-7 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" /><circle cx="12" cy="12" r="3" />
+            </svg>
+          </div>
+          <p class="text-sm text-text-secondary">Use your device's fingerprint, face or security key to verify it's you.</p>
+        </div>
         <ErrorBanner :message="error" />
-        <AppButton :loading="loading" block @click="submitPasskey">Continue with passkey</AppButton>
-        <button v-if="hasTotp" type="button" class="text-xs text-text-muted hover:underline" @click="mode = 'totp'">
+        <AppButton :loading="loading" size="lg" block @click="submitPasskey">Continue with passkey</AppButton>
+        <button v-if="hasTotp" type="button" class="text-sm text-text-muted hover:text-text-secondary transition-colors" @click="mode = 'totp'">
           Use authenticator app instead
         </button>
       </div>

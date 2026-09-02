@@ -6,7 +6,7 @@ import { extractErrorCode, extractErrorMessage } from '@/lib/errors'
 import { useOnboardingStore } from '@/stores/onboarding'
 import AuthLayout from '@/components/auth/AuthLayout.vue'
 import ErrorBanner from '@/components/auth/ErrorBanner.vue'
-import AppInput from '@/components/ui/AppInput.vue'
+import OtpInput from '@/components/auth/OtpInput.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 
 const router = useRouter()
@@ -90,29 +90,39 @@ async function resend() {
 </script>
 
 <template>
-  <AuthLayout title="Check your email" :subtitle="`Enter the 6-digit code sent to ${onboarding.email}`">
-    <form class="flex flex-col gap-4" @submit.prevent="submit">
-      <AppInput
+  <AuthLayout
+    title="Check your email"
+    :subtitle="`We sent a 6-digit code to ${onboarding.email}`"
+    :step="2"
+    :steps="['Email', 'Verify', 'Details', 'Business', 'Security']"
+  >
+    <form class="flex flex-col gap-5" @submit.prevent="submit">
+      <OtpInput
         v-model="code"
         label="Verification code"
-        placeholder="123456"
-        required
+        :error="error ?? undefined"
+        autofocus
+        @complete="submit"
       />
 
       <ErrorBanner :message="error" />
-      <p v-if="resendMessage" class="text-sm text-success-text bg-success-light rounded-xl px-3.5 py-2.5">
+      <p
+        v-if="resendMessage"
+        class="text-sm text-success-text bg-success-light border border-success/20 rounded-xl px-3.5 py-2.5"
+      >
         {{ resendMessage }}
       </p>
 
-      <AppButton type="submit" :loading="loading" block>Verify</AppButton>
+      <AppButton type="submit" :loading="loading" size="lg" block>Verify &amp; continue</AppButton>
 
       <button
         type="button"
-        class="text-xs text-primary font-semibold hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
+        class="text-sm text-text-secondary hover:text-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         :disabled="resending"
         @click="resend"
       >
-        {{ resending ? 'Sending…' : "Didn't get a code? Resend" }}
+        {{ resending ? 'Sending…' : "Didn't get a code?" }}
+        <span v-if="!resending" class="text-primary font-semibold">Resend</span>
       </button>
     </form>
   </AuthLayout>

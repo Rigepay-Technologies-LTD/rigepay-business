@@ -67,12 +67,24 @@ async function submit() {
 </script>
 
 <template>
-  <AuthLayout title="Accept invite" subtitle="Set your password to join the organization">
-    <div v-if="done" class="flex flex-col gap-4 text-center">
-      <p class="text-sm text-success-text bg-success-light rounded-xl px-4 py-3">
-        You're all set. You can now log in with your email and the password you just created.
+  <AuthLayout
+    title="You've been invited"
+    subtitle="Set your name and password to join the organization on RigePay."
+  >
+    <div v-if="done" class="flex flex-col items-center gap-5 text-center py-2">
+      <div class="relative">
+        <span class="absolute inset-0 rounded-full bg-success/20 animate-ping" />
+        <div class="relative w-16 h-16 rounded-full bg-success-light flex items-center justify-center">
+          <svg class="w-8 h-8 text-success" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M20 6 9 17l-5-5" />
+          </svg>
+        </div>
+      </div>
+      <p class="text-sm text-text-secondary leading-relaxed">
+        You're all set. Log in with your email and the password you just created — you'll set up two-factor
+        authentication on your first sign-in.
       </p>
-      <AppButton block @click="router.push({ name: 'login' })">Go to login</AppButton>
+      <AppButton size="lg" block @click="router.push({ name: 'login' })">Go to login</AppButton>
     </div>
 
     <form v-else class="flex flex-col gap-4" @submit.prevent="submit">
@@ -80,18 +92,31 @@ async function submit() {
         <AppInput v-model="firstName" label="First name" required />
         <AppInput v-model="lastName" label="Last name" required />
       </div>
-      <AppInput v-model="password" type="password" label="Password" hint="At least 8 characters" required />
-      <AppInput v-model="confirmPassword" type="password" label="Confirm password" required />
+      <AppInput v-model="password" type="password" label="Password" hint="At least 8 characters" required revealable />
+      <AppInput v-model="confirmPassword" type="password" label="Confirm password" required revealable />
 
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <AppInput v-model="phone" label="Phone number" placeholder="+254712345678" />
-        <AppInput v-model="nationalIdNumber" label="National ID / passport number" />
-      </div>
-      <AppInput v-model="taxIdNumber" label="Tax ID number (KRA PIN)" />
+      <details class="group rounded-xl border border-border bg-surface-2/40">
+        <summary
+          class="flex items-center justify-between gap-3 px-4 py-3 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden"
+        >
+          <div>
+            <p class="text-[13px] font-semibold text-text-primary">Identity details</p>
+            <p class="text-xs text-text-muted mt-0.5">Optional now — your organization may require these for verification.</p>
+          </div>
+          <svg class="w-4 h-4 text-text-muted shrink-0 transition-transform group-open:rotate-180" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6" /></svg>
+        </summary>
+        <div class="flex flex-col gap-3 px-4 pb-4 pt-1">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <AppInput v-model="phone" label="Phone number" placeholder="+254712345678" />
+            <AppInput v-model="nationalIdNumber" label="National ID / passport" />
+          </div>
+          <AppInput v-model="taxIdNumber" label="Tax ID number (KRA PIN)" />
+        </div>
+      </details>
 
       <ErrorBanner :message="error" />
 
-      <AppButton type="submit" :loading="loading" block>Accept invite & set password</AppButton>
+      <AppButton type="submit" :loading="loading" size="lg" block>Accept invite &amp; set password</AppButton>
     </form>
   </AuthLayout>
 </template>

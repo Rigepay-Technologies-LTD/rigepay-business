@@ -131,7 +131,12 @@ async function submit() {
 </script>
 
 <template>
-  <AuthLayout title="Organization details" subtitle="Step 4 of 5 — tell us about your business">
+  <AuthLayout
+    title="Organization details"
+    subtitle="Tell us about your business. Only the fields marked required are needed now."
+    :step="4"
+    :steps="['Email', 'Verify', 'Details', 'Business', 'Security']"
+  >
     <form class="flex flex-col gap-4" @submit.prevent="submit">
       <AppInput v-model="businessName" label="Business / organization name" required />
 
@@ -157,15 +162,23 @@ async function submit() {
       <AppInput v-model="nearestLandmark" label="Nearest landmark" placeholder="Optional" />
       <AppInput v-model="referralCode" label="Referral code" placeholder="Optional — if someone referred you" />
 
-      <div class="mt-2">
-        <p class="text-xs font-bold text-text-muted uppercase tracking-wider">Additional details (optional)</p>
-        <p class="text-xs text-text-muted mt-1">
-          Nothing below is required to continue. Fill in what you have now — you can add or correct the rest anytime
-          from your Organization Profile after signing up, and documents (certificates, shareholder registry, etc.)
-          are uploaded separately once you're in the dashboard.
-        </p>
-      </div>
+      <details class="group rounded-xl border border-border bg-surface-2/40 mt-1">
+        <summary
+          class="flex items-center justify-between gap-3 px-4 py-3 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden"
+        >
+          <div>
+            <p class="text-[13px] font-semibold text-text-primary">Additional details</p>
+            <p class="text-xs text-text-muted mt-0.5">Optional — you can add these later from your Organization Profile.</p>
+          </div>
+          <svg
+            class="w-4 h-4 text-text-muted shrink-0 transition-transform group-open:rotate-180"
+            viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          >
+            <path d="m6 9 6 6 6-6" />
+          </svg>
+        </summary>
 
+        <div class="flex flex-col gap-4 px-4 pb-4 pt-1">
       <div class="grid grid-cols-2 gap-3">
         <AppInput v-model="yearOfRegistration" type="number" label="Year of registration" placeholder="e.g. 2020" />
         <AppInput v-model="industry" label="Industry / sector" placeholder="e.g. Retail" />
@@ -202,10 +215,12 @@ async function submit() {
         <AppInput v-model="regulatoryLicenseExpiry" type="date" label="License expiry date" />
       </div>
       <AppInput v-model="taxResidencyCountry" label="Tax residency country" />
+        </div>
+      </details>
 
       <ErrorBanner :message="error" />
 
-      <AppButton type="submit" :loading="loading" block>Continue</AppButton>
+      <AppButton type="submit" :loading="loading" size="lg" block>Continue</AppButton>
     </form>
   </AuthLayout>
 </template>
