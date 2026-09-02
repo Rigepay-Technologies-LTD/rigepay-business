@@ -29,7 +29,7 @@ const schedules = ref<InvoiceSchedule[]>([])
 async function load() {
   loading.value = true
   try {
-    schedules.value = await fetchInvoiceSchedules(props.isBranch)
+    schedules.value = (await fetchInvoiceSchedules(props.isBranch)) ?? []
   } catch (err) {
     showError(extractErrorMessage(err))
   } finally {
@@ -42,7 +42,7 @@ const summary = computed(() => {
   const active = schedules.value.filter((s) => s.status === 'active').length
   const perRun = schedules.value
     .filter((s) => s.status === 'active')
-    .reduce((sum, s) => sum + s.recipients.reduce((n, r) => n + r.amount_cents, 0), 0)
+    .reduce((sum, s) => sum + (s.recipients ?? []).reduce((n, r) => n + r.amount_cents, 0), 0)
   return { total: schedules.value.length, active, perRun }
 })
 
@@ -221,10 +221,10 @@ function statusLabel(status: string): string {
           <div class="min-w-0">
             <p class="text-sm font-semibold text-text-primary truncate">{{ s.name || 'Untitled schedule' }}</p>
             <p class="text-xs text-text-muted mt-0.5">
-              {{ s.recipients.length }} recipient(s) · monthly · next run {{ formatDate(s.next_run_date) }}
+              {{ s.recipients?.length ?? 0 }} recipient(s) · monthly · next run {{ formatDate(s.next_run_date) }}
             </p>
             <p class="text-xs text-text-muted mt-0.5">
-              Total per run: KES {{ formatMoney(s.recipients.reduce((sum, r) => sum + r.amount_cents, 0)) }}
+              Total per run: KES {{ formatMoney((s.recipients ?? []).reduce((sum, r) => sum + r.amount_cents, 0)) }}
             </p>
           </div>
           <div class="flex items-center gap-2 shrink-0">

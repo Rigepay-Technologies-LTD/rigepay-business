@@ -301,7 +301,7 @@ function directionMeta(d: string) {
           </AppButton>
         </div>
         <p v-if="historyLoading" class="text-sm text-text-muted px-5 py-8">Loading…</p>
-        <p v-else-if="!history?.transfers.length" class="text-sm text-text-muted px-5 py-8">No transfers yet.</p>
+        <p v-else-if="!history?.transfers?.length" class="text-sm text-text-muted px-5 py-8">No transfers yet.</p>
         <div v-else class="overflow-x-auto mt-3">
           <table class="w-full text-sm">
             <thead>

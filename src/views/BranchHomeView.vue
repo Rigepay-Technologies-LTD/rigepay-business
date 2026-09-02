@@ -100,8 +100,8 @@ async function loadWallets() {
   try {
     if (isOrgMemberView.value) {
       const overview = await fetchOrgBranches()
-      siblingBranches.value = overview.branches
-      const match = overview.branches.find((b) => b.id === props.branchId)
+      siblingBranches.value = overview.branches ?? []
+      const match = (overview.branches ?? []).find((b) => b.id === props.branchId)
       if (!match) {
         error.value = 'Branch not found in this organization.'
         return

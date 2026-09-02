@@ -34,7 +34,7 @@ async function load() {
       fetchTags(branch.value),
       fetchTagBreakdown({ from: fromDate.value, to: toDate.value }, branch.value),
     ])
-    tags.value = t
+    tags.value = t ?? []
     breakdown.value = b
   } catch (err) {
     showError(extractErrorMessage(err))
@@ -105,11 +105,11 @@ async function handleDelete(tag: OrgTag) {
 
 const totalCents = computed(() => {
   if (!breakdown.value) return 0
-  return breakdown.value.tags.reduce((s, r) => s + r.total_cents, 0) + breakdown.value.untagged.total_cents
+  return (breakdown.value.tags ?? []).reduce((s, r) => s + r.total_cents, 0) + (breakdown.value.untagged?.total_cents ?? 0)
 })
 const sortedRows = computed(() => [...(breakdown.value?.tags ?? [])].sort((a, b) => b.total_cents - a.total_cents))
 function usageFor(tagId: string) {
-  return breakdown.value?.tags.find((r) => r.tag_id === tagId)?.count ?? 0
+  return breakdown.value?.tags?.find((r) => r.tag_id === tagId)?.count ?? 0
 }
 </script>
 
@@ -160,7 +160,7 @@ function usageFor(tagId: string) {
                 </td>
                 <td class="px-5 py-3 text-right text-text-secondary">{{ usageFor(tag.id) }}</td>
                 <td class="px-5 py-3 text-right font-semibold text-text-primary">
-                  KES {{ formatMoney(breakdown?.tags.find(r => r.tag_id === tag.id)?.total_cents ?? 0) }}
+                  KES {{ formatMoney(breakdown?.tags?.find(r => r.tag_id === tag.id)?.total_cents ?? 0) }}
                 </td>
                 <td class="px-5 py-3 text-right">
                   <button
@@ -185,7 +185,7 @@ function usageFor(tagId: string) {
           </div>
         </div>
 
-        <div v-if="!breakdown || (!breakdown.tags.length && !breakdown.untagged.total_cents)" class="flex flex-col items-center text-center gap-2 py-8">
+        <div v-if="!breakdown || (!breakdown.tags?.length && !breakdown.untagged?.total_cents)" class="flex flex-col items-center text-center gap-2 py-8">
           <TagIcon class="w-8 h-8 text-text-muted" />
           <p class="text-sm font-semibold text-text-primary">No tagged activity in this range</p>
         </div>
