@@ -4691,8 +4691,14 @@ export interface SettlementHold {
   wallet_id: string
   wallet_type: string
   amount_cents: number
+  original_amount_cents: number
   description?: string
   reference?: string
+  transaction_id?: string | null
+  txn_type?: string
+  rail?: string
+  customer_name?: string
+  customer_phone?: string
   held_since: string
   expected_release_at?: string | null
   hold_reason: string
