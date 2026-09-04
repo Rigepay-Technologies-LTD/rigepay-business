@@ -4026,6 +4026,16 @@ export interface CrmCustomerListParams {
   page_size?: number
 }
 
+export interface CrmCustomerSummary {
+  total_customers: number
+  active_customers: number
+  verified_customers: number
+  pending_verification: number
+  outstanding_cents: number
+  overdue_cents: number
+  overdue_count: number
+}
+
 export interface CrmCustomerInput {
   branch_id?: string
   customer_type?: string
@@ -4073,6 +4083,13 @@ function crmCustomerBase(isBranch: boolean): string {
 
 export async function fetchCrmCustomers(isBranch: boolean, params: CrmCustomerListParams = {}): Promise<CrmCustomerListResponse> {
   const res = await http.get<{ status: string; data: CrmCustomerListResponse }>(crmCustomerBase(isBranch), { params })
+  return res.data.data
+}
+
+export async function fetchCrmCustomersSummary(isBranch: boolean, branchId?: string): Promise<CrmCustomerSummary> {
+  const res = await http.get<{ status: string; data: CrmCustomerSummary }>(`${crmCustomerBase(isBranch)}/summary`, {
+    params: branchId ? { branch_id: branchId } : undefined,
+  })
   return res.data.data
 }
 

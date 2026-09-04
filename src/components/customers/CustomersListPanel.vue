@@ -2,8 +2,8 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  fetchCrmCustomers, createCrmCustomer,
-  type CrmCustomer, type CrmCustomerInput, type CrmCustomerListResponse,
+  fetchCrmCustomers, fetchCrmCustomersSummary, createCrmCustomer,
+  type CrmCustomer, type CrmCustomerInput, type CrmCustomerListResponse, type CrmCustomerSummary,
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
 import { formatMoney } from '@/lib/format'
@@ -28,6 +28,7 @@ const branchScope = computed(() => (useBranchApi.value ? undefined : props.branc
 
 const loading = ref(true)
 const data = ref<CrmCustomerListResponse | null>(null)
+const summary = ref<CrmCustomerSummary | null>(null)
 const search = ref('')
 const statusFilter = ref('')
 const verificationFilter = ref('')
@@ -53,7 +54,15 @@ async function load() {
   }
 }
 
-onMounted(load)
+async function loadSummary() {
+  try {
+    summary.value = await fetchCrmCustomersSummary(useBranchApi.value, branchScope.value)
+  } catch {
+    summary.value = null
+  }
+}
+
+onMounted(() => { load(); loadSummary() })
 watch([statusFilter, verificationFilter, page], load)
 watch(search, () => {
   clearTimeout(searchTimer)
@@ -62,15 +71,6 @@ watch(search, () => {
 
 const customers = computed(() => data.value?.customers ?? [])
 const totalPages = computed(() => data.value?.total_pages ?? 1)
-
-const summary = computed(() => {
-  const list = customers.value
-  return {
-    total: data.value?.total ?? 0,
-    verified: list.filter((c) => c.verification_status === 'VERIFIED').length,
-    outstanding: list.reduce((n, c) => n + (c.outstanding_cents ?? 0), 0),
-  }
-})
 
 function detailRoute(c: CrmCustomer) {
   return props.branchId
@@ -157,6 +157,7 @@ async function submitAdd() {
     showSuccess('Customer added.')
     showAdd.value = false
     resetForm()
+    void loadSummary()
     router.push(detailRoute(created))
   } catch (err) {
     showError(extractErrorMessage(err))
@@ -177,18 +178,24 @@ async function submitAdd() {
       </p>
     </div>
 
-    <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+    <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
       <AppCard padding="sm">
         <p class="text-[10px] font-bold uppercase tracking-widest text-text-muted mb-1">Customers</p>
-        <p class="text-lg font-bold text-text-primary">{{ summary.total }}</p>
+        <p class="text-lg font-bold text-text-primary">{{ summary?.total_customers ?? '—' }}</p>
       </AppCard>
       <AppCard padding="sm">
-        <p class="text-[10px] font-bold uppercase tracking-widest text-text-muted mb-1">Verified (this page)</p>
-        <p class="text-lg font-bold text-success">{{ summary.verified }}</p>
+        <p class="text-[10px] font-bold uppercase tracking-widest text-text-muted mb-1">Verified</p>
+        <p class="text-lg font-bold text-success">{{ summary?.verified_customers ?? '—' }}</p>
       </AppCard>
       <AppCard padding="sm">
-        <p class="text-[10px] font-bold uppercase tracking-widest text-text-muted mb-1">Outstanding (this page)</p>
-        <p class="text-lg font-bold text-text-primary">KES {{ formatMoney(summary.outstanding) }}</p>
+        <p class="text-[10px] font-bold uppercase tracking-widest text-text-muted mb-1">Outstanding</p>
+        <p class="text-lg font-bold text-text-primary">{{ summary ? `KES ${formatMoney(summary.outstanding_cents)}` : '—' }}</p>
+      </AppCard>
+      <AppCard padding="sm">
+        <p class="text-[10px] font-bold uppercase tracking-widest text-text-muted mb-1">Overdue</p>
+        <p class="text-lg font-bold" :class="summary && summary.overdue_count > 0 ? 'text-error' : 'text-text-primary'">
+          {{ summary ? `KES ${formatMoney(summary.overdue_cents)}` : '—' }}
+        </p>
       </AppCard>
     </div>
 
@@ -325,9 +332,9 @@ async function submitAdd() {
       </div>
       <AppInput v-model="form.billing_address" label="Billing address" class="mt-4" />
       <template #footer>
-        <div class="flex justify-end gap-2">
-          <AppButton variant="secondary" @click="showAdd = false">Cancel</AppButton>
-          <AppButton :loading="saving" @click="submitAdd">Add customer</AppButton>
+        <div class="flex justify-end gap-3">
+          <AppButton variant="ghost" @click="showAdd = false">Cancel</AppButton>
+          <AppButton variant="primary" :loading="saving" @click="submitAdd">Add customer</AppButton>
         </div>
       </template>
     </AppModal>
