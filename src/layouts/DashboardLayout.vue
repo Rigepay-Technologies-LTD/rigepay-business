@@ -9,7 +9,7 @@ import {
   VaultIcon, CalendarClockIcon, ShieldAlertIcon, ArrowLeftRightIcon, FileBarChart2Icon, BarChart3Icon, LayersIcon,
   MapPinIcon, LinkIcon, ClipboardCheckIcon, ReceiptIcon, TagIcon, CoinsIcon, LifeBuoyIcon, BellIcon,
   ChevronRightIcon, ChevronLeftIcon,
-  SettingsIcon, Code2Icon, ReceiptTextIcon, ExternalLinkIcon, TruckIcon, WebhookIcon,
+  SettingsIcon, Code2Icon, ReceiptTextIcon, ExternalLinkIcon, TruckIcon, WebhookIcon, CalendarIcon,
 } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
 import AppLogo from '@/components/ui/AppLogo.vue'
@@ -86,13 +86,7 @@ const branchName = computed(() => {
 
 const workspaceName = computed(() => (props.branchId ? branchName.value ?? 'Branch' : 'Organization'))
 
-// ---------------------------------------------------------------------------
-// NAV MODEL — Staypace-style drill-down panels.
-//  - A top-level section is either a flat link or drills into a `panel`.
-//  - A panel has groups (each with an optional uppercase heading) of items.
-//  - An item is a link, an external href, or itself drills into a nested panel.
-// Every existing route name is preserved; only the shell interaction changed.
-// ---------------------------------------------------------------------------
+
 interface NavItem {
   label: string
   icon: Component
@@ -218,8 +212,7 @@ const rawSections = computed<NavSection[]>(() => [
               ['org-payment-links', 'org-payment-link-new', 'org-payment-link-detail', 'branch-payment-links', 'branch-payment-link-new', 'branch-payment-link-detail']),
             dual('Payouts', BanknoteIcon, 'org-payouts', 'branch-payouts',
               ['org-payouts', 'branch-payouts'], undefined, 'payouts.initiate'),
-            // Beneficiaries / bulk / scheduled are owner-only on the org tier
-            // (branch members keep access via their own gating).
+         
             dual('Beneficiaries', UsersIcon, 'org-beneficiaries', 'branch-beneficiaries',
               ['org-beneficiaries', 'branch-beneficiaries'],
               isOrgWide.value ? isOwner.value : !!props.branchId),
@@ -316,6 +309,7 @@ const rawSections = computed<NavSection[]>(() => [
         {
           items: [
             dual('Analytics', BarChart3Icon, 'org-analytics', 'branch-analytics'),
+            dual('Settlement calendar', CalendarIcon, 'org-settlement-calendar', 'branch-settlement-calendar'),
             dual('Fraud activity', ShieldAlertIcon, 'org-fraud', 'branch-fraud'),
             orgLeaf('Audit log', ScrollTextIcon, 'org-audit-log', orgOnly.value),
           ],
@@ -387,9 +381,7 @@ const rawSections = computed<NavSection[]>(() => [
   },
 ])
 
-// --- Visibility filtering --------------------------------------------------
-// Permission gating applies only to org-member sessions. Branch-member sessions
-// have no org RBAC profile and keep their existing show/role gating.
+
 function permitted(permission?: string): boolean {
   if (!permission) return true
   if (auth.meta?.memberType !== 'org_member') return true
@@ -417,7 +409,6 @@ const sections = computed<NavSection[]>(() =>
     .filter((s) => s.to || s.panel),
 )
 
-// --- Which panel path contains the current route --------------------------
 function panelContains(panel: NavPanel, routeName: string): string[] | null {
   for (const group of panel.groups) {
     for (const item of group.items) {
@@ -444,9 +435,7 @@ const routePanelPath = computed<string[]>(() => {
   return []
 })
 
-// The drill path currently shown. Manual back/drill actions set it directly;
-// on an actual route change it re-syncs to wherever that route lives so the
-// panel always reflects the page you're on.
+
 const drillStack = ref<string[]>([...routePanelPath.value])
 watch(() => route.name, () => {
   drillStack.value = [...routePanelPath.value]
@@ -497,7 +486,6 @@ function onLeafClick() {
   isMobileMenuOpen.value = false
 }
 
-// --- Quick actions widget (Money panel) ----------------------------------
 const quickActions = computed(() => {
   const collect = dual('Collect money', WalletIcon, 'org-collect', 'branch-collect')
   const payout = dual('Send payout', BanknoteIcon, 'org-payouts', 'branch-payouts',
@@ -505,7 +493,6 @@ const quickActions = computed(() => {
   return [collect, payout].filter((a) => a.show && a.to && permitted(a.permission))
 })
 
-// --- Breadcrumb ---------------------------------------------------------
 const breadcrumb = computed<string[]>(() => {
   const path = routePanelPath.value
   if (!path.length) return [props.title]
@@ -541,7 +528,7 @@ function logout() {
 
     <aside
       :class="[
-        'fixed inset-y-0 left-0 z-50 flex flex-col h-full w-[264px]',
+        'fixed inset-y-0 left-0 z-50 flex flex-col h-full w-66',
         'bg-sidebar border-r shadow-xl lg:shadow-none transition-transform duration-300 ease-in-out',
         isBranchMode ? 'border-primary/40' : 'border-border',
         'lg:static lg:translate-x-0',
@@ -551,7 +538,7 @@ function logout() {
       <div v-if="isBranchMode" class="h-1 w-full bg-primary shrink-0" />
 
       <!-- Workspace identity -->
-      <div class="shrink-0 flex items-center justify-between h-[68px] px-4 border-b border-border">
+      <div class="shrink-0 flex items-center justify-between h-17 px-4 border-b border-border">
         <div class="flex items-center gap-2.5 min-w-0">
           <AppLogo size="sm" />
         </div>
@@ -599,7 +586,7 @@ function logout() {
               @click="openSection(s)"
             >
               <span class="flex items-center gap-3 min-w-0">
-                <component :is="s.icon" class="w-[19px] h-[19px] shrink-0" />
+                <component :is="s.icon" class="w-4.75 h-4.75 shrink-0" />
                 <span class="truncate">{{ s.label }}</span>
               </span>
               <ChevronRightIcon class="w-4 h-4 text-text-muted shrink-0" />
@@ -613,7 +600,7 @@ function logout() {
               ]"
               @click="onLeafClick"
             >
-              <component :is="s.icon" class="w-[19px] h-[19px] shrink-0" />
+              <component :is="s.icon" class="w-4.75 h-4.75 shrink-0" />
               <span class="truncate">{{ s.label }}</span>
             </RouterLink>
           </template>
@@ -645,7 +632,7 @@ function logout() {
                 @click="drillInto(item.panel.key)"
               >
                 <span class="flex items-center gap-3 min-w-0">
-                  <component :is="item.icon" class="w-[17px] h-[17px] shrink-0" />
+                  <component :is="item.icon" class="w-4.25 h-4.25 shrink-0" />
                   <span class="truncate">{{ item.label }}</span>
                 </span>
                 <ChevronRightIcon class="w-4 h-4 text-text-muted shrink-0" />
@@ -658,7 +645,7 @@ function logout() {
                 class="flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-[13.5px] font-medium text-text-secondary hover:bg-surface-2 hover:text-text-primary transition-colors"
                 @click="onLeafClick"
               >
-                <component :is="item.icon" class="w-[17px] h-[17px] shrink-0" />
+                <component :is="item.icon" class="w-4.25 h-4.25 shrink-0" />
                 <span class="truncate flex-1">{{ item.label }}</span>
                 <ExternalLinkIcon class="w-3.5 h-3.5 text-text-muted shrink-0" />
               </a>
@@ -671,7 +658,7 @@ function logout() {
                 ]"
                 @click="onLeafClick"
               >
-                <component :is="item.icon" class="w-[17px] h-[17px] shrink-0" />
+                <component :is="item.icon" class="w-4.25 h-4.25 shrink-0" />
                 <span class="truncate">{{ item.label }}</span>
               </RouterLink>
             </template>
@@ -718,14 +705,14 @@ function logout() {
           class="flex items-center gap-3 w-full px-3.5 py-2.5 rounded-xl text-[13.5px] font-semibold text-error hover:bg-error-light transition-colors"
           @click="logout"
         >
-          <LogOutIcon class="w-[18px] h-[18px] shrink-0" />
+          <LogOutIcon class="w-4.5 h-4.5 shrink-0" />
           Log out
         </button>
       </div>
     </aside>
 
     <main class="flex-1 flex flex-col min-w-0 overflow-hidden">
-      <header class="shrink-0 flex items-center justify-between h-[68px] px-4 sm:px-7 bg-surface border-b border-border shadow-sm z-30">
+      <header class="shrink-0 flex items-center justify-between h-17 px-4 sm:px-7 bg-surface border-b border-border shadow-sm z-30">
         <div class="flex items-center gap-3.5 min-w-0">
           <button class="p-2.5 rounded-xl text-text-muted hover:text-text-primary hover:bg-surface-2 transition-colors lg:hidden" @click="isMobileMenuOpen = true">
             <MenuIcon class="w-5 h-5" />

@@ -4683,3 +4683,52 @@ export interface SupplierOnboardSubmission {
 export async function submitSupplierOnboard(token: string, body: SupplierOnboardSubmission): Promise<void> {
   await http.post(`/org/v1/public/suppliers/onboard/${token}`, body)
 }
+
+// ---- Settlement calendar ----
+
+export interface SettlementHold {
+  entry_id: number
+  wallet_id: string
+  wallet_type: string
+  amount_cents: number
+  description?: string
+  reference?: string
+  held_since: string
+  expected_release_at?: string | null
+  hold_reason: string
+}
+
+export interface SettlementCalendarNextSettlement {
+  date: string
+  amount_cents: number
+  hold_count: number
+}
+
+export interface PublicHolidayEntry {
+  id: string
+  name: string
+  date: string
+  category: string
+  is_full_day: boolean
+  start_time?: string | null
+  end_time?: string | null
+  notes?: string | null
+}
+
+export interface SettlementCalendar {
+  holds: SettlementHold[]
+  total_held_cents: number
+  next_settlement: SettlementCalendarNextSettlement | null
+  upcoming_holidays: PublicHolidayEntry[]
+  hold_window_business_days: number
+}
+
+export async function fetchOrgSettlementCalendar(): Promise<SettlementCalendar> {
+  const res = await http.get<{ status: string; data: SettlementCalendar }>('/org/v1/settlement-calendar')
+  return res.data.data
+}
+
+export async function fetchBranchSettlementCalendar(): Promise<SettlementCalendar> {
+  const res = await http.get<{ status: string; data: SettlementCalendar }>('/org/v1/branch/settlement-calendar')
+  return res.data.data
+}

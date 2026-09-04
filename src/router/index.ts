@@ -912,6 +912,20 @@ const router = createRouter({
       meta: { requiresAuth: true },
       props: true,
     },
+    {
+      path: '/org/:orgId/settlement-calendar',
+      name: 'org-settlement-calendar',
+      component: () => import('@/views/OrgSettlementCalendarView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: '/org/:orgId/branch/:branchId/settlement-calendar',
+      name: 'branch-settlement-calendar',
+      component: () => import('@/views/BranchSettlementCalendarView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
 
     { path: '/:pathMatch(.*)*', redirect: '/login' },
   ],
@@ -993,7 +1007,7 @@ router.beforeEach(async (to) => {
     'branch-suppliers-overview', 'branch-supplier-payables', 'branch-supplier-invoices',
     'branch-supplier-invoice-detail', 'branch-purchase-orders', 'branch-purchase-order-detail',
     'branch-suppliers-analytics',
-    'branch-settlements', 'branch-settlement-detail', 'branch-refunds', 'branch-reversals', 'branch-financial-accounts',
+    'branch-settlements', 'branch-settlement-detail', 'branch-settlement-calendar', 'branch-refunds', 'branch-reversals', 'branch-financial-accounts',
     'branch-notification-preferences',
   ]
   if (typeof to.name === 'string' && branchOperatorRoutes.includes(to.name)) {
