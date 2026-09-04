@@ -3,7 +3,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import {
   requestBranchPayout, confirmBranchPayout, fetchBranchPayoutFeeEstimate,
   requestOrgPayoutAsMember, confirmOrgPayoutAsMember, fetchPayoutFeeEstimate,
-  fetchOrgBankCodes, fetchOrgBeneficiaries, createOrgBeneficiary, deleteOrgBeneficiary, fetchRecentSettlements,
+  fetchOrgBankCodes, fetchOrgBeneficiaries, deleteOrgBeneficiary, fetchRecentSettlements,
   validateOrgScreenName, validateOrgShortcode, validateOrgBankAccount, validateOrgMobileMoney,
   fetchOrgSettlementPreferences,
   type BankCode, type PayoutFeeEstimate, type Beneficiary, type RecentSettlement, type ScreenNameMatch,
@@ -54,13 +54,25 @@ const saveAsBeneficiary = ref(false)
 const beneficiaryNickname = ref('')
 const removingBeneficiaryId = ref<string | null>(null)
 
+function beneficiaryDestSummary(b: Beneficiary): string {
+  if (b.destination_type === 'BANK_ACCOUNT') return b.bank_account_number ?? ''
+  if (b.destination_type === 'PAYBILL') return `paybill ${b.shortcode ?? ''}`
+  if (b.destination_type === 'TILL_NUMBER') return `till ${b.shortcode ?? ''}`
+  return b.phone_number ?? ''
+}
+
 const beneficiaryOptions = computed(() => [
   { value: '', label: '— Pick a saved payee (optional) —' },
   ...beneficiaries.value.map((b) => ({
     value: b.id,
-    label: `${b.nickname} — ${b.recipient_name} (${b.destination_type === 'BANK_ACCOUNT' ? b.bank_account_number : b.phone_number})`,
+    label: `${b.nickname} — ${b.recipient_name} (${beneficiaryDestSummary(b)})`,
   })),
 ])
+
+const newBeneficiaryRoute = computed(() => ({
+  name: 'branch-beneficiaries',
+  params: { orgId: props.orgId, branchId: props.branchId },
+}))
 
 async function loadBeneficiaries() {
   beneficiariesLoading.value = true
@@ -80,17 +92,20 @@ function applyBeneficiary(id: string) {
   if (!b) return
   destinationType.value = b.destination_type
   recipientName.value = b.recipient_name
+  phoneNumber.value = ''
+  bankCode.value = ''
+  bankAccountNumber.value = ''
+  shortcode.value = ''
+  accountReference.value = ''
   if (b.destination_type === 'BANK_ACCOUNT') {
     bankCode.value = b.bank_code ?? ''
     bankAccountNumber.value = b.bank_account_number ?? ''
-    phoneNumber.value = ''
+  } else if (b.destination_type === 'PAYBILL' || b.destination_type === 'TILL_NUMBER') {
+    shortcode.value = b.shortcode ?? ''
+    accountReference.value = b.account_reference ?? ''
   } else {
     phoneNumber.value = b.phone_number ?? ''
-    bankCode.value = ''
-    bankAccountNumber.value = ''
   }
-  shortcode.value = ''
-  accountReference.value = ''
   shortcodeValidation.value = null
 }
 
@@ -194,6 +209,16 @@ const destinationOptions = [
 const validating = ref(false)
 const shortcodeValidation = ref<{ ok: boolean; message: string } | null>(null)
 
+function applyName(target: typeof shortcodeValidation, name: string | undefined) {
+  const n = (name ?? '').trim()
+  if (n) {
+    target.value = { ok: true, message: `Account holder: ${n}` }
+    if (!recipientName.value.trim()) recipientName.value = n
+  } else {
+    target.value = { ok: false, message: "We couldn't confirm the account holder — type the recipient's name below to continue." }
+  }
+}
+
 async function validateShortcodeRecipient() {
   shortcodeValidation.value = null
   if (!shortcode.value.trim()) {
@@ -203,10 +228,9 @@ async function validateShortcodeRecipient() {
   validating.value = true
   try {
     const result = await validateOrgShortcode(!isOrgMemberView.value, shortcode.value.trim(), destinationType.value === 'PAYBILL' ? 'paybill' : 'till')
-    shortcodeValidation.value = { ok: true, message: `Account holder: ${result.account_name}` }
-    if (!recipientName.value.trim()) recipientName.value = result.account_name
+    applyName(shortcodeValidation, result.account_name)
   } catch (err) {
-    shortcodeValidation.value = { ok: false, message: extractErrorMessage(err) }
+    shortcodeValidation.value = { ok: false, message: extractErrorMessage(err) + " — type the recipient's name below to continue." }
   } finally {
     validating.value = false
   }
@@ -224,20 +248,16 @@ async function validateRecipient() {
         recipientValidation.value = { ok: false, message: 'Enter a bank and account number first.' }
         return
       }
-      const result = await validateOrgBankAccount(bankAccountNumber.value.trim(), bankCode.value, !isOrgMemberView.value)
-      recipientValidation.value = { ok: true, message: `Account holder: ${result.account_name}` }
-      if (!recipientName.value.trim()) recipientName.value = result.account_name
+      applyName(recipientValidation, (await validateOrgBankAccount(bankAccountNumber.value.trim(), bankCode.value, !isOrgMemberView.value)).account_name)
     } else {
       if (!phoneNumber.value.trim()) {
         recipientValidation.value = { ok: false, message: 'Enter a phone number first.' }
         return
       }
-      const result = await validateOrgMobileMoney(phoneNumber.value.trim(), undefined, !isOrgMemberView.value)
-      recipientValidation.value = { ok: true, message: `Account holder: ${result.account_name}` }
-      if (!recipientName.value.trim()) recipientName.value = result.account_name
+      applyName(recipientValidation, (await validateOrgMobileMoney(phoneNumber.value.trim(), undefined, !isOrgMemberView.value)).account_name)
     }
   } catch (err) {
-    recipientValidation.value = { ok: false, message: extractErrorMessage(err) }
+    recipientValidation.value = { ok: false, message: extractErrorMessage(err) + " — type the recipient's name below to continue." }
   } finally {
     validating.value = false
   }
@@ -348,6 +368,10 @@ async function submitPayout() {
 
   requesting.value = true
   try {
+    const beneficiaryNick =
+      saveAsBeneficiary.value && beneficiaryNickname.value.trim()
+        ? beneficiaryNickname.value.trim()
+        : undefined
     const basePayload = {
       amount: amountCents,
       recipient_name: recipientName.value.trim(),
@@ -358,6 +382,7 @@ async function submitPayout() {
       account_reference: isShortcode ? accountReference.value.trim() || undefined : undefined,
       bank_code: destinationType.value === 'BANK_ACCOUNT' ? bankCode.value : undefined,
       bank_account_number: destinationType.value === 'BANK_ACCOUNT' ? bankAccountNumber.value.trim() : undefined,
+      beneficiary_nickname: beneficiaryNick,
     }
     const result = isOrgMemberView.value
       ? await requestOrgPayoutAsMember({
@@ -366,24 +391,6 @@ async function submitPayout() {
           ...(isOwner.value ? { pin: confirmSecret.value } : { password: confirmSecret.value }),
         })
       : await requestBranchPayout({ ...basePayload, password: confirmSecret.value })
-
-    if (saveAsBeneficiary.value && beneficiaryNickname.value.trim() && !isShortcode) {
-      try {
-        const b = await createOrgBeneficiary({
-          nickname: beneficiaryNickname.value.trim(),
-          recipient_name: recipientName.value.trim(),
-          destination_type: destinationType.value as 'PHONE_NUMBER' | 'BANK_ACCOUNT',
-          phone_number: destinationType.value === 'PHONE_NUMBER' ? phoneNumber.value.trim() : undefined,
-          bank_code: destinationType.value === 'BANK_ACCOUNT' ? bankCode.value : undefined,
-          bank_account_number: destinationType.value === 'BANK_ACCOUNT' ? bankAccountNumber.value.trim() : undefined,
-        }, true)
-        beneficiaries.value.unshift(b)
-      } catch (err) {
-        const msg = extractErrorMessage(err)
-        beneficiaryError.value = msg
-        showError(msg)
-      }
-    }
 
     if (result.status === 'otp_required') {
       pendingPayoutId.value = result.payout_id ?? null
@@ -540,13 +547,18 @@ function cancelOtp() {
         </div>
 
         <form class="flex flex-col gap-4 max-w-md" @submit.prevent="submitPayout">
-          <AppSelect
-            v-if="beneficiaries.length"
-            v-model="selectedBeneficiaryId"
-            label="Pay a saved payee"
-            :options="beneficiaryOptions"
-            @update:modelValue="(v: string) => v && applyBeneficiary(v)"
-          />
+          <div class="flex flex-col gap-1">
+            <AppSelect
+              v-if="beneficiaries.length"
+              v-model="selectedBeneficiaryId"
+              label="Pay a saved payee"
+              :options="beneficiaryOptions"
+              @update:modelValue="(v: string) => v && applyBeneficiary(v)"
+            />
+            <router-link :to="newBeneficiaryRoute" class="self-start text-xs font-semibold text-primary hover:underline">
+              {{ beneficiaries.length ? '+ Manage beneficiaries' : '+ Add a beneficiary' }}
+            </router-link>
+          </div>
 
           <AppSelect v-model="destinationType" label="Pay out via" :options="destinationOptions" />
           <div v-if="destinationType === 'PHONE_NUMBER'" class="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">

@@ -100,6 +100,7 @@ interface NavItem {
   href?: string
   match: string[]
   show: boolean
+  permission?: string
   panel?: NavPanel
 }
 interface NavGroup {
@@ -119,6 +120,7 @@ interface NavSection {
   to?: RouteLocationRaw
   match?: string[]
   show: boolean
+  permission?: string
   panel?: NavPanel
 }
 
@@ -137,6 +139,7 @@ function dual(
   branchRoute: string,
   match: string[] = [orgRoute, branchRoute],
   show = isOrgWide.value || !!props.branchId,
+  permission?: string,
 ): NavItem {
   const toOrg: RouteLocationRaw = { name: orgRoute, params: { orgId: props.orgId } }
   const toBranch: RouteLocationRaw = {
@@ -149,11 +152,12 @@ function dual(
     to: isOrgWide.value && !isBranchMode.value ? toOrg : toBranch,
     match,
     show,
+    permission,
   }
 }
 
-function orgLeaf(label: string, icon: Component, routeName: string, show: boolean, match: string[] = [routeName]): NavItem {
-  return { label, icon, to: { name: routeName, params: { orgId: props.orgId } }, match, show }
+function orgLeaf(label: string, icon: Component, routeName: string, show: boolean, match: string[] = [routeName], permission?: string): NavItem {
+  return { label, icon, to: { name: routeName, params: { orgId: props.orgId } }, match, show, permission }
 }
 
 const suppliersPanel = computed<NavPanel>(() => ({
@@ -212,12 +216,21 @@ const rawSections = computed<NavSection[]>(() => [
               ['org-transactions', 'org-transaction-detail', 'branch-transactions', 'branch-transaction-detail']),
             dual('Payment links', LinkIcon, 'org-payment-links', 'branch-payment-links',
               ['org-payment-links', 'org-payment-link-new', 'org-payment-link-detail', 'branch-payment-links', 'branch-payment-link-new', 'branch-payment-link-detail']),
-            dual('Payouts', BanknoteIcon, 'org-payouts', 'branch-payouts'),
+            dual('Payouts', BanknoteIcon, 'org-payouts', 'branch-payouts',
+              ['org-payouts', 'branch-payouts'], undefined, 'payouts.initiate'),
+            // Beneficiaries / bulk / scheduled are owner-only on the org tier
+            // (branch members keep access via their own gating).
+            dual('Beneficiaries', UsersIcon, 'org-beneficiaries', 'branch-beneficiaries',
+              ['org-beneficiaries', 'branch-beneficiaries'],
+              isOrgWide.value ? isOwner.value : !!props.branchId),
             dual('Bulk payments', LayersIcon, 'org-bulk-payouts', 'branch-bulk-payouts',
-              ['org-bulk-payouts', 'org-bulk-payout-detail', 'branch-bulk-payouts', 'branch-bulk-payout-detail']),
-            dual('Transfers', ArrowLeftRightIcon, 'org-transfers', 'branch-transfers'),
+              ['org-bulk-payouts', 'org-bulk-payout-detail', 'branch-bulk-payouts', 'branch-bulk-payout-detail'],
+              isOrgWide.value ? isOwner.value : !!props.branchId),
+            dual('Transfers', ArrowLeftRightIcon, 'org-transfers', 'branch-transfers',
+              ['org-transfers', 'branch-transfers'], undefined, 'transfers.initiate'),
             dual('Scheduled payouts', CalendarClockIcon, 'org-scheduled-payouts', 'branch-scheduled-payouts',
-              ['org-scheduled-payouts', 'org-scheduled-payout-detail', 'branch-scheduled-payouts', 'branch-scheduled-payout-detail']),
+              ['org-scheduled-payouts', 'org-scheduled-payout-detail', 'branch-scheduled-payouts', 'branch-scheduled-payout-detail'],
+              isOrgWide.value ? isOwner.value : !!props.branchId),
             dual('Recipient suppressions', ShieldAlertIcon, 'org-recipient-suppressions', 'branch-recipient-suppressions'),
           ],
         },
@@ -245,9 +258,12 @@ const rawSections = computed<NavSection[]>(() => [
         {
           heading: 'Invoicing',
           items: [
-            dual('Invoices', ReceiptTextIcon, 'org-invoices', 'branch-invoices'),
-            dual('Bulk invoices', LayersIcon, 'org-bulk-invoices', 'branch-bulk-invoices'),
-            dual('Invoice schedules', CalendarClockIcon, 'org-invoice-schedules', 'branch-invoice-schedules'),
+            dual('Invoices', ReceiptTextIcon, 'org-invoices', 'branch-invoices',
+              ['org-invoices', 'branch-invoices'], undefined, 'invoices.manage'),
+            dual('Bulk invoices', LayersIcon, 'org-bulk-invoices', 'branch-bulk-invoices',
+              ['org-bulk-invoices', 'branch-bulk-invoices'], undefined, 'invoices.manage'),
+            dual('Invoice schedules', CalendarClockIcon, 'org-invoice-schedules', 'branch-invoice-schedules',
+              ['org-invoice-schedules', 'branch-invoice-schedules'], undefined, 'invoices.manage'),
           ],
         },
         {
@@ -263,6 +279,7 @@ const rawSections = computed<NavSection[]>(() => [
                 'branch-supplier-invoices', 'branch-supplier-invoice-detail', 'branch-purchase-orders', 'branch-purchase-order-detail', 'branch-suppliers-analytics',
               ],
               show: isOrgWide.value || !!props.branchId,
+              permission: 'suppliers.manage',
               panel: suppliersPanel.value,
             },
           ],
@@ -271,7 +288,8 @@ const rawSections = computed<NavSection[]>(() => [
           heading: 'Customers',
           items: [
             dual('Customers', UsersIcon, 'org-customers', 'branch-customers',
-              ['org-customers', 'org-customer-detail', 'branch-customers', 'branch-customer-detail']),
+              ['org-customers', 'org-customer-detail', 'branch-customers', 'branch-customer-detail'],
+              undefined, 'customers.manage'),
           ],
         },
         {
@@ -370,12 +388,20 @@ const rawSections = computed<NavSection[]>(() => [
 ])
 
 // --- Visibility filtering --------------------------------------------------
+// Permission gating applies only to org-member sessions. Branch-member sessions
+// have no org RBAC profile and keep their existing show/role gating.
+function permitted(permission?: string): boolean {
+  if (!permission) return true
+  if (auth.meta?.memberType !== 'org_member') return true
+  return auth.can(permission)
+}
+
 function filterPanel(panel: NavPanel): NavPanel | null {
   const groups = panel.groups
     .map((g) => ({
       ...g,
       items: g.items
-        .filter((it) => it.show)
+        .filter((it) => it.show && permitted(it.permission))
         .map((it) => (it.panel ? { ...it, panel: filterPanel(it.panel) ?? undefined } : it))
         .filter((it) => it.to || it.href || it.panel),
     }))
@@ -386,7 +412,7 @@ function filterPanel(panel: NavPanel): NavPanel | null {
 
 const sections = computed<NavSection[]>(() =>
   rawSections.value
-    .filter((s) => s.show)
+    .filter((s) => s.show && permitted(s.permission))
     .map((s) => (s.panel ? { ...s, panel: filterPanel(s.panel) ?? undefined } : s))
     .filter((s) => s.to || s.panel),
 )
@@ -474,8 +500,9 @@ function onLeafClick() {
 // --- Quick actions widget (Money panel) ----------------------------------
 const quickActions = computed(() => {
   const collect = dual('Collect money', WalletIcon, 'org-collect', 'branch-collect')
-  const payout = dual('Send payout', BanknoteIcon, 'org-payouts', 'branch-payouts')
-  return [collect, payout].filter((a) => a.show && a.to)
+  const payout = dual('Send payout', BanknoteIcon, 'org-payouts', 'branch-payouts',
+    ['org-payouts', 'branch-payouts'], undefined, 'payouts.initiate')
+  return [collect, payout].filter((a) => a.show && a.to && permitted(a.permission))
 })
 
 // --- Breadcrumb ---------------------------------------------------------

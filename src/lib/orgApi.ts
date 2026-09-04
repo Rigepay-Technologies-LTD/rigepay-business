@@ -203,6 +203,24 @@ export async function fetchBranchTransaction(id: string): Promise<TransactionDet
   return res.data.data
 }
 
+export async function openTransactionReceipt(id: string, isBranch = false): Promise<void> {
+  const base = isBranch ? `/org/v1/branch/transactions/${id}/receipt` : `/org/v1/transactions/${id}/receipt`
+  const res = await http.get(base, { responseType: 'blob' })
+  const ct = String(res.headers['content-type'] || '')
+  if (ct.includes('application/json')) {
+    const text = await (res.data as Blob).text()
+    const url = JSON.parse(text)?.data?.url
+    if (url) {
+      window.open(url, '_blank', 'noopener')
+      return
+    }
+    throw new Error('Receipt is not available yet.')
+  }
+  const blobUrl = URL.createObjectURL(res.data as Blob)
+  window.open(blobUrl, '_blank', 'noopener')
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000)
+}
+
 export interface RelatedRefundRow {
   id: string
   created_at: string
@@ -696,6 +714,16 @@ export interface MemberRBAC {
   per_txn_cents: number
   daily_cents: number
 }
+export interface MyRBAC {
+  role: string
+  is_owner: boolean
+  has_custom_role: boolean
+  permissions: string[]
+}
+export async function fetchMyRBAC(): Promise<MyRBAC> {
+  const res = await http.get<{ status: string; data: MyRBAC }>('/org/v1/rbac/me')
+  return res.data.data
+}
 export async function fetchRBACPermissions(): Promise<RBACPermission[]> {
   const res = await http.get<{ status: string; data: RBACPermission[] }>('/org/v1/rbac/permissions')
   return res.data.data
@@ -1082,6 +1110,7 @@ export interface RequestPayoutInput {
   bank_account_number?: string
   password?: string
   pin?: string
+  beneficiary_nickname?: string
 }
 
 export interface RequestPayoutResult {
@@ -1632,22 +1661,43 @@ export interface Beneficiary {
   created_by_branch_member_id?: string | null
   nickname: string
   recipient_name: string
-  destination_type: 'PHONE_NUMBER' | 'BANK_ACCOUNT'
+  destination_type: BeneficiaryDestinationType
   phone_number: string | null
   bank_code: string | null
   bank_account_number: string | null
+  shortcode: string | null
+  account_reference: string | null
+  verified_name: string | null
+  name_verified_at: string | null
   is_active: boolean
+  source: 'MANUAL' | 'AUTO'
   created_at: string
 }
+
+export type BeneficiaryDestinationType = 'PHONE_NUMBER' | 'TILL_NUMBER' | 'PAYBILL' | 'BANK_ACCOUNT'
 
 export interface CreateBeneficiaryInput {
   nickname: string
   recipient_name: string
-  destination_type?: 'PHONE_NUMBER' | 'BANK_ACCOUNT'
+  destination_type?: BeneficiaryDestinationType
   phone_number?: string
   bank_code?: string
   bank_account_number?: string
+  shortcode?: string
+  account_reference?: string
+  verified_name?: string
+  pin?: string
+  password?: string
 }
+
+export interface UpdateBeneficiaryInput {
+  nickname?: string
+  is_active?: boolean
+}
+
+export type CreateBeneficiaryResult =
+  | { outcome: 'saved'; beneficiary: Beneficiary }
+  | { outcome: 'otp_required' }
 
 export async function fetchOrgBeneficiaries(isBranch = false): Promise<Beneficiary[]> {
   const base = isBranch ? '/org/v1/branch/beneficiaries' : '/org/v1/beneficiaries'
@@ -1656,9 +1706,24 @@ export async function fetchOrgBeneficiaries(isBranch = false): Promise<Beneficia
 }
 
 
-export async function createOrgBeneficiary(input: CreateBeneficiaryInput, isBranch = false): Promise<Beneficiary> {
+export async function createOrgBeneficiary(input: CreateBeneficiaryInput, isBranch = false): Promise<CreateBeneficiaryResult> {
   const base = isBranch ? '/org/v1/branch/beneficiaries' : '/org/v1/beneficiaries'
-  const res = await http.post<{ status: string; data: Beneficiary }>(base, input)
+  const res = await http.post<{ status: string; data?: Beneficiary }>(base, input)
+  if (res.data.status === 'otp_required') return { outcome: 'otp_required' }
+  return { outcome: 'saved', beneficiary: res.data.data as Beneficiary }
+}
+
+
+export async function confirmOrgBeneficiary(otp: string, isBranch = false): Promise<Beneficiary> {
+  const base = isBranch ? '/org/v1/branch/beneficiaries' : '/org/v1/beneficiaries'
+  const res = await http.post<{ status: string; data: Beneficiary }>(`${base}/confirm`, { otp })
+  return res.data.data
+}
+
+
+export async function updateOrgBeneficiary(id: string, input: UpdateBeneficiaryInput, isBranch = false): Promise<Beneficiary> {
+  const base = isBranch ? '/org/v1/branch/beneficiaries' : '/org/v1/beneficiaries'
+  const res = await http.patch<{ status: string; data: Beneficiary }>(`${base}/${id}`, input)
   return res.data.data
 }
 
@@ -1754,6 +1819,17 @@ export async function updateNotificationPreferences(
   const base = isBranch ? '/org/v1/branch/notifications/preferences' : '/org/v1/notifications/preferences'
   const res = await http.put<{ status: string; data: NotificationPreferences }>(base, { categories })
   return res.data.data
+}
+
+export async function fetchReceiptEmailPref(isBranch = false): Promise<boolean> {
+  const base = isBranch ? '/org/v1/branch/settings/receipt-emails' : '/org/v1/settings/receipt-emails'
+  const res = await http.get<{ status: string; data: { enabled: boolean } }>(base)
+  return res.data.data.enabled
+}
+export async function updateReceiptEmailPref(enabled: boolean, isBranch = false): Promise<boolean> {
+  const base = isBranch ? '/org/v1/branch/settings/receipt-emails' : '/org/v1/settings/receipt-emails'
+  const res = await http.put<{ status: string; data: { enabled: boolean } }>(base, { enabled })
+  return res.data.data.enabled
 }
 
 export interface OrgFraudDecision {

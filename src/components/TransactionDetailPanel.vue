@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { fetchOrgTransaction, fetchBranchTransaction, fetchTransactionRelated, type TransactionDetail, type TransactionRelated } from '@/lib/orgApi'
+import { fetchOrgTransaction, fetchBranchTransaction, fetchTransactionRelated, openTransactionReceipt, type TransactionDetail, type TransactionRelated } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
 import { formatMoney, txnReference, formatDate } from '@/lib/format'
 import { useResponseModal } from '@/composables/useResponseModal'
 import AppCard from '@/components/ui/AppCard.vue'
 import TagEditor from '@/components/TagEditor.vue'
-import { ChevronLeftIcon, CopyIcon, CheckIcon } from 'lucide-vue-next'
+import { ChevronLeftIcon, CopyIcon, CheckIcon, DownloadIcon } from 'lucide-vue-next'
 
 const props = defineProps<{
   orgId: string
@@ -62,6 +62,22 @@ function statusClass(s: string) {
 const isInflow = computed(() =>
   detail.value ? /COLLECT|DEPOSIT|CREDIT|REFUND|REVERSAL|SETTLEMENT|FUNDS_SETTLED|INBOUND/i.test(detail.value.type) : false,
 )
+
+const downloadingReceipt = ref(false)
+const canDownloadReceipt = computed(() =>
+  detail.value ? ['SUCCESS', 'COMPLETED', 'SUCCESSFUL'].includes(detail.value.status) : false,
+)
+async function downloadReceipt() {
+  if (downloadingReceipt.value) return
+  downloadingReceipt.value = true
+  try {
+    await openTransactionReceipt(props.txnId, isBranch.value)
+  } catch (err) {
+    showError(extractErrorMessage(err))
+  } finally {
+    downloadingReceipt.value = false
+  }
+}
 
 const copied = ref(false)
 function copyRef() {
@@ -120,7 +136,18 @@ const rows = computed(() => {
             </button>
           </div>
         </div>
-        <span class="inline-flex rounded-full px-3 py-1 text-[11px] font-bold" :class="statusClass(detail.status)">{{ detail.status }}</span>
+        <div class="flex items-center gap-2">
+          <button
+            v-if="canDownloadReceipt"
+            class="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-text-secondary hover:bg-surface-2 disabled:opacity-50"
+            :disabled="downloadingReceipt"
+            @click="downloadReceipt"
+          >
+            <DownloadIcon class="w-3.5 h-3.5" />
+            {{ downloadingReceipt ? 'Preparing…' : 'Receipt' }}
+          </button>
+          <span class="inline-flex rounded-full px-3 py-1 text-[11px] font-bold" :class="statusClass(detail.status)">{{ detail.status }}</span>
+        </div>
       </div>
 
       <AppCard>

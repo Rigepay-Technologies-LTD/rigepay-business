@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   fetchNotificationPreferences, updateNotificationPreferences,
+  fetchReceiptEmailPref, updateReceiptEmailPref,
   type NotificationPrefCategory,
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
@@ -10,7 +11,7 @@ import { useResponseModal } from '@/composables/useResponseModal'
 import DashboardLayout from '@/layouts/DashboardLayout.vue'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppButton from '@/components/ui/AppButton.vue'
-import { BellIcon, ShieldCheckIcon } from 'lucide-vue-next'
+import { BellIcon, ShieldCheckIcon, ReceiptIcon } from 'lucide-vue-next'
 
 const props = defineProps<{ orgId: string; branchId?: string }>()
 const route = useRoute()
@@ -33,16 +34,36 @@ const lockedCategory = ref('security')
 const loading = ref(true)
 const saving = ref(false)
 
+const receiptEmails = ref(true)
+const receiptSaving = ref(false)
+
 async function load() {
   loading.value = true
   try {
-    const data = await fetchNotificationPreferences(isBranch.value)
+    const [data, receipts] = await Promise.all([
+      fetchNotificationPreferences(isBranch.value),
+      fetchReceiptEmailPref(isBranch.value).catch(() => true),
+    ])
     categories.value = data.categories
     lockedCategory.value = data.locked_category
+    receiptEmails.value = receipts
   } catch (err) {
     showError(extractErrorMessage(err))
   } finally {
     loading.value = false
+  }
+}
+
+async function toggleReceiptEmails() {
+  const next = !receiptEmails.value
+  receiptSaving.value = true
+  try {
+    receiptEmails.value = await updateReceiptEmailPref(next, isBranch.value)
+    showSuccess(next ? 'Receipt emails turned on.' : 'Receipt emails turned off.')
+  } catch (err) {
+    showError(extractErrorMessage(err))
+  } finally {
+    receiptSaving.value = false
   }
 }
 
@@ -114,6 +135,32 @@ onMounted(load)
             <AppButton :loading="saving" @click="save">Save preferences</AppButton>
           </div>
         </template>
+      </AppCard>
+
+      <AppCard v-if="!loading">
+        <div class="flex items-start justify-between gap-4">
+          <div class="min-w-0">
+            <p class="text-sm font-semibold text-text-primary flex items-center gap-2">
+              <ReceiptIcon class="w-3.5 h-3.5 text-text-muted" />
+              Receipt emails
+            </p>
+            <p class="text-xs text-text-muted mt-0.5">
+              Email a PDF proof-of-payment to your business contact for every completed collection, payout, settlement and transfer.
+            </p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            :aria-checked="receiptEmails"
+            :disabled="receiptSaving"
+            class="relative inline-flex h-6 w-11 shrink-0 rounded-full transition-colors disabled:opacity-50"
+            :class="receiptEmails ? 'bg-primary' : 'bg-surface-2 border border-border'"
+            @click="toggleReceiptEmails"
+          >
+            <span class="inline-block h-5 w-5 rounded-full bg-white shadow transition-transform mt-0.5"
+              :class="receiptEmails ? 'translate-x-5' : 'translate-x-0.5'" />
+          </button>
+        </div>
       </AppCard>
     </div>
   </DashboardLayout>
