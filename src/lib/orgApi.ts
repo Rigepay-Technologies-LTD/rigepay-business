@@ -4721,11 +4721,21 @@ export interface PublicHolidayEntry {
   notes?: string | null
 }
 
+export interface SettlementHistoryEntry {
+  transaction_id: string
+  amount_cents: number
+  settled_at: string
+  reference?: string
+  description?: string
+  original_transaction_count: number
+}
+
 export interface SettlementCalendar {
   holds: SettlementHold[]
   total_held_cents: number
   next_settlement: SettlementCalendarNextSettlement | null
   upcoming_holidays: PublicHolidayEntry[]
+  settlement_history: SettlementHistoryEntry[]
   hold_window_business_days: number
 }
 

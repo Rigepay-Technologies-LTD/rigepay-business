@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { fetchOrgSettlementCalendar, fetchBranchSettlementCalendar, type SettlementCalendar, type SettlementHold } from '@/lib/orgApi'
+import { fetchOrgSettlementCalendar, fetchBranchSettlementCalendar, type SettlementCalendar, type SettlementHold, type SettlementHistoryEntry } from '@/lib/orgApi'
 import { formatMoney, formatDate } from '@/lib/format'
 import { useResponseModal } from '@/composables/useResponseModal'
 import { extractErrorMessage } from '@/lib/errors'
@@ -19,7 +19,12 @@ async function load() {
   loading.value = true
   try {
     const res = props.branchId ? await fetchBranchSettlementCalendar() : await fetchOrgSettlementCalendar()
-    data.value = { ...res, holds: res.holds ?? [], upcoming_holidays: res.upcoming_holidays ?? [] }
+    data.value = {
+      ...res,
+      holds: res.holds ?? [],
+      upcoming_holidays: res.upcoming_holidays ?? [],
+      settlement_history: res.settlement_history ?? [],
+    }
   } catch (err) {
     showError(extractErrorMessage(err))
   } finally {
@@ -71,6 +76,11 @@ const nextSettlementCountdown = computed(() => countdown(data.value?.next_settle
 const selectedHold = ref<SettlementHold | null>(null)
 function openDetail(hold: SettlementHold) {
   selectedHold.value = hold
+}
+
+const selectedHistory = ref<SettlementHistoryEntry | null>(null)
+function openHistoryDetail(entry: SettlementHistoryEntry) {
+  selectedHistory.value = entry
 }
 
 const railLabel = (rail?: string) => (rail ? rail.replace(/_/g, ' ').toUpperCase() : '—')
@@ -143,6 +153,36 @@ const railLabel = (rail?: string) => (rail ? rail.replace(/_/g, ' ').toUpperCase
       </AppCard>
 
       <AppCard>
+        <h3 class="text-sm font-bold text-text-primary mb-1">Settlement history</h3>
+        <p class="text-xs text-text-muted mb-4">Past releases actually completed by the settlement job. Click a row for details.</p>
+        <p v-if="!data.settlement_history.length" class="text-sm text-text-muted">No settlements yet.</p>
+        <div v-else class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="text-left text-[10px] font-bold uppercase tracking-wider text-text-muted border-b border-border">
+                <th class="px-3 py-2">Amount</th>
+                <th class="px-3 py-2">Settled</th>
+                <th class="px-3 py-2">Reference</th>
+                <th class="px-3 py-2">Included transactions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="entry in data.settlement_history" :key="entry.transaction_id"
+                class="border-b border-border last:border-0 cursor-pointer hover:bg-surface-2 transition"
+                @click="openHistoryDetail(entry)"
+              >
+                <td class="px-3 py-2.5 font-semibold text-text-primary">KES {{ formatMoney(entry.amount_cents) }}</td>
+                <td class="px-3 py-2.5 text-text-muted">{{ formatDate(entry.settled_at) }}</td>
+                <td class="px-3 py-2.5 text-text-muted font-mono text-xs">{{ entry.reference || '—' }}</td>
+                <td class="px-3 py-2.5 text-text-muted">{{ entry.original_transaction_count || '—' }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </AppCard>
+
+      <AppCard>
         <h3 class="text-sm font-bold text-text-primary mb-1">Upcoming holidays</h3>
         <p class="text-xs text-text-muted mb-4">Weekends and these dates push settlement to the next business day.</p>
         <p v-if="!data.upcoming_holidays.length" class="text-sm text-text-muted">No holidays in the next month.</p>
@@ -205,6 +245,31 @@ const railLabel = (rail?: string) => (rail ? rail.replace(/_/g, ' ').toUpperCase
         <div v-if="selectedHold.description" class="flex flex-col gap-1">
           <dt class="text-text-muted">Description</dt>
           <dd class="font-semibold text-text-primary">{{ selectedHold.description }}</dd>
+        </div>
+      </dl>
+    </AppModal>
+
+    <AppModal :model-value="!!selectedHistory" title="Settlement detail" size="sm" @update:model-value="selectedHistory = null">
+      <dl v-if="selectedHistory" class="flex flex-col gap-3 text-sm">
+        <div class="flex justify-between">
+          <dt class="text-text-muted">Amount settled</dt>
+          <dd class="font-semibold text-text-primary">KES {{ formatMoney(selectedHistory.amount_cents) }}</dd>
+        </div>
+        <div class="flex justify-between">
+          <dt class="text-text-muted">Settled at</dt>
+          <dd class="font-semibold text-text-primary">{{ formatDate(selectedHistory.settled_at) }}</dd>
+        </div>
+        <div v-if="selectedHistory.original_transaction_count" class="flex justify-between">
+          <dt class="text-text-muted">Transactions included</dt>
+          <dd class="font-semibold text-text-primary">{{ selectedHistory.original_transaction_count }}</dd>
+        </div>
+        <div v-if="selectedHistory.reference" class="flex justify-between">
+          <dt class="text-text-muted">Reference</dt>
+          <dd class="font-semibold text-text-primary font-mono text-xs">{{ selectedHistory.reference }}</dd>
+        </div>
+        <div v-if="selectedHistory.description" class="flex flex-col gap-1">
+          <dt class="text-text-muted">Description</dt>
+          <dd class="font-semibold text-text-primary">{{ selectedHistory.description }}</dd>
         </div>
       </dl>
     </AppModal>
