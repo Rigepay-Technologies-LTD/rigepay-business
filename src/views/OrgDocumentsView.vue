@@ -5,8 +5,10 @@ import { extractErrorMessage } from '@/lib/errors'
 import DashboardLayout from '@/layouts/DashboardLayout.vue'
 import DocUploadCard from '@/components/DocUploadCard.vue'
 import { useResponseModal } from '@/composables/useResponseModal'
+import { useAuthStore } from '@/stores/auth'
 
 const { showError } = useResponseModal()
+const auth = useAuthStore()
 
 const props = defineProps<{ orgId: string }>()
 
@@ -121,6 +123,10 @@ async function handleUpload(type: string, file: File) {
   try {
     await uploadOrgDocument(file, type)
     await load()
+    if (auth.onboardingComplete === false) {
+      auth.onboardingComplete = null
+      void auth.ensureOnboarding()
+    }
   } catch (err) {
     const msg = extractErrorMessage(err)
     uploadErrors.value = { ...uploadErrors.value, [type]: msg }
@@ -138,6 +144,17 @@ const completedCount = computed(() => docSlots.filter((s) => latestFor(s.type)).
 <template>
   <DashboardLayout :org-id="props.orgId" title="Compliance documents">
     <div class="flex flex-col gap-6">
+      <div
+        v-if="auth.onboardingComplete === false"
+        class="rounded-xl border border-warning bg-warning-light p-4"
+      >
+        <p class="text-sm font-bold text-warning-text">Finish setting up your organization</p>
+        <p class="text-xs text-warning-text mt-1">
+          Upload your Certificate of Registration, KRA PIN certificate and business permit to
+          unlock the rest of your dashboard. A compliance officer reviews each document.
+        </p>
+      </div>
+
       <div class="flex items-center justify-between">
         <div>
           <h2 class="text-sm font-bold text-text-primary">Organization documents</h2>

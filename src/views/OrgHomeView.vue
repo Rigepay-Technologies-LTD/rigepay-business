@@ -20,6 +20,7 @@ import DashboardHero from '@/components/DashboardHero.vue'
 import DashboardKpiRow from '@/components/DashboardKpiRow.vue'
 import DashboardSecondaryStats from '@/components/DashboardSecondaryStats.vue'
 import DashboardApprovalsWidget from '@/components/DashboardApprovalsWidget.vue'
+import VerificationRequestBanner from '@/components/VerificationRequestBanner.vue'
 import type { QuickAction } from '@/components/QuickActions.vue'
 import {
   WalletIcon, BanknoteIcon, LinkIcon, UsersIcon, VaultIcon, ArrowLeftRightIcon,
@@ -216,6 +217,7 @@ async function openTxnDetail(row: Record<string, unknown>) {
 <template>
   <DashboardLayout :org-id="props.orgId" :branches="overview?.branches ?? []" title="Organization overview">
     <div class="flex flex-col gap-6">
+      <VerificationRequestBanner />
       <DashboardHero
         :greeting="greeting"
         :name="profile?.member.first_name"

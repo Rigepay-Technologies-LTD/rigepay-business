@@ -7,6 +7,7 @@ export const useAuthStore = defineStore('auth', {
     expiresAt: session.getExpiresAt(),
     permissions: session.getPermissions() as string[],
     permissionsLoaded: false,
+    onboardingComplete: session.getOnboardingComplete() as boolean | null,
   }),
   getters: {
     isAuthenticated: (state) => !!state.meta,
@@ -33,7 +34,9 @@ export const useAuthStore = defineStore('auth', {
         session.setExpiresAt(expiresAt)
         this.expiresAt = expiresAt
       }
+      this.onboardingComplete = null
       void this.loadPermissions()
+      void this.ensureOnboarding()
     },
 
     async loadPermissions(): Promise<void> {
@@ -70,9 +73,51 @@ export const useAuthStore = defineStore('auth', {
           session.setExpiresAt(expiresAt)
           this.expiresAt = expiresAt
         }
+        this.applyOrgStatus(res.data?.data?.organization_status)
         void this.loadPermissions()
       } catch {
         this.logout()
+      }
+    },
+
+    applyOrgStatus(status?: string | null) {
+      // Branch members belong to an already-approved org — never gated.
+      if (!this.meta || this.meta.memberType !== 'org_member') {
+        this.setOnboardingComplete(true)
+        return
+      }
+      if (status && status !== 'pending_kyb') {
+        this.setOnboardingComplete(true)
+      }
+      // pending_kyb (or unknown) stays inconclusive until ensureOnboarding()
+      // checks whether the core documents have actually been uploaded.
+    },
+
+    setOnboardingComplete(v: boolean) {
+      this.onboardingComplete = v
+      session.setOnboardingComplete(v)
+    },
+
+    // Resolves whether the org has cleared the "upload your compliance documents"
+    // gate. Approved/rejected/suspended orgs pass; a pending_kyb org passes once
+    // its core KYB documents are on file.
+    async ensureOnboarding(): Promise<boolean> {
+      if (!this.meta || this.meta.memberType !== 'org_member') {
+        this.setOnboardingComplete(true)
+        return true
+      }
+      if (this.onboardingComplete === true) return true
+      try {
+        const { fetchOrgDocuments } = await import('@/lib/orgApi')
+        const docs = await fetchOrgDocuments()
+        const have = new Set((docs ?? []).map((d) => d.doc_type))
+        const CORE = ['brs_certificate', 'kra_cert', 'business_permit']
+        const complete = CORE.every((t) => have.has(t))
+        this.setOnboardingComplete(complete)
+        return complete
+      } catch {
+        // Fail open — a transient docs API error must not strand the user.
+        return this.onboardingComplete !== false
       }
     },
     logout() {
@@ -81,6 +126,7 @@ export const useAuthStore = defineStore('auth', {
       this.expiresAt = null
       this.permissions = []
       this.permissionsLoaded = false
+      this.onboardingComplete = null
 
       import('@/lib/http').then(({ http }) => {
         http.post('/org/v1/auth/logout').catch(() => {})

@@ -460,6 +460,25 @@ export async function fetchOrgDocuments(): Promise<OrgDocument[]> {
   return res.data.data
 }
 
+export interface VerificationInfoRequest {
+  id: string
+  message: string
+  status: 'open' | 'supplied' | 'cancelled'
+  response_note: string
+  created_at: string
+}
+
+export async function fetchOrgVerificationRequests(): Promise<VerificationInfoRequest[]> {
+  const res = await http.get<{ status: string; data: VerificationInfoRequest[] }>(
+    '/org/v1/verification/open-requests',
+  )
+  return res.data.data ?? []
+}
+
+export async function supplyOrgVerificationInfo(id: string, responseNote: string): Promise<void> {
+  await http.post(`/org/v1/verification/info-requests/${id}`, { response_note: responseNote })
+}
+
 export async function uploadOrgDocument(file: File, docType: string): Promise<OrgDocument> {
   const form = new FormData()
   form.append('document', file)

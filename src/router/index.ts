@@ -2,6 +2,24 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { resolveLandingRoute } from '@/lib/landing'
 
+// While an org is still assembling its compliance documents, only these
+// onboarding-adjacent screens are reachable — everything else redirects to
+// the documents view until the core KYB pack is uploaded.
+const ONBOARDING_ALLOWED_ROUTES = new Set<string>([
+  'org-documents',
+  'org-directors',
+  'org-members',
+  'org-branches',
+  'org-profile',
+  'org-security',
+  'org-notification-preferences',
+  'org-support',
+  'org-settings',
+  '2fa-enroll',
+  '2fa-challenge',
+  'org-accept-invite',
+])
+
 const router = createRouter({
   history: createWebHistory(),
   routes: [
@@ -932,6 +950,18 @@ router.beforeEach(async (to) => {
   }
   if (!auth.meta) {
     return true
+  }
+
+  if (
+    to.meta.requiresAuth &&
+    auth.meta.memberType === 'org_member' &&
+    typeof to.name === 'string' &&
+    !ONBOARDING_ALLOWED_ROUTES.has(to.name)
+  ) {
+    const complete = await auth.ensureOnboarding()
+    if (!complete) {
+      return { name: 'org-documents', params: { orgId: auth.meta.organizationId } }
+    }
   }
 
   if (to.name === 'home') {
