@@ -1,5 +1,6 @@
 const EXPIRES_AT_KEY = 'rigepay_business_expires_at'
 const SESSION_META_KEY = 'rigepay_business_session_meta'
+const PERMISSIONS_KEY = 'rigepay_business_permissions'
 
 export interface SessionMeta {
   organizationId: string
@@ -29,8 +30,22 @@ export const session = {
   setMeta(meta: SessionMeta) {
     sessionStorage.setItem(SESSION_META_KEY, JSON.stringify(meta))
   },
+  getPermissions(): string[] {
+    const raw = sessionStorage.getItem(PERMISSIONS_KEY)
+    if (!raw) return []
+    try {
+      const v = JSON.parse(raw)
+      return Array.isArray(v) ? v : []
+    } catch {
+      return []
+    }
+  },
+  setPermissions(perms: string[]) {
+    sessionStorage.setItem(PERMISSIONS_KEY, JSON.stringify(perms))
+  },
   clear() {
     sessionStorage.removeItem(EXPIRES_AT_KEY)
     sessionStorage.removeItem(SESSION_META_KEY)
+    sessionStorage.removeItem(PERMISSIONS_KEY)
   },
 }
