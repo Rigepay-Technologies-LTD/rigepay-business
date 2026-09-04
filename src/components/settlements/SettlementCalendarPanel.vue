@@ -18,7 +18,8 @@ const data = ref<SettlementCalendar | null>(null)
 async function load() {
   loading.value = true
   try {
-    data.value = props.branchId ? await fetchBranchSettlementCalendar() : await fetchOrgSettlementCalendar()
+    const res = props.branchId ? await fetchBranchSettlementCalendar() : await fetchOrgSettlementCalendar()
+    data.value = { ...res, holds: res.holds ?? [], upcoming_holidays: res.upcoming_holidays ?? [] }
   } catch (err) {
     showError(extractErrorMessage(err))
   } finally {
