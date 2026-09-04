@@ -224,6 +224,7 @@ const editCanInitiatePayments = ref(false)
 const editRole = ref('member')
 const editCustomRoleId = ref('')
 const editPerTxnCapKes = ref<number | undefined>(undefined)
+const editDailyCapKes = ref<number | undefined>(undefined)
 
 const customRoles = ref<OrgCustomRole[]>([])
 const customRoleOptions = () => [
@@ -244,11 +245,13 @@ async function startEditMember(m: OrgMember) {
   editRole.value = m.role
   editCustomRoleId.value = ''
   editPerTxnCapKes.value = undefined
+  editDailyCapKes.value = undefined
   if (m.role !== 'owner') {
     try {
       const rb = await fetchMemberRBAC(m.id)
       editCustomRoleId.value = rb.custom_role_id || ''
       editPerTxnCapKes.value = rb.per_txn_cents > 0 ? Math.round(rb.per_txn_cents / 100) : undefined
+      editDailyCapKes.value = rb.daily_cents > 0 ? Math.round(rb.daily_cents / 100) : undefined
     } catch { /* rbac optional */ }
   }
 }
@@ -276,6 +279,7 @@ async function saveEditMember(memberId: string) {
       await assignMemberRBAC(memberId, {
         custom_role_id: editCustomRoleId.value || null,
         per_txn_cents: editPerTxnCapKes.value && editPerTxnCapKes.value > 0 ? Math.round(editPerTxnCapKes.value * 100) : 0,
+        daily_cents: editDailyCapKes.value && editDailyCapKes.value > 0 ? Math.round(editDailyCapKes.value * 100) : 0,
       })
     }
     editingMemberId.value = null
@@ -534,6 +538,13 @@ const memberColumns = [
                   v-model.number="editPerTxnCapKes"
                   type="number"
                   label="Per-payout cap (KES)"
+                  placeholder="No cap"
+                  class="max-w-sm"
+                />
+                <AppInput
+                  v-model.number="editDailyCapKes"
+                  type="number"
+                  label="Daily payout cap (KES)"
                   placeholder="No cap"
                   class="max-w-sm"
                 />

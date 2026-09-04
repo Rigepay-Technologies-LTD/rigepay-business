@@ -5,7 +5,7 @@ import { useAuthStore } from '@/stores/auth'
 import {
   requestOrgPayoutAsMember, confirmOrgPayoutAsMember, fetchPendingPayoutApprovals, approvePayoutRequest, rejectPayoutRequest,
   fetchOrgBranches, validateOrgBankAccount, validateOrgMobileMoney, validateOrgShortcode, validateOrgScreenName, fetchOrgBankCodes,
-  fetchOrgProfile, fetchOrgBeneficiaries, createOrgBeneficiary, deleteOrgBeneficiary, fetchRecentSettlements,
+  fetchOrgProfile, fetchOrgBeneficiaries, deleteOrgBeneficiary, fetchRecentSettlements,
   fetchApprovalThreshold, setApprovalThreshold, fetchPayoutFeeEstimate,
   fetchRoleApprovalThresholds, setRoleApprovalThreshold, fetchOrgSettlementPreferences,
   type PayoutApproval, type BranchSummary, type ProfileResponse, type Beneficiary, type RecentSettlement,
@@ -178,22 +178,33 @@ const beneficiaryError = ref<string | null>(null)
 const selectedBeneficiaryId = ref('')
 const saveAsBeneficiary = ref(false)
 const beneficiaryNickname = ref('')
-const savingBeneficiary = ref(false)
 const removingBeneficiaryId = ref<string | null>(null)
+
+function beneficiaryDestSummary(b: Beneficiary): string {
+  if (b.destination_type === 'BANK_ACCOUNT') return b.bank_account_number ?? ''
+  if (b.destination_type === 'PAYBILL') return `paybill ${b.shortcode ?? ''}`
+  if (b.destination_type === 'TILL_NUMBER') return `till ${b.shortcode ?? ''}`
+  return b.phone_number ?? ''
+}
 
 const beneficiaryOptions = computed(() => [
   { value: '', label: '— Pick a saved payee (optional) —' },
   ...beneficiaries.value.map((b) => ({
     value: b.id,
-    label: `${b.nickname} — ${b.recipient_name} (${b.destination_type === 'BANK_ACCOUNT' ? b.bank_account_number : b.phone_number})`,
+    label: `${b.nickname} — ${b.recipient_name} (${beneficiaryDestSummary(b)})`,
   })),
 ])
 
+const newBeneficiaryRoute = computed(() =>
+  isBranchSession
+    ? { name: 'branch-beneficiaries', params: { orgId: props.orgId, branchId: auth.meta?.branchId } }
+    : { name: 'org-beneficiaries', params: { orgId: props.orgId } },
+)
+
 async function loadBeneficiaries() {
-  if (isBranchSession) return
   beneficiariesLoading.value = true
   try {
-    beneficiaries.value = (await fetchOrgBeneficiaries()) ?? []
+    beneficiaries.value = (await fetchOrgBeneficiaries(isBranchSession)) ?? []
   } catch (err) {
     const msg = extractErrorMessage(err)
     beneficiaryError.value = msg
@@ -208,17 +219,20 @@ function applyBeneficiary(id: string) {
   if (!b) return
   destinationType.value = b.destination_type
   recipientName.value = b.recipient_name
+  phoneNumber.value = ''
+  bankCode.value = ''
+  bankAccountNumber.value = ''
+  shortcode.value = ''
+  accountReference.value = ''
   if (b.destination_type === 'BANK_ACCOUNT') {
     bankCode.value = b.bank_code ?? ''
     bankAccountNumber.value = b.bank_account_number ?? ''
-    phoneNumber.value = ''
+  } else if (b.destination_type === 'PAYBILL' || b.destination_type === 'TILL_NUMBER') {
+    shortcode.value = b.shortcode ?? ''
+    accountReference.value = b.account_reference ?? ''
   } else {
     phoneNumber.value = b.phone_number ?? ''
-    bankCode.value = ''
-    bankAccountNumber.value = ''
   }
-  shortcode.value = ''
-  accountReference.value = ''
   validationResult.value = null
   screening.value = null
 }
@@ -279,6 +293,16 @@ const validating = ref(false)
 const validationResult = ref<{ ok: boolean; message: string } | null>(null)
 const screening = ref<{ isMatch: boolean; matches: ScreenNameMatch[] } | null>(null)
 
+function applyValidatedName(name: string | undefined) {
+  const n = (name ?? '').trim()
+  if (n) {
+    validationResult.value = { ok: true, message: `Account holder: ${n}` }
+    if (!recipientName.value.trim()) recipientName.value = n
+  } else {
+    validationResult.value = { ok: false, message: "We couldn't confirm the account holder — type the recipient's name below to continue." }
+  }
+}
+
 async function validateRecipient() {
   validationResult.value = null
   validating.value = true
@@ -288,28 +312,22 @@ async function validateRecipient() {
         validationResult.value = { ok: false, message: 'Enter a bank and account number first.' }
         return
       }
-      const result = await validateOrgBankAccount(bankAccountNumber.value.trim(), bankCode.value)
-      validationResult.value = { ok: true, message: `Account holder: ${result.account_name}` }
-      if (!recipientName.value.trim()) recipientName.value = result.account_name
+      applyValidatedName((await validateOrgBankAccount(bankAccountNumber.value.trim(), bankCode.value)).account_name)
     } else if (destinationType.value === 'PAYBILL' || destinationType.value === 'TILL_NUMBER') {
       if (!shortcode.value.trim()) {
         validationResult.value = { ok: false, message: `Enter a ${destinationType.value === 'PAYBILL' ? 'paybill' : 'till'} number first.` }
         return
       }
-      const result = await validateOrgShortcode(isBranchSession, shortcode.value.trim(), destinationType.value === 'PAYBILL' ? 'paybill' : 'till')
-      validationResult.value = { ok: true, message: `Account holder: ${result.account_name}` }
-      if (!recipientName.value.trim()) recipientName.value = result.account_name
+      applyValidatedName((await validateOrgShortcode(isBranchSession, shortcode.value.trim(), destinationType.value === 'PAYBILL' ? 'paybill' : 'till')).account_name)
     } else {
       if (!phoneNumber.value.trim()) {
         validationResult.value = { ok: false, message: 'Enter a phone number first.' }
         return
       }
-      const result = await validateOrgMobileMoney(phoneNumber.value.trim())
-      validationResult.value = { ok: true, message: `Account holder: ${result.account_name}` }
-      if (!recipientName.value.trim()) recipientName.value = result.account_name
+      applyValidatedName((await validateOrgMobileMoney(phoneNumber.value.trim())).account_name)
     }
   } catch (err) {
-    validationResult.value = { ok: false, message: extractErrorMessage(err) }
+    validationResult.value = { ok: false, message: extractErrorMessage(err) + " — type the recipient's name below to continue." }
   } finally {
     validating.value = false
   }
@@ -395,28 +413,11 @@ async function submitPayout() {
       bank_account_number: destinationType.value === 'BANK_ACCOUNT' ? bankAccountNumber.value.trim() : undefined,
       password: isOwner ? undefined : confirmSecret.value,
       pin: isOwner ? confirmSecret.value : undefined,
+      beneficiary_nickname:
+        saveAsBeneficiary.value && beneficiaryNickname.value.trim()
+          ? beneficiaryNickname.value.trim()
+          : undefined,
     })
-
-    if (saveAsBeneficiary.value && beneficiaryNickname.value.trim() && !isBranchSession && !isShortcode) {
-      savingBeneficiary.value = true
-      try {
-        const b = await createOrgBeneficiary({
-          nickname: beneficiaryNickname.value.trim(),
-          recipient_name: recipientName.value.trim(),
-          destination_type: destinationType.value as 'PHONE_NUMBER' | 'BANK_ACCOUNT',
-          phone_number: destinationType.value === 'PHONE_NUMBER' ? phoneNumber.value.trim() : undefined,
-          bank_code: destinationType.value === 'BANK_ACCOUNT' ? bankCode.value : undefined,
-          bank_account_number: destinationType.value === 'BANK_ACCOUNT' ? bankAccountNumber.value.trim() : undefined,
-        })
-        beneficiaries.value.unshift(b)
-      } catch (err) {
-        const msg = extractErrorMessage(err)
-        beneficiaryError.value = msg
-        showError(msg)
-      } finally {
-        savingBeneficiary.value = false
-      }
-    }
 
     if (result.status === 'otp_required') {
       pendingFeeCents.value = result.fee_cents
@@ -755,13 +756,21 @@ watch([amountKes, destinationType], () => {
             <form class="flex flex-col gap-4" @submit.prevent="submitPayout">
               <!-- Group 1: who / where -->
               <div class="flex flex-col gap-4">
-                <AppSelect
-                  v-if="!isBranchSession && beneficiaries.length"
-                  v-model="selectedBeneficiaryId"
-                  label="Pay a saved payee"
-                  :options="beneficiaryOptions"
-                  @update:modelValue="(v: string) => v && applyBeneficiary(v)"
-                />
+                <div class="flex flex-col gap-1">
+                  <AppSelect
+                    v-if="beneficiaries.length"
+                    v-model="selectedBeneficiaryId"
+                    label="Pay a saved payee"
+                    :options="beneficiaryOptions"
+                    @update:modelValue="(v: string) => v && applyBeneficiary(v)"
+                  />
+                  <router-link
+                    :to="newBeneficiaryRoute"
+                    class="self-start text-xs font-semibold text-primary hover:underline"
+                  >
+                    {{ beneficiaries.length ? '+ Manage beneficiaries' : '+ Add a beneficiary' }}
+                  </router-link>
+                </div>
 
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <AppSelect v-model="branchId" label="Pay out from" placeholder="— Select wallet —" :options="branchOptions" required />

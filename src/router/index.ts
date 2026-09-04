@@ -137,6 +137,13 @@ const router = createRouter({
       props: true,
     },
     {
+      path: '/org/:orgId/branch/:branchId/beneficiaries',
+      name: 'branch-beneficiaries',
+      component: () => import('@/views/BeneficiariesView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
       path: '/org/:orgId/branch/:branchId/payouts/:payoutId',
       name: 'branch-payout-detail',
       component: () => import('@/views/BranchPayoutDetailView.vue'),
@@ -527,6 +534,13 @@ const router = createRouter({
       props: true,
     },
     {
+      path: '/org/:orgId/beneficiaries',
+      name: 'org-beneficiaries',
+      component: () => import('@/views/BeneficiariesView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
       path: '/org/:orgId/payouts/:payoutId',
       name: 'org-payout-detail',
       component: () => import('@/views/OrgPayoutDetailView.vue'),
@@ -885,7 +899,29 @@ const router = createRouter({
   ],
 })
 
-router.beforeEach((to) => {
+// Org-member RBAC gate for state-changing sections. Mirrors the permission
+// strings the backend middleware.OrgPermission enforces and the nav gating in
+// DashboardLayout. Read-only sections are intentionally absent.
+const ORG_ROUTE_PERMISSIONS: Record<string, string> = {
+  'org-transfers': 'transfers.initiate',
+  'org-invoices': 'invoices.manage',
+  'org-invoice-detail': 'invoices.manage',
+  'org-bulk-invoices': 'invoices.manage',
+  'org-invoice-schedules': 'invoices.manage',
+  'org-customers': 'customers.manage',
+  'org-customer-detail': 'customers.manage',
+  'org-suppliers': 'suppliers.manage',
+  'org-supplier-detail': 'suppliers.manage',
+  'org-suppliers-overview': 'suppliers.manage',
+  'org-supplier-payables': 'suppliers.manage',
+  'org-supplier-invoices': 'suppliers.manage',
+  'org-supplier-invoice-detail': 'suppliers.manage',
+  'org-purchase-orders': 'suppliers.manage',
+  'org-purchase-order-detail': 'suppliers.manage',
+  'org-suppliers-analytics': 'suppliers.manage',
+}
+
+router.beforeEach(async (to) => {
   const auth = useAuthStore()
 
   if (to.meta.requiresAuth && !auth.isAuthenticated) {
@@ -920,6 +956,7 @@ router.beforeEach((to) => {
     'branch-expenses', 'branch-expense-detail', 'branch-tags', 'branch-petty-cash', 'branch-analytics',
     'branch-scheduled-payouts', 'branch-scheduled-payout-detail', 'branch-bulk-payouts', 'branch-bulk-payout-detail', 'branch-transfers', 'branch-support',
     'branch-bulk-invoices', 'branch-invoice-schedules', 'branch-recipient-suppressions',
+    'branch-beneficiaries',
     'branch-settlement-preferences', 'branch-limits',
     'branch-suppliers', 'branch-supplier-detail',
     'branch-customers', 'branch-customer-detail',
@@ -942,6 +979,7 @@ router.beforeEach((to) => {
     to.name === 'org-approvals' || to.name === 'org-approval-detail' ||
     to.name === 'org-documents' || to.name === 'org-profile' || to.name === 'org-directors' || to.name === 'org-settings' ||
     to.name === 'org-members' || to.name === 'org-credentials' || to.name === 'org-webhooks' || to.name === 'org-payouts' || to.name === 'org-payout-detail' ||
+    to.name === 'org-beneficiaries' ||
     to.name === 'org-branches' || to.name === 'org-collect' || to.name === 'org-audit-log' ||
     to.name === 'org-security' || to.name === 'org-transactions' || to.name === 'org-transaction-detail' || to.name === 'org-limits' ||
     to.name === 'org-notification-preferences' || to.name === 'org-roles' ||
@@ -962,6 +1000,20 @@ router.beforeEach((to) => {
     to.name === 'org-financial-accounts'
   ) {
     if (to.params.orgId !== auth.meta.organizationId || auth.meta.memberType !== 'org_member') {
+      return resolveLandingRoute(auth.meta)
+    }
+  }
+
+  if (
+    typeof to.name === 'string' &&
+    ORG_ROUTE_PERMISSIONS[to.name] &&
+    auth.meta.memberType === 'org_member' &&
+    auth.meta.role !== 'owner'
+  ) {
+    if (!auth.permissionsLoaded) {
+      await auth.loadPermissions()
+    }
+    if (!auth.can(ORG_ROUTE_PERMISSIONS[to.name])) {
       return resolveLandingRoute(auth.meta)
     }
   }
