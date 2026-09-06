@@ -5,15 +5,21 @@ import { session } from './session'
 export const API_BASE_URL = "https://api.rigepay.co.ke/api/v1";
 
 function getCookie(name: string): string | null {
-  const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`))
-  return match?.[1] !== undefined ? decodeURIComponent(match[1]) : null
+  const cookie = document.cookie
+    .split(';')
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(`${name}=`))
+  return cookie ? decodeURIComponent(cookie.slice(name.length + 1)) : null
 }
 
 function attachDashboardToken(config: InternalAxiosRequestConfig) {
   const method = (config.method || 'get').toLowerCase()
   if (method !== 'get') {
     const csrfToken = getCookie('rp_biz_csrf')
-    if (csrfToken) config.headers['X-CSRF-Token'] = csrfToken
+    if (csrfToken) {
+      config.headers.set?.('X-CSRF-Token', csrfToken)
+      config.headers['X-CSRF-Token'] = csrfToken
+    }
   }
 
   const meta = session.getMeta()
