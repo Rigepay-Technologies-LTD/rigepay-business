@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
+import { required, amountKes as amountKesRule, positiveInt, freeText, firstError } from '@/lib/validators'
 import {
   fetchOrgBranches, fetchOrgProfile, createOrgTransfer,
   lookupTransferRecipient, requestExternalTransfer, confirmExternalTransfer, fetchTransferHistory,
@@ -75,10 +76,17 @@ const confirmSecret = ref('')
 const submitting = ref(false)
 const submitError = ref<string | null>(null)
 
+const intErrors = reactive<{ amount?: string; remarks?: string }>({})
+function validateIntField(f: 'amount' | 'remarks') {
+  if (f === 'amount') intErrors.amount = firstError(amountKes.value, [required('Amount'), amountKesRule({ min: 1 })]) ?? undefined
+  if (f === 'remarks') intErrors.remarks = firstError(remarks.value, freeText('Remarks', 140)) ?? undefined
+}
+
 async function submitTransfer() {
   submitError.value = null
+  validateIntField('amount'); validateIntField('remarks')
+  if (intErrors.amount || intErrors.remarks) { submitError.value = 'Please fix the highlighted fields.'; return }
   const amountCents = Math.round(Number(amountKes.value) * 100)
-  if (!amountCents || amountCents < 100) { submitError.value = 'Enter a valid amount (min KES 1).'; return }
   if (!toEndpoint.value) { submitError.value = 'Select a destination.'; return }
   if (fromEndpoint.value === toEndpoint.value) { submitError.value = 'Source and destination must be different.'; return }
   if (isOwner ? !/^\d{4}$/.test(confirmSecret.value) : !confirmSecret.value) {
@@ -138,13 +146,18 @@ function resetExternalForm() {
   extRecipientCode.value = ''; extAmountKes.value = ''; extRemarks.value = ''; extConfirmSecret.value = ''
   lookupResult.value = null; lookupError.value = null
 }
+const extErrors = reactive<{ amount?: string; code?: string; remarks?: string }>({})
+function validateExtField(f: 'amount' | 'code' | 'remarks') {
+  if (f === 'amount') extErrors.amount = firstError(extAmountKes.value, [required('Amount'), amountKesRule({ min: 1 })]) ?? undefined
+  if (f === 'code') extErrors.code = firstError(extRecipientCode.value, [required('Collection code'), positiveInt('Collection code')]) ?? undefined
+  if (f === 'remarks') extErrors.remarks = firstError(extRemarks.value, [required('Remarks'), ...freeText('Remarks', 140)]) ?? undefined
+}
+
 async function submitExternalTransfer() {
   extError.value = null
+  ;(['amount', 'code', 'remarks'] as const).forEach(validateExtField)
+  if (extErrors.amount || extErrors.code || extErrors.remarks) { extError.value = 'Please fix the highlighted fields.'; return }
   const amountCents = Math.round(Number(extAmountKes.value) * 100)
-  if (!amountCents || amountCents < 100 || !extRecipientCode.value.trim() || !extRemarks.value.trim()) {
-    extError.value = 'Amount (min KES 1), recipient collection code, and remarks are required.'
-    return
-  }
   if (!lookupResult.value || lookupResult.value.collection_code !== extRecipientCode.value.trim()) {
     extError.value = 'Verify the recipient before sending.'
     return
@@ -247,8 +260,8 @@ function directionMeta(d: string) {
               <ArrowRightIcon class="w-4 h-4 text-text-muted mb-2.5 shrink-0" />
               <AppSelect v-model="toEndpoint" label="To" :options="endpointOptions" placeholder="Select destination" class="flex-1" />
             </div>
-            <AppInput v-model="amountKes" type="number" label="Amount (KES)" placeholder="Min 1" required />
-            <AppInput v-model="remarks" label="Remarks (optional)" placeholder="What this transfer is for" />
+            <AppInput v-model="amountKes" type="number" label="Amount (KES)" placeholder="Min 1" required :error="intErrors.amount" @blur="validateIntField('amount')" />
+            <AppInput v-model="remarks" label="Remarks (optional)" placeholder="What this transfer is for" :error="intErrors.remarks" @blur="validateIntField('remarks')" />
             <ConfirmSecretInput v-model="confirmSecret" :is-pin="isOwner" />
             <AppButton type="submit" :loading="submitting" class="self-start">Move funds</AppButton>
           </form>
@@ -274,7 +287,7 @@ function directionMeta(d: string) {
               <div class="flex items-end gap-3">
                 <AppInput
                   v-model="extRecipientCode" label="Recipient collection code" placeholder="6-digit code"
-                  class="flex-1" required @input="lookupResult = null"
+                  class="flex-1" required :error="extErrors.code" @input="lookupResult = null" @blur="validateExtField('code')"
                 />
                 <AppButton type="button" variant="secondary" :loading="lookupLoading" @click="verifyRecipient">Verify</AppButton>
               </div>
@@ -284,8 +297,8 @@ function directionMeta(d: string) {
               <div v-else-if="lookupResult" class="text-xs rounded-lg px-3 py-2 flex items-center gap-2 bg-success-light text-success-text -mt-2">
                 <CheckIcon class="w-3.5 h-3.5 shrink-0" />{{ lookupResult.name }} — {{ lookupResult.type }}
               </div>
-              <AppInput v-model="extAmountKes" type="number" label="Amount (KES)" placeholder="Min 1" required />
-              <AppInput v-model="extRemarks" label="Remarks" placeholder="What this transfer is for" required />
+              <AppInput v-model="extAmountKes" type="number" label="Amount (KES)" placeholder="Min 1" required :error="extErrors.amount" @blur="validateExtField('amount')" />
+              <AppInput v-model="extRemarks" label="Remarks" placeholder="What this transfer is for" required :error="extErrors.remarks" @blur="validateExtField('remarks')" />
               <ConfirmSecretInput v-model="extConfirmSecret" :is-pin="isOwner" />
               <AppButton type="submit" :loading="extSubmitting" class="self-start">Send transfer</AppButton>
             </form>

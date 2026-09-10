@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { required, amountKes as amountKesRule, freeText, firstError } from '@/lib/validators'
 import { useRouter } from 'vue-router'
 import {
   fetchBranchExpenses, createBranchExpense, uploadExpenseReceipt,
@@ -68,9 +69,15 @@ async function handleReceiptChange(e: Event) {
 
 async function submitCreate() {
   createError.value = null
+  const amountErr = firstError(form.value.amountKes, [required('Amount'), amountKesRule({ min: 1 })])
+  if (amountErr) { createError.value = amountErr; return }
+  const catErr = firstError(form.value.category, [required('Category'), ...freeText('Category', 60)])
+  if (catErr) { createError.value = catErr; return }
+  const vendorErr = firstError(form.value.vendor, [required('Vendor'), ...freeText('Vendor', 80)])
+  if (vendorErr) { createError.value = vendorErr; return }
+  const notesErr = firstError(form.value.notes, freeText('Notes', 300))
+  if (notesErr) { createError.value = notesErr; return }
   const amountCents = Math.round(Number(form.value.amountKes) * 100)
-  if (!amountCents || amountCents <= 0) { createError.value = 'Enter a valid amount.'; return }
-  if (!form.value.category.trim() || !form.value.vendor.trim()) { createError.value = 'Category and vendor are required.'; return }
   creating.value = true
   try {
     const created = await createBranchExpense({

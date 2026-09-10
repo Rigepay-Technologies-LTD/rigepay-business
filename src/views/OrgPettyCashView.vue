@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { required, kenyanPhone, amountKes as amountKesRule, positiveInt, freeText, firstError, normalizeKenyanPhone } from '@/lib/validators'
 import {
   createPettyCashFloat, fetchPettyCashFloats, fundPettyCashFloat, fetchPettyCashHistory,
   fetchOrgBranches, requestPettyCashPayout, confirmPettyCashPayout, fetchOrgBankCodes, validateOrgShortcode,
@@ -70,10 +71,8 @@ const branchOptions = () => [
 
 async function submitCreate() {
   createError.value = null
-  if (!newFloatName.value.trim()) {
-    createError.value = 'Name is required.'
-    return
-  }
+  const nameErr = firstError(newFloatName.value, [required('Name'), ...freeText('Name', 60)])
+  if (nameErr) { createError.value = nameErr; return }
   creating.value = true
   try {
     await createPettyCashFloat(newFloatName.value.trim(), newFloatBranchId.value || undefined)
@@ -107,11 +106,10 @@ function openFund(float: PettyCashFloat) {
 
 async function submitFund() {
   fundError.value = null
+  if (!fundingFloat.value) return
+  const fundAmountErr = firstError(fundAmountKes.value, [required('Amount'), amountKesRule({ min: 1 })])
+  if (fundAmountErr) { fundError.value = fundAmountErr; return }
   const amountCents = Math.round(Number(fundAmountKes.value) * 100)
-  if (!amountCents || amountCents < 100 || !fundingFloat.value) {
-    fundError.value = 'Enter a valid amount (min KES 1).'
-    return
-  }
   if (isOwner ? !/^\d{4}$/.test(fundConfirmSecret.value) : !fundConfirmSecret.value) {
     fundError.value = isOwner ? 'Enter your 4-digit transaction PIN.' : 'Re-enter your account password.'
     return
@@ -265,11 +263,13 @@ function closePayout() {
 async function submitPayout() {
   payoutError.value = null
   if (!payoutFloat.value) return
+  const amountErr = firstError(payoutAmountKes.value, [required('Amount'), amountKesRule({ min: 1 })])
+  if (amountErr) { payoutError.value = amountErr; return }
+  const nameErr = firstError(payoutRecipientName.value, [required('Recipient name'), ...freeText('Recipient name', 120)])
+  if (nameErr) { payoutError.value = nameErr; return }
+  const remarkErr = firstError(payoutRemarks.value, [required('Remarks'), ...freeText('Remarks', 140)])
+  if (remarkErr) { payoutError.value = remarkErr; return }
   const amountCents = Math.round(Number(payoutAmountKes.value) * 100)
-  if (!amountCents || amountCents < 100 || !payoutRecipientName.value.trim() || !payoutRemarks.value.trim()) {
-    payoutError.value = 'Amount (min KES 1), recipient name, and remarks are required.'
-    return
-  }
   if (payoutFloat.value.balance_cents < amountCents) {
     payoutError.value = `This float only has KES ${formatMoney(payoutFloat.value.balance_cents)} available.`
     return
@@ -281,13 +281,11 @@ async function submitPayout() {
       return
     }
   } else if (isShortcode) {
-    if (!payoutShortcode.value.trim()) {
-      payoutError.value = `Enter the ${payoutDestinationType.value === 'PAYBILL' ? 'paybill' : 'till'} number.`
-      return
-    }
-  } else if (!payoutPhoneNumber.value.trim()) {
-    payoutError.value = 'Recipient phone number is required.'
-    return
+    const scErr = firstError(payoutShortcode.value, [required('Shortcode'), positiveInt('Shortcode')])
+    if (scErr) { payoutError.value = scErr; return }
+  } else {
+    const phoneErr = firstError(payoutPhoneNumber.value, [required('Recipient phone'), kenyanPhone])
+    if (phoneErr) { payoutError.value = phoneErr; return }
   }
   if (isOwner ? !/^\d{4}$/.test(payoutConfirmSecret.value) : !payoutConfirmSecret.value) {
     payoutError.value = isOwner ? 'Enter your 4-digit transaction PIN.' : 'Re-enter your account password.'
@@ -302,7 +300,7 @@ async function submitPayout() {
       remarks: payoutRemarks.value.trim(),
       category: resolvedPayoutCategory.value || undefined,
       destination_type: payoutDestinationType.value,
-      phone_number: payoutDestinationType.value === 'PHONE_NUMBER' ? payoutPhoneNumber.value.trim() : undefined,
+      phone_number: payoutDestinationType.value === 'PHONE_NUMBER' ? normalizeKenyanPhone(payoutPhoneNumber.value) : undefined,
       shortcode: isShortcode ? payoutShortcode.value.trim() : undefined,
       account_reference: isShortcode ? payoutAccountReference.value.trim() || undefined : undefined,
       bank_code: payoutDestinationType.value === 'BANK_ACCOUNT' ? payoutBankCode.value : undefined,

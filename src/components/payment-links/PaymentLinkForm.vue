@@ -6,6 +6,7 @@ import {
   type CreatePaymentLinkInput, type OrgCustomerLite,
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
+import { required, url, freeText, firstError } from '@/lib/validators'
 import { useResponseModal } from '@/composables/useResponseModal'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppInput from '@/components/ui/AppInput.vue'
@@ -97,9 +98,13 @@ async function submit() {
       : 'Enter an amount of at least KES 1, or switch the amount mode to Open.'
     return
   }
-  if (!form.name.trim()) {
-    errorMsg.value = 'Give the payment link a name.'
-    return
+  const nameErr = firstError(form.name, [required('Name'), ...freeText('Name', 80)])
+  if (nameErr) { errorMsg.value = nameErr; return }
+  const descErr = firstError(form.description, freeText('Description', 300))
+  if (descErr) { errorMsg.value = descErr; return }
+  for (const [label, val] of [['Redirect URL', form.redirectUrl], ['Cancel URL', form.cancelUrl]] as const) {
+    const uErr = firstError(val, [url])
+    if (uErr) { errorMsg.value = `${label}: ${uErr}`; return }
   }
   if (form.whoCanPay === 'specific' && !form.customerId) {
     errorMsg.value = 'Select the customer who can pay, or switch back to "Anyone with this link".'
