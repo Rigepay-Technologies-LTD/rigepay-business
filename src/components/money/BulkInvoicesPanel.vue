@@ -6,6 +6,7 @@ import {
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
 import { formatMoney, formatDate } from '@/lib/format'
+import { inclusiveVatByCategory } from '@/lib/tax'
 import AppCard from '@/components/ui/AppCard.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppInput from '@/components/ui/AppInput.vue'
@@ -75,6 +76,25 @@ function pickRecipient(row: EditableRow) {
 
 const filledRowCount = computed(() => rows.value.filter((r) => r.email.trim() && Number(r.amount_kes) > 0).length)
 const formError = ref<string | null>(null)
+
+// The amount typed is what the customer pays (VAT-inclusive); the backend backs
+// the tax out of it. Keep this preview identical to internal/invoicing/tax.go.
+function rowGrossCents(r: EditableRow): number {
+  return Math.round(Number(r.amount_kes || 0) * 100)
+}
+function rowVatCents(r: EditableRow): number {
+  return inclusiveVatByCategory(rowGrossCents(r), r.tax_category)
+}
+const totalsPreview = computed(() => {
+  let gross = 0
+  let vat = 0
+  for (const r of rows.value) {
+    if (!r.email.trim() && !r.amount_kes) continue
+    gross += rowGrossCents(r)
+    vat += rowVatCents(r)
+  }
+  return { gross, vat, net: gross - vat }
+})
 
 function buildRecipients(): BulkInvoiceRecipientInput[] | null {
   const recipients: BulkInvoiceRecipientInput[] = []
@@ -292,7 +312,10 @@ function itemStatusVariant(status: string): 'success' | 'warning' | 'error' | 'n
                 <td class="px-3 py-2.5 min-w-50"><AppInput v-model="r.email" placeholder="jane@example.com" list="bulk-invoice-recipient-history" @change="pickRecipient(r)" /></td>
                 <td class="px-3 py-2.5 min-w-32"><AppInput v-model="r.phone" placeholder="0712345678" /></td>
                 <td class="px-3 py-2.5 min-w-35"><AppInput v-model="r.name" placeholder="Optional" /></td>
-                <td class="px-3 py-2.5 min-w-27.5"><AppInput v-model="r.amount_kes" type="number" placeholder="0" /></td>
+                <td class="px-3 py-2.5 min-w-27.5">
+                  <AppInput v-model="r.amount_kes" type="number" placeholder="0" />
+                  <p v-if="rowVatCents(r) > 0" class="mt-1 text-[10px] text-text-muted">incl. VAT KES {{ formatMoney(rowVatCents(r)) }}</p>
+                </td>
                 <td class="px-3 py-2.5 min-w-40"><AppInput v-model="r.due_date" type="date" /></td>
                 <td class="px-3 py-2.5 min-w-40"><AppInput v-model="r.description" placeholder="e.g. October rent" /></td>
                 <td class="px-3 py-2.5 min-w-32"><AppSelect v-model="r.tax_category" :options="TAX_CATEGORY_OPTIONS" /></td>
@@ -306,13 +329,20 @@ function itemStatusVariant(status: string): 'success' | 'warning' | 'error' | 'n
           </table>
         </div>
 
-        <div class="flex items-center gap-3">
-          <AppButton type="button" size="sm" variant="secondary" @click="addRow">
-            <template #icon><PlusIcon class="w-4 h-4" /></template>
-            Add recipient
-          </AppButton>
-          <p class="text-xs text-text-muted">{{ filledRowCount }} recipient(s) filled in.</p>
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div class="flex items-center gap-3">
+            <AppButton type="button" size="sm" variant="secondary" @click="addRow">
+              <template #icon><PlusIcon class="w-4 h-4" /></template>
+              Add recipient
+            </AppButton>
+            <p class="text-xs text-text-muted">{{ filledRowCount }} recipient(s) filled in.</p>
+          </div>
+          <div v-if="totalsPreview.gross > 0" class="text-xs text-right text-text-muted">
+            <p>Net KES {{ formatMoney(totalsPreview.net) }} + VAT KES {{ formatMoney(totalsPreview.vat) }}</p>
+            <p class="text-sm font-bold text-text-primary">Customers pay KES {{ formatMoney(totalsPreview.gross) }}</p>
+          </div>
         </div>
+        <p class="text-[11px] text-text-muted">Amounts are what each customer pays — VAT is included and shown on their invoice.</p>
 
         <div v-if="estimate" class="text-xs text-text-secondary bg-surface-2 rounded-lg px-3 py-2 flex flex-col gap-1">
           <span>{{ estimate.recipient_count }} will be sent, {{ estimate.suppressed_count }} suppressed and excluded.</span>
