@@ -58,7 +58,6 @@ const filteredCredentials = computed(() => {
   })
 })
 
-// ── create API client ──
 const showCreate = ref(false)
 const creating = ref(false)
 const createError = ref<string | null>(null)
@@ -130,16 +129,16 @@ async function revokeCred(cred: OrgCredential) {
 const showIntegrationExample = ref(false)
 const tokenSnippet = `curl --request POST \\
   "https://api.rigepay.co.ke/api/v1/oauth/token" \\
-  --header "Content-Type: application/x-www-form-urlencoded" \\
-  --data-urlencode "grant_type=client_credentials" \\
-  --data-urlencode "client_id=YOUR_CLIENT_ID" \\
-  --data-urlencode "client_secret=YOUR_CLIENT_SECRET" \\
-  --data-urlencode "scope=collections:read payouts:write"`
+  --header "Content-Type: application/json" \\
+  --data '{
+    "grant_type": "client_credentials",
+    "client_id": "YOUR_CLIENT_ID",
+    "client_secret": "YOUR_CLIENT_SECRET"
+  }'`
 const callSnippet = `curl --request GET \\
   "https://api.rigepay.co.ke/api/v1/collections" \\
   --header "Authorization: Bearer YOUR_ACCESS_TOKEN"`
 
-// ── API keys (kept) ──
 const showKeyModal = ref(false)
 const creatingKey = ref(false)
 const keyError = ref<string | null>(null)
