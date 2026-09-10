@@ -403,6 +403,24 @@ export async function requestStkPush(isBranchSession: boolean, input: StkPushInp
   return res.data.data
 }
 
+export interface StkPushStatus {
+  status: string // PENDING | COMPLETED | FAILED | EXPIRED
+  amount_cents: number
+  code: string
+  failure_reason: string
+}
+
+export async function getStkPushStatus(
+  isBranchSession: boolean,
+  checkoutRequestId: string,
+): Promise<StkPushStatus> {
+  const base = isBranchSession ? '/org/v1/branch/collect/stk-push/status' : '/org/v1/collect/stk-push/status'
+  const res = await http.get<{ status: string; data: StkPushStatus }>(
+    `${base}/${encodeURIComponent(checkoutRequestId)}`,
+  )
+  return res.data.data
+}
+
 export interface CompleteSasaPayOtpInput {
   checkout_request_id: string
   otp: string

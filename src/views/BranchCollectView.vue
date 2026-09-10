@@ -12,11 +12,12 @@ import AppButton from '@/components/ui/AppButton.vue'
 import AppInput from '@/components/ui/AppInput.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import AppModal from '@/components/ui/AppModal.vue'
+import StkStatusModal from '@/components/collections/StkStatusModal.vue'
 import { SmartphoneIcon, LandmarkIcon, CopyIcon, CheckIcon } from 'lucide-vue-next'
 
 
 const props = defineProps<{ orgId: string; branchId: string }>()
-const { showError, showSuccess } = useResponseModal()
+const { showError } = useResponseModal()
 
 const error = ref<string | null>(null)
 const instructions = ref<CollectionInstructions | null>(null)
@@ -71,6 +72,11 @@ const otpCheckoutRequestId = ref('')
 const otpSubmitting = ref(false)
 const otpError = ref<string | null>(null)
 
+const statusModalOpen = ref(false)
+const statusCheckoutId = ref<string | null>(null)
+const statusAmountCents = ref(0)
+const statusPhone = ref('')
+
 async function sendStkPush() {
   stkError.value = null
   stkResult.value = null
@@ -88,15 +94,17 @@ async function sendStkPush() {
       channel: stkChannel.value === 'auto' ? undefined : (stkChannel.value as 'mpesa' | 'airtel' | 'tkash' | 'wallet'),
     })
 
+    statusAmountCents.value = amountCents
+    statusPhone.value = stkPhone.value.trim()
+
     if (result.requires_otp) {
       otpCheckoutRequestId.value = result.checkout_request_id
       otp.value = ''
       otpError.value = null
       otpModalOpen.value = true
     } else {
-      const msg = result.customer_message || 'STK push sent — ask the customer to check their phone and enter their PIN.'
-      stkResult.value = msg
-      showSuccess(msg)
+      statusCheckoutId.value = result.checkout_request_id
+      statusModalOpen.value = true
     }
     stkAmountKes.value = ''
     stkPhone.value = ''
@@ -123,7 +131,8 @@ async function submitOtp() {
       otp: otp.value,
     })
     otpModalOpen.value = false
-    showSuccess('OTP accepted. Waiting for SasaPay to confirm the payment.')
+    statusCheckoutId.value = otpCheckoutRequestId.value
+    statusModalOpen.value = true
   } catch (err) {
     otpError.value = extractErrorMessage(err)
   } finally {
@@ -287,6 +296,14 @@ async function submitOtp() {
         </AppCard>
       </template>
     </div>
+
+    <StkStatusModal
+      v-model="statusModalOpen"
+      :is-branch="true"
+      :checkout-request-id="statusCheckoutId"
+      :amount-cents="statusAmountCents"
+      :customer-phone="statusPhone"
+    />
 
     <AppModal v-model="otpModalOpen" title="Enter SasaPay OTP" size="sm">
       <p class="text-xs text-text-muted mb-4">Ask the customer for the 6-digit code SasaPay sent them, then enter it below to complete the payment.</p>
