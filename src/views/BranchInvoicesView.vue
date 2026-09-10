@@ -6,6 +6,7 @@ import {
   type OrgInvoice, type CreateOrgInvoiceItemInput, type CrmCustomer,
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
+import { required, kenyanPhone, email, freeText, firstError, normalizeKenyanPhone } from '@/lib/validators'
 import { formatMoney, formatDate } from '@/lib/format'
 import { lineSubtotal, vatByCategory } from '@/lib/tax'
 import { useResponseModal } from '@/composables/useResponseModal'
@@ -97,10 +98,15 @@ const itemsTotalCents = computed(() => itemsSubtotalCents.value + itemsTaxCents.
 
 async function submitCreate() {
   createError.value = null
-  if (!customerName.value.trim() || !customerPhone.value.trim() || !dueDate.value) {
-    createError.value = 'Customer name, phone, and due date are required.'
-    return
-  }
+  const nameErr = firstError(customerName.value, [required('Customer name'), ...freeText('Customer name', 120)])
+  if (nameErr) { createError.value = nameErr; return }
+  const phoneErr = firstError(customerPhone.value, [required('Customer phone'), kenyanPhone])
+  if (phoneErr) { createError.value = phoneErr; return }
+  const emailErr = firstError(customerEmail.value, [email])
+  if (emailErr) { createError.value = emailErr; return }
+  if (!dueDate.value) { createError.value = 'Due date is required.'; return }
+  const notesErr = firstError(notes.value, freeText('Notes', 500))
+  if (notesErr) { createError.value = notesErr; return }
   if (!items.value.length || items.value.some((it) => !it.item_name.trim() || it.unit_price_cents <= 0)) {
     createError.value = 'Every line item needs a name and a unit price greater than zero.'
     return
@@ -109,7 +115,7 @@ async function submitCreate() {
   try {
     const result = await createBranchInvoice({
       customer_name: customerName.value.trim(),
-      customer_phone: customerPhone.value.trim(),
+      customer_phone: normalizeKenyanPhone(customerPhone.value),
       customer_email: customerEmail.value.trim() || undefined,
       currency: 'KES',
       due_date: new Date(dueDate.value).toISOString(),

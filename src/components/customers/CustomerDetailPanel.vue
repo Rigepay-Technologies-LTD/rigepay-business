@@ -10,6 +10,7 @@ import {
   type CrmCustomerStatement, type CrmCustomerInvite,
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
+import { required, kenyanPhone, email, amountKes as amountKesRule, freeText, firstError } from '@/lib/validators'
 import { formatMoney, formatDate } from '@/lib/format'
 import { useAuthStore } from '@/stores/auth'
 import { useResponseModal } from '@/composables/useResponseModal'
@@ -195,7 +196,12 @@ const newContact = reactive({ name: '', email: '', phone: '', role: '', is_prima
 const addingContact = ref(false)
 
 async function addContact() {
-  if (!newContact.name.trim()) { showError('Contact name is required.'); return }
+  const nameErr = firstError(newContact.name, [required('Contact name'), ...freeText('Contact name', 120)])
+  if (nameErr) { showError(nameErr); return }
+  const emailErr = firstError(newContact.email, [email])
+  if (emailErr) { showError(emailErr); return }
+  const phoneErr = firstError(newContact.phone, [kenyanPhone])
+  if (phoneErr) { showError(phoneErr); return }
   addingContact.value = true
   try {
     await createCrmCustomerContact(isBranch.value, props.customerId, { ...newContact })
@@ -277,6 +283,16 @@ function syncSettings() {
 }
 
 async function saveSettings() {
+  const nameErr = firstError(settings.legal_name, [required('Legal name'), ...freeText('Legal name', 120)])
+  if (nameErr) { showError(nameErr); return }
+  const emailErr = firstError(settings.email, [email])
+  if (emailErr) { showError(emailErr); return }
+  const phoneErr = firstError(settings.phone, [kenyanPhone])
+  if (phoneErr) { showError(phoneErr); return }
+  if (settings.credit_limit_kes.trim()) {
+    const clErr = firstError(settings.credit_limit_kes, [amountKesRule({ label: 'Credit limit' })])
+    if (clErr) { showError(clErr); return }
+  }
   savingSettings.value = true
   try {
     customer.value = await updateCrmCustomer(isBranch.value, props.customerId, {

@@ -6,6 +6,7 @@ import {
   type CrmCustomer, type CrmCustomerInput, type CrmCustomerListResponse, type CrmCustomerSummary,
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
+import { required, kenyanPhone, email, amountKes as amountKesRule, freeText, firstError } from '@/lib/validators'
 import { formatMoney } from '@/lib/format'
 import { useAuthStore } from '@/stores/auth'
 import { useResponseModal } from '@/composables/useResponseModal'
@@ -143,9 +144,16 @@ function resetForm() {
 }
 
 async function submitAdd() {
-  if (!form.value.legal_name?.trim()) {
-    showError(form.value.customer_type === 'INDIVIDUAL' ? 'Full name is required.' : 'Business name is required.')
-    return
+  const nameLabel = form.value.customer_type === 'INDIVIDUAL' ? 'Full name' : 'Business name'
+  const nameErr = firstError(form.value.legal_name ?? '', [required(nameLabel), ...freeText(nameLabel, 120)])
+  if (nameErr) { showError(nameErr); return }
+  const emailErr = firstError(form.value.email ?? '', [email])
+  if (emailErr) { showError(emailErr); return }
+  const phoneErr = firstError(form.value.phone ?? '', [kenyanPhone])
+  if (phoneErr) { showError(phoneErr); return }
+  if (creditLimitKes.value.trim()) {
+    const clErr = firstError(creditLimitKes.value, [amountKesRule({ label: 'Credit limit' })])
+    if (clErr) { showError(clErr); return }
   }
   saving.value = true
   try {

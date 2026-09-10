@@ -6,6 +6,7 @@ import {
   type Supplier, type SupplierInput, type SupplierListResponse,
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
+import { required, kenyanPhone, email, freeText, firstError } from '@/lib/validators'
 import { formatMoney } from '@/lib/format'
 import { useAuthStore } from '@/stores/auth'
 import { useResponseModal } from '@/composables/useResponseModal'
@@ -159,10 +160,12 @@ function resetForm() {
 }
 
 async function submitAdd() {
-  if (!form.value.legal_name?.trim()) {
-    showError('Business name is required.')
-    return
-  }
+  const nameErr = firstError(form.value.legal_name ?? '', [required('Business name'), ...freeText('Business name', 120)])
+  if (nameErr) { showError(nameErr); return }
+  const emailErr = firstError(form.value.email ?? '', [email])
+  if (emailErr) { showError(emailErr); return }
+  const phoneErr = firstError(form.value.phone ?? '', [kenyanPhone])
+  if (phoneErr) { showError(phoneErr); return }
   if (sendInvite.value && !form.value.email?.trim()) {
     showError('An email address is required to send a supplier invitation.')
     return

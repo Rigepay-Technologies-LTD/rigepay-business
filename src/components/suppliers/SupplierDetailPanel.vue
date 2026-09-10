@@ -8,6 +8,7 @@ import {
   type SupplierContact, type SupplierContactInput,
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
+import { required, kenyanPhone, email, freeText, firstError } from '@/lib/validators'
 import { formatDate } from '@/lib/format'
 import { useAuthStore } from '@/stores/auth'
 import { useResponseModal } from '@/composables/useResponseModal'
@@ -160,6 +161,12 @@ function startEdit() {
   editing.value = true
 }
 async function saveEdit() {
+  const nameErr = firstError(String(editForm.value.legal_name ?? ''), [required('Business name'), ...freeText('Business name', 120)])
+  if (nameErr) { showError(nameErr); return }
+  const emailErr = firstError(String(editForm.value.email ?? ''), [email])
+  if (emailErr) { showError(emailErr); return }
+  const phoneErr = firstError(String(editForm.value.phone ?? ''), [kenyanPhone])
+  if (phoneErr) { showError(phoneErr); return }
   acting.value = true
   try {
     supplier.value = await updateSupplier(isBranch.value, props.supplierId, editForm.value)
@@ -211,7 +218,12 @@ const contacts = ref<SupplierContact[]>([])
 const showContactForm = ref(false)
 const contactForm = ref<SupplierContactInput>({ name: '', email: '', phone: '', role: '', is_primary: false })
 async function addContact() {
-  if (!contactForm.value.name.trim()) { showError('Contact name is required.'); return }
+  const nameErr = firstError(contactForm.value.name, [required('Contact name'), ...freeText('Contact name', 120)])
+  if (nameErr) { showError(nameErr); return }
+  const emailErr = firstError(contactForm.value.email ?? '', [email])
+  if (emailErr) { showError(emailErr); return }
+  const phoneErr = firstError(contactForm.value.phone ?? '', [kenyanPhone])
+  if (phoneErr) { showError(phoneErr); return }
   acting.value = true
   try {
     await createSupplierContact(isBranch.value, props.supplierId, contactForm.value)
