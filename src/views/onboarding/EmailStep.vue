@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { http } from '@/lib/http'
 import { extractErrorMessage } from '@/lib/errors'
+import { required, email as emailRule, firstError } from '@/lib/validators'
 import { useOnboardingStore } from '@/stores/onboarding'
 import AuthLayout from '@/components/auth/AuthLayout.vue'
 import ErrorBanner from '@/components/auth/ErrorBanner.vue'
@@ -16,17 +17,11 @@ const email = ref('')
 const loading = ref(false)
 const error = ref<string | null>(null)
 
-function isValidEmail(value: string) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
-}
-
 async function submit() {
   error.value = null
 
-  if (!isValidEmail(email.value)) {
-    error.value = 'Please enter a valid email address.'
-    return
-  }
+  const emailErr = firstError(email.value, [required('Email'), emailRule])
+  if (emailErr) { error.value = emailErr; return }
 
   loading.value = true
   try {

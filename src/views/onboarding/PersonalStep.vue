@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { onboardingHttp } from '@/lib/http'
 import { extractErrorMessage } from '@/lib/errors'
+import { required, minLen, freeText, firstError } from '@/lib/validators'
 import { useOnboardingStore } from '@/stores/onboarding'
 import AuthLayout from '@/components/auth/AuthLayout.vue'
 import ErrorBanner from '@/components/auth/ErrorBanner.vue'
@@ -30,18 +31,10 @@ onMounted(() => {
 async function submit() {
   error.value = null
 
-  if (!firstName.value.trim() || firstName.value.trim().length < 2) {
-    error.value = 'First name must be at least 2 characters.'
-    return
-  }
-  if (!lastName.value.trim() || lastName.value.trim().length < 2) {
-    error.value = 'Last name must be at least 2 characters.'
-    return
-  }
-  if (!idNumber.value.trim() || idNumber.value.trim().length < 5) {
-    error.value = 'ID number must be at least 5 characters.'
-    return
-  }
+  const check = firstError(firstName.value, [required('First name'), minLen(2, 'First name'), ...freeText('First name', 80)])
+    || firstError(lastName.value, [required('Last name'), minLen(2, 'Last name'), ...freeText('Last name', 80)])
+    || firstError(idNumber.value, [required('ID number'), minLen(5, 'ID number')])
+  if (check) { error.value = check; return }
   if (!dob.value) {
     error.value = 'Please enter your date of birth.'
     return

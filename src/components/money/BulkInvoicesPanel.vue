@@ -5,6 +5,7 @@ import {
   type BulkInvoiceRecipientInput, type BulkInvoiceEstimateResult, type InvoiceBatch, type InvoiceBatchItem,
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
+import { required, kenyanPhone, email, freeText, firstError, normalizeKenyanPhone } from '@/lib/validators'
 import { formatMoney, formatDate } from '@/lib/format'
 import { inclusiveVatByCategory } from '@/lib/tax'
 import AppCard from '@/components/ui/AppCard.vue'
@@ -103,12 +104,15 @@ function buildRecipients(): BulkInvoiceRecipientInput[] | null {
     if (!r.email.trim() && !r.amount_kes) continue
     const amountCents = Math.round(Number(r.amount_kes) * 100)
     if (!amountCents || amountCents < 100) { formError.value = `Row ${i + 1}: enter a valid amount (min KES 1).`; return null }
-    if (!r.email.trim()) { formError.value = `Row ${i + 1}: email is required.`; return null }
-    if (!r.phone.trim()) { formError.value = `Row ${i + 1}: phone is required.`; return null }
+    const rowErr = firstError(r.email, [required('Email'), email])
+      || firstError(r.phone, [required('Phone'), kenyanPhone])
+      || firstError(r.name, freeText('Name', 120))
+      || firstError(r.description, freeText('Description', 300))
+    if (rowErr) { formError.value = `Row ${i + 1}: ${rowErr}`; return null }
     if (!r.due_date) { formError.value = `Row ${i + 1}: due date is required.`; return null }
     recipients.push({
       email: r.email.trim(),
-      phone: r.phone.trim(),
+      phone: normalizeKenyanPhone(r.phone),
       name: r.name.trim() || undefined,
       amount_cents: amountCents,
       due_date: new Date(`${r.due_date}T23:59:59`).toISOString(),

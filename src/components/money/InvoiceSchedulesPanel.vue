@@ -5,6 +5,7 @@ import {
   type InvoiceScheduleRecipientInput, type InvoiceSchedule,
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
+import { required, email, freeText, firstError } from '@/lib/validators'
 import { formatMoney, formatDate } from '@/lib/format'
 import { inclusiveVatByCategory } from '@/lib/tax'
 import { useResponseModal } from '@/composables/useResponseModal'
@@ -104,7 +105,10 @@ function buildRecipients(): InvoiceScheduleRecipientInput[] | null {
     if (!r.email.trim() && !r.amount_kes) continue
     const amountCents = Math.round(Number(r.amount_kes) * 100)
     if (!amountCents || amountCents < 100) { formError.value = `Row ${i + 1}: enter a valid amount (min KES 1).`; return null }
-    if (!r.email.trim()) { formError.value = `Row ${i + 1}: email is required.`; return null }
+    const rowErr = firstError(r.email, [required('Email'), email])
+      || firstError(r.name, freeText('Name', 120))
+      || firstError(r.description, freeText('Description', 300))
+    if (rowErr) { formError.value = `Row ${i + 1}: ${rowErr}`; return null }
     out.push({
       email: r.email.trim(),
       name: r.name.trim() || undefined,

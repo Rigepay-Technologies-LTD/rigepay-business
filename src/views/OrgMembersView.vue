@@ -8,6 +8,7 @@ import {
   type OrgMember, type BranchSummary, type MemberDocument, type UpdateMemberInput, type OrgCustomRole,
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
+import { required, kenyanPhone, email, kraPin, freeText, firstError, normalizeKenyanPhone } from '@/lib/validators'
 import { formatDate } from '@/lib/format'
 import { useResponseModal } from '@/composables/useResponseModal'
 import { useConfirmModal } from '@/composables/useConfirmModal'
@@ -84,9 +85,11 @@ const designationOptions = [
 async function sendInvite() {
   inviteError.value = null
   inviteSent.value = null
-  if (!newEmail.value.trim()) {
-    inviteError.value = 'Email is required.'
-    return
+  const emailErr = firstError(newEmail.value, [required('Email'), email])
+  if (emailErr) { inviteError.value = emailErr; return }
+  if (newIsSignatory.value) {
+    const mandateErr = firstError(newSigningMandate.value, freeText('Signing mandate', 300))
+    if (mandateErr) { inviteError.value = mandateErr; return }
   }
   inviting.value = true
   try {
@@ -262,13 +265,20 @@ function cancelEditMember() {
 
 async function saveEditMember(memberId: string) {
   editMemberError.value = null
+  const editChecks: Array<string | null> = [
+    firstError(editPhone.value, [kenyanPhone]),
+    firstError(editTaxId.value, [kraPin]),
+    editIsSignatory.value ? firstError(editSigningMandate.value, freeText('Signing mandate', 300)) : null,
+  ]
+  const editBad = editChecks.find(Boolean)
+  if (editBad) { editMemberError.value = editBad; return }
   editingMember.value = true
   try {
     const input: UpdateMemberInput = {
       corporate_designation: editCorporateDesignation.value || undefined,
       is_signatory: editIsSignatory.value,
       signing_mandate: editIsSignatory.value ? (editSigningMandate.value.trim() || undefined) : undefined,
-      phone: editPhone.value.trim() || undefined,
+      phone: editPhone.value.trim() ? normalizeKenyanPhone(editPhone.value) : undefined,
       national_id_number: editNationalId.value.trim() || undefined,
       tax_id_number: editTaxId.value.trim() || undefined,
       can_initiate_payments: editCanInitiatePayments.value,

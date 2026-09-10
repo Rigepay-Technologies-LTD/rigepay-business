@@ -7,6 +7,7 @@ import {
   type SupplierInvoice, type SupplierLineItem, type Supplier,
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
+import { required, freeText, firstError } from '@/lib/validators'
 import { formatMoney, formatDate } from '@/lib/format'
 import { useAuthStore } from '@/stores/auth'
 import { useResponseModal } from '@/composables/useResponseModal'
@@ -87,6 +88,17 @@ async function openCreate() {
 }
 async function submitCreate() {
   if (!form.value.supplier_id) { showError('Select a supplier.'); return }
+  const notesErr = firstError(form.value.notes, freeText('Notes', 500))
+  if (notesErr) { showError(notesErr); return }
+  const lines = form.value.lines.filter(l => l.description.trim() || (l.unit_price_cents || 0) > 0)
+  if (!lines.length) { showError('Add at least one line item.'); return }
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i]
+    const lErr = firstError(l.description, [required('Description'), ...freeText('Description', 200)])
+    if (lErr) { showError(`Line ${i + 1}: ${lErr}`); return }
+    if ((l.unit_price_cents || 0) <= 0) { showError(`Line ${i + 1}: unit price must be greater than zero.`); return }
+    if ((l.quantity_milli ?? 0) <= 0) { showError(`Line ${i + 1}: quantity must be greater than zero.`); return }
+  }
   acting.value = true
   try {
     const created = await createSupplierInvoice(props.isBranch, {
@@ -94,7 +106,7 @@ async function submitCreate() {
       invoice_date: form.value.invoice_date || undefined,
       due_date: form.value.due_date || undefined,
       notes: form.value.notes || undefined,
-      lines: form.value.lines,
+      lines,
     })
     showCreate.value = false
     showSuccess('Draft invoice created.')

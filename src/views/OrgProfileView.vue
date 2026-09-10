@@ -6,6 +6,7 @@ import {
   type ProfileResponse, type OrgIdentityChangeField, type OrgIdentityChangeRequest,
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
+import { required, kenyanPhone, email, url, freeText, firstError, normalizeKenyanPhone } from '@/lib/validators'
 import { formatDate } from '@/lib/format'
 import { useResponseModal } from '@/composables/useResponseModal'
 import DashboardLayout from '@/layouts/DashboardLayout.vue'
@@ -80,6 +81,17 @@ async function load() {
 async function save() {
   error.value = null
   saved.value = false
+  const checks: Array<string | null> = [
+    firstError(website.value, [url]),
+    firstError(businessEmail.value, [email]),
+    firstError(memberPhone.value, [kenyanPhone]),
+    firstError(natureOfBusinessDescription.value, freeText('Nature of business', 500)),
+    firstError(registeredOfficeAddress.value, freeText('Registered office address', 200)),
+    firstError(principalPlaceOfBusiness.value, freeText('Principal place of business', 200)),
+    firstError(tradingName.value, freeText('Trading name', 120)),
+  ]
+  const firstBad = checks.find(Boolean)
+  if (firstBad) { error.value = firstBad; showError(firstBad); return }
   saving.value = true
   try {
     await updateOrgProfile({
@@ -88,7 +100,7 @@ async function save() {
       employee_count: employeeCount.value ? Number(employeeCount.value) : undefined,
       annual_revenue_cents: annualRevenueKes.value ? Math.round(Number(annualRevenueKes.value) * 100) : undefined,
       tax_residency_country: taxResidencyCountry.value.trim() || undefined,
-      member_phone: memberPhone.value.trim() || undefined,
+      member_phone: memberPhone.value.trim() ? normalizeKenyanPhone(memberPhone.value) : undefined,
       member_national_id_number: memberNationalId.value.trim() || undefined,
       trading_name: tradingName.value.trim() || undefined,
       entity_type: entityType.value.trim() || undefined,
@@ -145,10 +157,8 @@ async function loadIdentityRequests() {
 async function submitIdentityChangeRequest() {
   identityRequestError.value = null
   identityRequestSuccess.value = null
-  if (!identityNewValue.value.trim()) {
-    identityRequestError.value = 'Enter the new value.'
-    return
-  }
+  const valErr = firstError(identityNewValue.value, [required('New value'), ...freeText('New value', 200)])
+  if (valErr) { identityRequestError.value = valErr; return }
   identityRequestSubmitting.value = true
   try {
     await requestOrgIdentityChange(identityField.value, identityNewValue.value.trim())

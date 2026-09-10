@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { onboardingHttp } from '@/lib/http'
 import { extractErrorMessage } from '@/lib/errors'
+import { required, minLen, kenyanPhone, email, url, kraPin as kraPin_, freeText, firstError, normalizeKenyanPhone } from '@/lib/validators'
 import { useOnboardingStore } from '@/stores/onboarding'
 import AuthLayout from '@/components/auth/AuthLayout.vue'
 import ErrorBanner from '@/components/auth/ErrorBanner.vue'
@@ -54,47 +55,32 @@ onMounted(() => {
   }
 })
 
-function isValidE164(value: string) {
-  return /^\+[1-9]\d{6,14}$/.test(value)
-}
 
 async function submit() {
   error.value = null
 
-  if (businessName.value.trim().length < 2) {
-    error.value = 'Business name must be at least 2 characters.'
-    return
-  }
-  if (kraPin.value.trim().length < 5) {
-    error.value = 'KRA PIN must be at least 5 characters.'
-    return
-  }
-  if (!brsRegistrationNumber.value.trim()) {
-    error.value = 'BRS registration number is required for an organization account.'
-    return
-  }
-  if (!businessType.value.trim()) {
-    error.value = 'Please select a business type.'
-    return
-  }
-  if (!isValidE164(phone.value.trim())) {
-    error.value = 'Phone number must be in international format, e.g. +254712345678.'
-    return
-  }
-  if (!county.value.trim() || !subCounty.value.trim() || !region.value.trim() || !location.value.trim()) {
-    error.value = 'Please fill in all location fields.'
-    return
-  }
+  const check = firstError(businessName.value, [required('Business name'), minLen(2, 'Business name'), ...freeText('Business name', 160)])
+    || firstError(kraPin.value, [required('KRA PIN'), kraPin_])
+    || firstError(brsRegistrationNumber.value, [required('BRS registration number')])
+    || firstError(businessType.value, [required('Business type')])
+    || firstError(phone.value, [required('Business phone'), kenyanPhone])
+    || firstError(businessEmail.value, [email])
+    || firstError(website.value, [url])
+    || firstError(county.value, [required('County')])
+    || firstError(subCounty.value, [required('Sub-county')])
+    || firstError(region.value, [required('Region')])
+    || firstError(location.value, [required('Location'), ...freeText('Location', 200)])
+  if (check) { error.value = check; return }
 
   loading.value = true
   try {
     await onboardingHttp(onboarding.onboardingToken!).put('/onboard/business-details', {
       account_type: 'organization',
       business_name: businessName.value.trim(),
-      kra_pin: kraPin.value.trim(),
+      kra_pin: kraPin.value.trim().toUpperCase(),
       brs_registration_number: brsRegistrationNumber.value.trim(),
       business_type: businessType.value.trim(),
-      phone: phone.value.trim(),
+      phone: normalizeKenyanPhone(phone.value),
       country: country.value.trim(),
       county: county.value.trim(),
       sub_county: subCounty.value.trim(),
