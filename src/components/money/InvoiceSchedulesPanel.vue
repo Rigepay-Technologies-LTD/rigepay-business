@@ -6,6 +6,7 @@ import {
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
 import { formatMoney, formatDate } from '@/lib/format'
+import { inclusiveVatByCategory } from '@/lib/tax'
 import { useResponseModal } from '@/composables/useResponseModal'
 import { useConfirmModal } from '@/composables/useConfirmModal'
 import { useRecipientHistory } from '@/composables/useRecipientHistory'
@@ -68,6 +69,12 @@ function blankRecipient(): EditableRecipient {
 const recipients = ref<EditableRecipient[]>([blankRecipient()])
 function addRecipient() { recipients.value.push(blankRecipient()) }
 function removeRecipient(key: number) { recipients.value = recipients.value.filter((r) => r.key !== key) }
+
+// Amount typed = what the customer pays each run (VAT-inclusive). Mirrors
+// internal/invoicing/tax.go.
+function rowVatCents(r: EditableRecipient): number {
+  return inclusiveVatByCategory(Math.round(Number(r.amount_kes || 0) * 100), r.tax_category)
+}
 
 const name = ref('')
 const nextRunDate = ref('')
@@ -268,7 +275,10 @@ function statusLabel(status: string): string {
                 <td class="px-3 py-2.5 text-text-muted">{{ i + 1 }}</td>
                 <td class="px-3 py-2.5 min-w-50"><AppInput v-model="r.email" placeholder="jane@example.com" list="invoice-schedule-recipient-history" @change="pickRecipient(r)" /></td>
                 <td class="px-3 py-2.5 min-w-35"><AppInput v-model="r.name" placeholder="Optional" /></td>
-                <td class="px-3 py-2.5 min-w-27.5"><AppInput v-model="r.amount_kes" type="number" placeholder="0" /></td>
+                <td class="px-3 py-2.5 min-w-27.5">
+                  <AppInput v-model="r.amount_kes" type="number" placeholder="0" />
+                  <p v-if="rowVatCents(r) > 0" class="mt-1 text-[10px] text-text-muted">incl. VAT KES {{ formatMoney(rowVatCents(r)) }}</p>
+                </td>
                 <td class="px-3 py-2.5 min-w-27.5"><AppInput v-model="r.due_offset_days" type="number" placeholder="7" /></td>
                 <td class="px-3 py-2.5 min-w-40"><AppInput v-model="r.description" placeholder="e.g. Unit 4B rent" /></td>
                 <td class="px-3 py-2.5 min-w-32"><AppSelect v-model="r.tax_category" :options="TAX_CATEGORY_OPTIONS" /></td>

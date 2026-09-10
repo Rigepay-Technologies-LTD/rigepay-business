@@ -7,6 +7,7 @@ import {
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
 import { formatMoney, formatDate } from '@/lib/format'
+import { lineSubtotal, vatByCategory } from '@/lib/tax'
 import { useResponseModal } from '@/composables/useResponseModal'
 import { useConfirmModal } from '@/composables/useConfirmModal'
 import { useRecipientHistory } from '@/composables/useRecipientHistory'
@@ -84,13 +85,13 @@ function removeItem(idx: number) {
 }
 
 const itemsSubtotalCents = computed(() =>
-  items.value.reduce((sum, it) => sum + Math.round((it.quantity || 0) * (it.unit_price_cents || 0)), 0),
+  items.value.reduce((sum, it) => sum + lineSubtotal(it.quantity || 0, it.unit_price_cents || 0), 0),
 )
 const itemsTaxCents = computed(() =>
-  items.value.reduce((sum, it) => {
-    const lineCents = Math.round((it.quantity || 0) * (it.unit_price_cents || 0))
-    return sum + (it.tax_category === 'A' ? Math.round(lineCents * 0.16) : 0)
-  }, 0),
+  items.value.reduce(
+    (sum, it) => sum + vatByCategory(lineSubtotal(it.quantity || 0, it.unit_price_cents || 0), it.tax_category),
+    0,
+  ),
 )
 const itemsTotalCents = computed(() => itemsSubtotalCents.value + itemsTaxCents.value)
 

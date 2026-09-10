@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { formatMoney } from '@/lib/format'
+import { lineSubtotalMilli, lineTaxFromBps } from '@/lib/tax'
 import type { SupplierLineItem } from '@/lib/orgApi'
 import { PlusIcon, Trash2Icon } from 'lucide-vue-next'
 
@@ -18,18 +19,19 @@ function removeRow(i: number) {
 }
 
 function lineSub(r: SupplierLineItem) {
-  const qty = (r.quantity_milli ?? 1000) / 1000
-  return Math.round((r.unit_price_cents || 0) * qty)
+  return lineSubtotalMilli(r.quantity_milli ?? 1000, r.unit_price_cents || 0)
 }
 function lineTax(r: SupplierLineItem) {
-  const bps = r.tax_rate_bps || 0
-  if (bps > 0) {
-    return Math.max(0, Math.round(((lineSub(r) - (r.discount_cents || 0)) * bps) / 10000))
-  }
-  return r.tax_cents || 0
+  return lineTaxFromBps(lineSub(r), r.discount_cents || 0, r.tax_rate_bps || 0, r.tax_cents || 0)
 }
 function lineTotal(r: SupplierLineItem) {
   return lineSub(r) + lineTax(r) - (r.discount_cents || 0)
+}
+
+// Keep the persisted tax_cents in step with the live figure whenever any input
+// on the row changes, so what we send the backend is never stale.
+function syncTax(r: SupplierLineItem) {
+  r.tax_cents = lineTax(r)
 }
 
 const subtotal = computed(() => props.modelValue.reduce((s, r) => s + lineSub(r), 0))
@@ -40,7 +42,7 @@ const total = computed(() => subtotal.value + taxTotal.value - discountTotal.val
 function setTaxRate(r: SupplierLineItem, raw: string) {
   const pct = parseFloat(raw || '0')
   r.tax_rate_bps = Number.isFinite(pct) && pct > 0 ? Math.round(pct * 100) : 0
-  r.tax_cents = lineTax(r)
+  syncTax(r)
 }
 </script>
 
@@ -63,9 +65,9 @@ function setTaxRate(r: SupplierLineItem, raw: string) {
         <tbody>
           <tr v-for="(r, i) in modelValue" :key="i" class="border-b border-border last:border-0">
             <td class="py-1.5 pr-2"><input v-model="r.description" class="w-full bg-transparent outline-none text-text-primary" placeholder="Item" /></td>
-            <td class="py-1.5 px-2"><input :value="(r.quantity_milli ?? 1000) / 1000" type="number" step="0.001" class="w-full bg-transparent outline-none" @input="r.quantity_milli = Math.round(parseFloat(($event.target as HTMLInputElement).value || '0') * 1000)" /></td>
-            <td class="py-1.5 px-2"><input :value="(r.unit_price_cents || 0) / 100" type="number" step="0.01" class="w-full bg-transparent outline-none" @input="r.unit_price_cents = Math.round(parseFloat(($event.target as HTMLInputElement).value || '0') * 100)" /></td>
-            <td class="py-1.5 px-2"><input :value="(r.discount_cents || 0) / 100" type="number" step="0.01" class="w-full bg-transparent outline-none" @input="r.discount_cents = Math.round(parseFloat(($event.target as HTMLInputElement).value || '0') * 100)" /></td>
+            <td class="py-1.5 px-2"><input :value="(r.quantity_milli ?? 1000) / 1000" type="number" step="0.001" class="w-full bg-transparent outline-none" @input="r.quantity_milli = Math.round(parseFloat(($event.target as HTMLInputElement).value || '0') * 1000); syncTax(r)" /></td>
+            <td class="py-1.5 px-2"><input :value="(r.unit_price_cents || 0) / 100" type="number" step="0.01" class="w-full bg-transparent outline-none" @input="r.unit_price_cents = Math.round(parseFloat(($event.target as HTMLInputElement).value || '0') * 100); syncTax(r)" /></td>
+            <td class="py-1.5 px-2"><input :value="(r.discount_cents || 0) / 100" type="number" step="0.01" class="w-full bg-transparent outline-none" @input="r.discount_cents = Math.round(parseFloat(($event.target as HTMLInputElement).value || '0') * 100); syncTax(r)" /></td>
             <td class="py-1.5 px-2"><input :value="(r.tax_rate_bps || 0) / 100" type="number" step="0.5" placeholder="16" class="w-full bg-transparent outline-none" @input="setTaxRate(r, ($event.target as HTMLInputElement).value)" /></td>
             <td class="py-1.5 px-2 text-right text-text-secondary">{{ formatMoney(lineTax(r)) }}</td>
             <td class="py-1.5 px-2 text-right font-semibold text-text-primary">{{ formatMoney(lineTotal(r)) }}</td>
