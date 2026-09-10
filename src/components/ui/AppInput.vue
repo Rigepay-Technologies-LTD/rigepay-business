@@ -18,7 +18,7 @@ const props = defineProps<{
   revealable?: boolean
 }>()
 
-defineEmits<{ (e: 'update:modelValue', v: string): void }>()
+defineEmits<{ (e: 'update:modelValue', v: string): void; (e: 'blur'): void }>()
 
 const revealed = ref(false)
 const resolvedType = computed(() => {
@@ -61,6 +61,7 @@ const showToggle = computed(() => props.revealable && (props.type ?? 'text') ===
           disabled ? 'opacity-50 cursor-not-allowed bg-surface-2' : '',
         ]"
         @input="$emit('update:modelValue', ($event.target as HTMLInputElement).value)"
+        @blur="$emit('blur')"
       />
 
       <button

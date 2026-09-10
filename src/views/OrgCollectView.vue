@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted, watch, computed } from 'vue'
+import { ref, reactive, onMounted, watch, computed } from 'vue'
+import { required, kenyanPhone, amountKes, normalizeKenyanPhone, firstError, freeText } from '@/lib/validators'
 import {
   fetchOrgBranches, fetchCollectionInstructions, requestStkPush, confirmSasaPayOtp,
   type BranchSummary, type CollectionInstructions,
@@ -101,19 +102,27 @@ const statusCheckoutId = ref<string | null>(null)
 const statusAmountCents = ref(0)
 const statusPhone = ref('')
 
+const stkFieldErrors = reactive<{ amount?: string; phone?: string; remarks?: string }>({})
+function validateStkField(f: 'amount' | 'phone' | 'remarks') {
+  if (f === 'amount') stkFieldErrors.amount = firstError(stkAmountKes.value, [required('Amount'), amountKes({ min: 10 })]) ?? undefined
+  if (f === 'phone') stkFieldErrors.phone = firstError(stkPhone.value, [required('Customer phone'), kenyanPhone]) ?? undefined
+  if (f === 'remarks') stkFieldErrors.remarks = firstError(stkRemarks.value, freeText('Remarks', 140)) ?? undefined
+}
+function validateStkForm(): boolean {
+  ;(['amount', 'phone', 'remarks'] as const).forEach(validateStkField)
+  return !stkFieldErrors.amount && !stkFieldErrors.phone && !stkFieldErrors.remarks
+}
+
 async function sendStkPush() {
   stkError.value = null
   stkResult.value = null
+  if (!validateStkForm()) return
   const amountCents = Math.round(Number(stkAmountKes.value) * 100)
-  if (!amountCents || amountCents < 1000 || !stkPhone.value.trim()) {
-    stkError.value = 'A valid amount (min KES 10) and customer phone number are required.'
-    return
-  }
   stkSending.value = true
   try {
     const result = await requestStkPush(false, {
       amount_cents: amountCents,
-      customer_phone: stkPhone.value.trim(),
+      customer_phone: normalizeKenyanPhone(stkPhone.value),
       remarks: stkRemarks.value.trim() || undefined,
       branch_id: source.value || undefined,
       channel: stkChannel.value === 'auto' ? undefined : (stkChannel.value as 'mpesa' | 'airtel' | 'tkash' | 'wallet'),
@@ -183,10 +192,13 @@ async function submitOtp() {
         <form class="flex flex-col gap-4" @submit.prevent="sendStkPush">
           <AppSelect v-model="stkChannel" label="Collecting via" :options="CHANNEL_OPTIONS" />
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <AppInput v-model="stkAmountKes" type="number" label="Amount (KES)" placeholder="Min 10" required />
-            <AppInput v-model="stkPhone" label="Customer phone" placeholder="+254712345678" required />
+            <AppInput v-model="stkAmountKes" type="number" label="Amount (KES)" placeholder="Min 10" required
+              :error="stkFieldErrors.amount" @blur="validateStkField('amount')" />
+            <AppInput v-model="stkPhone" label="Customer phone" placeholder="+254712345678" required
+              :error="stkFieldErrors.phone" @blur="validateStkField('phone')" />
           </div>
-          <AppInput v-model="stkRemarks" label="Remarks (optional)" placeholder="What this payment is for" />
+          <AppInput v-model="stkRemarks" label="Remarks (optional)" placeholder="What this payment is for"
+            :error="stkFieldErrors.remarks" @blur="validateStkField('remarks')" />
           <AppButton type="submit" :loading="stkSending" class="self-start">Send STK push</AppButton>
         </form>
       </AppCard>
