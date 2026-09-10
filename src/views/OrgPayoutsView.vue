@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { required, kenyanPhone, amountKes as amountKesRule, positiveInt, freeText, firstError, normalizeKenyanPhone } from '@/lib/validators'
 import { useAuthStore } from '@/stores/auth'
 import {
   requestOrgPayoutAsMember, confirmOrgPayoutAsMember, fetchPendingPayoutApprovals, approvePayoutRequest, rejectPayoutRequest,
@@ -139,6 +140,54 @@ const remarks = ref('')
 const branchId = ref('')
 const confirmSecret = ref('')
 const destinationType = ref<'PHONE_NUMBER' | 'BANK_ACCOUNT' | 'PAYBILL' | 'TILL_NUMBER'>('PHONE_NUMBER')
+
+type PayoutField = 'amount' | 'phone' | 'shortcode' | 'bankAccount' | 'recipientName' | 'remarks' | 'nickname'
+const payoutErrors = reactive<Partial<Record<PayoutField, string>>>({})
+
+function validatePayoutField(f: PayoutField) {
+  const isShortcode = destinationType.value === 'PAYBILL' || destinationType.value === 'TILL_NUMBER'
+  switch (f) {
+    case 'amount':
+      payoutErrors.amount = firstError(amountKes.value, [required('Amount'), amountKesRule({ min: 1 })]) ?? undefined
+      break
+    case 'phone':
+      payoutErrors.phone = destinationType.value === 'PHONE_NUMBER'
+        ? firstError(phoneNumber.value, [required('Recipient phone'), kenyanPhone]) ?? undefined
+        : undefined
+      break
+    case 'shortcode':
+      payoutErrors.shortcode = isShortcode
+        ? firstError(shortcode.value, [required(destinationType.value === 'PAYBILL' ? 'Paybill number' : 'Till number'), positiveInt('Shortcode')]) ?? undefined
+        : undefined
+      break
+    case 'bankAccount':
+      payoutErrors.bankAccount = destinationType.value === 'BANK_ACCOUNT'
+        ? firstError(bankAccountNumber.value, [required('Account number')]) ?? undefined
+        : undefined
+      break
+    case 'recipientName':
+      payoutErrors.recipientName = firstError(recipientName.value, [required('Recipient name'), ...freeText('Recipient name', 120)]) ?? undefined
+      break
+    case 'remarks':
+      payoutErrors.remarks = firstError(remarks.value, [required('Remarks'), ...freeText('Remarks', 140)]) ?? undefined
+      break
+    case 'nickname':
+      payoutErrors.nickname = saveAsBeneficiary.value
+        ? firstError(beneficiaryNickname.value, [required('Nickname'), ...freeText('Nickname', 60)]) ?? undefined
+        : undefined
+      break
+  }
+}
+
+function validatePayoutForm(): boolean {
+  ;(['amount', 'phone', 'shortcode', 'bankAccount', 'recipientName', 'remarks', 'nickname'] as const).forEach(validatePayoutField)
+  return !Object.values(payoutErrors).some(Boolean)
+}
+
+function validateRecipientName() {
+  validatePayoutField('recipientName')
+  screenRecipientName()
+}
 
 const branchOptions = computed(() => {
   const options = branches.value.map((b) => ({ value: b.id, label: `${b.name} (KES ${formatMoney(b.main_cents)} available)` }))
@@ -369,30 +418,25 @@ function resetPayoutForm() {
   selectedBeneficiaryId.value = ''
   saveAsBeneficiary.value = false
   beneficiaryNickname.value = ''
+  for (const k of Object.keys(payoutErrors)) delete payoutErrors[k as PayoutField]
 }
 
 async function submitPayout() {
   requestError.value = null
   requestResult.value = null
+  if (!branchId.value) {
+    requestError.value = 'Select the wallet to pay out from.'
+    return
+  }
+  if (destinationType.value === 'BANK_ACCOUNT' && !bankCode.value) {
+    requestError.value = 'Select a bank.'
+    return
+  }
+  if (!validatePayoutForm()) {
+    requestError.value = 'Please fix the highlighted fields.'
+    return
+  }
   const amountCents = Math.round(Number(amountKes.value) * 100)
-  if (!amountCents || amountCents < 100 || !recipientName.value.trim() || !remarks.value.trim() || !branchId.value) {
-    requestError.value = 'Amount (min KES 1), recipient name, remarks, and branch are all required.'
-    return
-  }
-  if (destinationType.value === 'BANK_ACCOUNT') {
-    if (!bankCode.value || !bankAccountNumber.value.trim()) {
-      requestError.value = 'Select a bank and enter the account number.'
-      return
-    }
-  } else if (destinationType.value === 'PAYBILL' || destinationType.value === 'TILL_NUMBER') {
-    if (!shortcode.value.trim()) {
-      requestError.value = `Enter the ${destinationType.value === 'PAYBILL' ? 'paybill' : 'till'} number.`
-      return
-    }
-  } else if (!phoneNumber.value.trim()) {
-    requestError.value = 'Recipient phone number is required.'
-    return
-  }
   if (isOwner ? !/^\d{4}$/.test(confirmSecret.value) : !confirmSecret.value) {
     requestError.value = isOwner ? 'Enter your 4-digit transaction PIN to confirm this payout.' : 'Re-enter your account password to confirm this payout.'
     return
@@ -406,7 +450,7 @@ async function submitPayout() {
       remarks: remarks.value.trim(),
       branch_id: branchId.value,
       destination_type: destinationType.value,
-      phone_number: destinationType.value === 'PHONE_NUMBER' ? phoneNumber.value.trim() : undefined,
+      phone_number: destinationType.value === 'PHONE_NUMBER' ? normalizeKenyanPhone(phoneNumber.value) : undefined,
       shortcode: isShortcode ? shortcode.value.trim() : undefined,
       account_reference: isShortcode ? accountReference.value.trim() || undefined : undefined,
       bank_code: destinationType.value === 'BANK_ACCOUNT' ? bankCode.value : undefined,
@@ -778,7 +822,7 @@ watch([amountKes, destinationType], () => {
                 </div>
 
                 <div v-if="destinationType === 'PHONE_NUMBER'" class="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
-                  <AppInput v-model="phoneNumber" label="Recipient phone" placeholder="+254712345678" required />
+                  <AppInput v-model="phoneNumber" label="Recipient phone" placeholder="+254712345678" required :error="payoutErrors.phone" @blur="validatePayoutField('phone')" />
                   <AppButton type="button" variant="secondary" :loading="validating" @click="validateRecipient">Verify recipient</AppButton>
                 </div>
                 <div v-else-if="destinationType === 'PAYBILL' || destinationType === 'TILL_NUMBER'" class="flex flex-col gap-3">
@@ -788,6 +832,8 @@ watch([amountKes, destinationType], () => {
                       :label="destinationType === 'PAYBILL' ? 'Paybill number' : 'Till number'"
                       :placeholder="destinationType === 'PAYBILL' ? 'e.g. 522522' : 'e.g. 123456'"
                       required
+                      :error="payoutErrors.shortcode"
+                      @blur="validatePayoutField('shortcode')"
                     />
                     <AppButton type="button" variant="secondary" :loading="validating" @click="validateRecipient">Verify recipient</AppButton>
                   </div>
@@ -796,7 +842,7 @@ watch([amountKes, destinationType], () => {
                 <div v-else class="flex flex-col gap-3">
                   <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <AppSelect v-model="bankCode" label="Bank" placeholder="— Select bank —" :options="bankOptions" required />
-                    <AppInput v-model="bankAccountNumber" label="Account number" required />
+                    <AppInput v-model="bankAccountNumber" label="Account number" required :error="payoutErrors.bankAccount" @blur="validatePayoutField('bankAccount')" />
                   </div>
                   <AppButton type="button" variant="secondary" class="self-start" :loading="validating" @click="validateRecipient">Verify recipient</AppButton>
                 </div>
@@ -817,8 +863,8 @@ watch([amountKes, destinationType], () => {
               <!-- Group 2: amount / recipient -->
               <div class="flex flex-col gap-4 border-t border-input-border pt-4">
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <AppInput v-model="amountKes" type="number" label="Amount (KES)" placeholder="Min 1" required />
-                  <AppInput v-model="recipientName" label="Recipient name" required @blur="screenRecipientName" />
+                  <AppInput v-model="amountKes" type="number" label="Amount (KES)" placeholder="Min 1" required :error="payoutErrors.amount" @blur="validatePayoutField('amount')" />
+                  <AppInput v-model="recipientName" label="Recipient name" required :error="payoutErrors.recipientName" @blur="validateRecipientName" />
                 </div>
 
                 <Transition name="fade" mode="out-in">
@@ -850,14 +896,14 @@ watch([amountKes, destinationType], () => {
 
               <!-- Group 3: remarks / confirm / submit -->
               <div class="flex flex-col gap-4 border-t border-input-border pt-4">
-                <AppInput v-model="remarks" label="Remarks" placeholder="Reason for this payout" required />
+                <AppInput v-model="remarks" label="Remarks" placeholder="Reason for this payout" required :error="payoutErrors.remarks" @blur="validatePayoutField('remarks')" />
 
                 <div v-if="!isBranchSession && destinationType !== 'PAYBILL' && destinationType !== 'TILL_NUMBER'" class="flex flex-col gap-2">
                   <label class="flex items-center gap-2 text-xs font-medium text-text-secondary cursor-pointer">
                     <input v-model="saveAsBeneficiary" type="checkbox" class="rounded border-input-border" />
                     Save this recipient as a beneficiary for next time
                   </label>
-                  <AppInput v-if="saveAsBeneficiary" v-model="beneficiaryNickname" label="Beneficiary nickname" placeholder="e.g. Weekly supplier" required />
+                  <AppInput v-if="saveAsBeneficiary" v-model="beneficiaryNickname" label="Beneficiary nickname" placeholder="e.g. Weekly supplier" required :error="payoutErrors.nickname" @blur="validatePayoutField('nickname')" />
                 </div>
 
                 <ConfirmSecretInput v-model="confirmSecret" :is-pin="isOwner" />

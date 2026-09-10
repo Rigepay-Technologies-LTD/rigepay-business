@@ -7,6 +7,7 @@ import {
   type BankCode, type BulkPayoutBatch,
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
+import { required, kenyanPhone, positiveInt, freeText, firstError, normalizeKenyanPhone } from '@/lib/validators'
 import { formatMoney, formatDate } from '@/lib/format'
 import DashboardLayout from '@/layouts/DashboardLayout.vue'
 import AppCard from '@/components/ui/AppCard.vue'
@@ -218,18 +219,25 @@ async function submitBatch() {
     if (isBlank) continue
     const amountCents = Math.round(Number(r.amount_kes) * 100)
     if (!amountCents || amountCents < 100) { submitError.value = `Row ${i + 1}: enter a valid amount (min KES 1).`; return }
-    if (!r.recipient_name.trim()) { submitError.value = `Row ${i + 1}: recipient name is required.`; return }
+    const nameErr = firstError(r.recipient_name, [required('Recipient name'), ...freeText('Recipient name', 120)])
+    if (nameErr) { submitError.value = `Row ${i + 1}: ${nameErr}`; return }
+    const remarkErr = firstError(r.remarks, freeText('Remarks', 140))
+    if (remarkErr) { submitError.value = `Row ${i + 1}: ${remarkErr}`; return }
     const isShortcode = r.destination_type === 'PAYBILL' || r.destination_type === 'TILL_NUMBER'
     if (r.destination_type === 'BANK_ACCOUNT') {
       if (!r.bank_code || !r.bank_account_number.trim()) { submitError.value = `Row ${i + 1}: select a bank and enter the account number.`; return }
     } else if (isShortcode) {
-      if (!r.shortcode.trim()) { submitError.value = `Row ${i + 1}: enter the ${r.destination_type === 'PAYBILL' ? 'paybill' : 'till'} number.`; return }
-    } else if (!r.phone_number.trim()) { submitError.value = `Row ${i + 1}: enter a phone number.`; return }
+      const scErr = firstError(r.shortcode, [required('Shortcode'), positiveInt('Shortcode')])
+      if (scErr) { submitError.value = `Row ${i + 1}: ${scErr}`; return }
+    } else {
+      const phoneErr = firstError(r.phone_number, [required('Phone number'), kenyanPhone])
+      if (phoneErr) { submitError.value = `Row ${i + 1}: ${phoneErr}`; return }
+    }
     items.push({
       amount_cents: amountCents,
       recipient_name: r.recipient_name.trim(),
       destination_type: r.destination_type,
-      phone_number: r.destination_type === 'PHONE_NUMBER' ? r.phone_number.trim() : undefined,
+      phone_number: r.destination_type === 'PHONE_NUMBER' ? normalizeKenyanPhone(r.phone_number) : undefined,
       shortcode: isShortcode ? r.shortcode.trim() : undefined,
       account_reference: isShortcode ? r.account_reference.trim() || undefined : undefined,
       bank_code: r.destination_type === 'BANK_ACCOUNT' ? r.bank_code : undefined,

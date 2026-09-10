@@ -7,6 +7,7 @@ import {
   type Beneficiary, type BeneficiaryDestinationType, type BankCode, type CreateBeneficiaryInput,
 } from '@/lib/orgApi'
 import { extractErrorMessage } from '@/lib/errors'
+import { required, kenyanPhone, positiveInt, freeText, firstError, normalizeKenyanPhone } from '@/lib/validators'
 import { formatDate } from '@/lib/format'
 import { useResponseModal } from '@/composables/useResponseModal'
 import { useConfirmModal } from '@/composables/useConfirmModal'
@@ -167,8 +168,21 @@ async function runVerify() {
 
 function toAuthStep() {
   detailsError.value = ''
-  if (!form.nickname.trim()) {
-    detailsError.value = 'Give this payee a nickname.'
+  const nickErr = firstError(form.nickname, [required('Nickname'), ...freeText('Nickname', 60)])
+  if (nickErr) {
+    detailsError.value = nickErr
+    return
+  }
+  if (form.destination_type === 'PHONE_NUMBER') {
+    const phoneErr = firstError(form.phone_number, [required('Phone number'), kenyanPhone])
+    if (phoneErr) { detailsError.value = phoneErr; return }
+  }
+  if (form.destination_type === 'PAYBILL' || form.destination_type === 'TILL_NUMBER') {
+    const scErr = firstError(form.shortcode, [required('Shortcode'), positiveInt('Shortcode')])
+    if (scErr) { detailsError.value = scErr; return }
+  }
+  if (form.destination_type === 'BANK_ACCOUNT' && (!form.bank_code || form.bank_account_number.trim().length < 4)) {
+    detailsError.value = 'Select a bank and enter a valid account number.'
     return
   }
   if (!verifyAttempted.value) {
@@ -195,7 +209,7 @@ function buildInput(): CreateBeneficiaryInput {
     pin: auth.pin || undefined,
     password: auth.password || undefined,
   }
-  if (form.destination_type === 'PHONE_NUMBER') base.phone_number = form.phone_number.trim()
+  if (form.destination_type === 'PHONE_NUMBER') base.phone_number = normalizeKenyanPhone(form.phone_number)
   if (form.destination_type === 'BANK_ACCOUNT') {
     base.bank_code = form.bank_code
     base.bank_account_number = form.bank_account_number.trim()
@@ -251,7 +265,9 @@ function startEdit(b: Beneficiary) {
 }
 
 async function submitEdit() {
-  if (!editing.value || !editNickname.value.trim()) return
+  if (!editing.value) return
+  const nickErr = firstError(editNickname.value, [required('Nickname'), ...freeText('Nickname', 60)])
+  if (nickErr) { showError(nickErr); return }
   savingEdit.value = true
   try {
     const updated = await updateOrgBeneficiary(editing.value.id, { nickname: editNickname.value.trim() }, isBranch.value)
