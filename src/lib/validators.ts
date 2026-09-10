@@ -1,10 +1,3 @@
-// Client-side validation rules for rigepay-business forms. The backend is still
-// the authority — these exist to catch bad input before it leaves the browser
-// and to keep obvious spam / injection attempts out of free-text fields.
-//
-// A Rule takes the current field value (and optionally the whole form) and
-// returns an error string, or null when the value is acceptable.
-
 export type Rule<T = unknown> = (value: T, form?: Record<string, unknown>) => string | null
 
 const trimStr = (v: unknown): string => (typeof v === 'string' ? v.trim() : v == null ? '' : String(v).trim())
@@ -30,14 +23,12 @@ export const email: Rule = (v) => {
   return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(s) ? null : 'Enter a valid email address.'
 }
 
-/** Kenyan mobile number: 07/01 XXXXXXXX, 2547/2541 XXXXXXXX, or +254 form. */
 export const kenyanPhone: Rule = (v) => {
   const s = trimStr(v).replace(/[\s-]/g, '')
   if (!s) return null
   return /^(?:\+?254|0)(?:7|1)\d{8}$/.test(s) ? null : 'Enter a valid Kenyan phone number.'
 }
 
-/** Normalise any accepted Kenyan phone form to +2547XXXXXXXX / +2541XXXXXXXX. */
 export function normalizeKenyanPhone(v: string): string {
   const s = trimStr(v).replace(/[\s-]/g, '')
   if (/^\+254(7|1)\d{8}$/.test(s)) return s
@@ -64,11 +55,10 @@ export const url: Rule = (v) => {
 }
 
 interface AmountOpts {
-  min?: number // KES
-  max?: number // KES
+  min?: number 
+  max?: number 
   label?: string
 }
-/** Validates a KES amount typed as a string. */
 export const amountKes =
   (opts: AmountOpts = {}): Rule =>
   (v) => {
@@ -94,7 +84,6 @@ export const positiveInt =
     return /^\d+$/.test(s) && Number(s) > 0 ? null : `${label} must be a whole number greater than zero.`
   }
 
-// ── spam / injection guards for free-text fields ──────────────────────────────
 
 const MARKUP_RE = /<\s*script|<\s*iframe|javascript:|on\w+\s*=|data:text\/html/i
 
@@ -119,7 +108,6 @@ export const notRepeatedChars: Rule = (v) => {
   return /(.)\1{9,}/.test(s) ? 'This text looks like spam. Please rephrase it.' : null
 }
 
-/** Sensible default bundle for a customer-facing free-text field (remarks, description). */
 export const freeText = (label = 'This field', max = 500): Rule[] => [
   maxLen(max, label),
   noMarkup,
@@ -127,7 +115,6 @@ export const freeText = (label = 'This field', max = 500): Rule[] => [
   notRepeatedChars,
 ]
 
-/** Run every rule for a value; return the first error or null. */
 export function firstError<T>(value: T, rules: Rule<T>[], form?: Record<string, unknown>): string | null {
   for (const rule of rules) {
     const err = rule(value, form)

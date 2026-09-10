@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import QRCode from 'qrcode'
 import { useAuthStore } from '@/stores/auth'
 import {
@@ -356,15 +356,22 @@ async function handleDeletePasskey(id: string) {
   }
 }
 
-const loginHistory = ref<OrgMemberLoginHistoryRow[]>([])
+const loginHistoryAll = ref<OrgMemberLoginHistoryRow[]>([])
 const loginHistoryLoading = ref(true)
 const loginHistoryError = ref<string | null>(null)
 const showOrgWideHistory = ref(false)
 const loginHistoryPage = ref(1)
 const loginHistoryTotalPages = ref(1)
-const loginHistoryPageSize = 20
+const loginHistoryTotalCount = ref(0)
+const loginHistoryPageSize = 15
 const loginHistorySearch = ref('')
 let loginHistorySearchTimer: ReturnType<typeof setTimeout> | undefined
+
+const loginHistory = computed(() => {
+  if (loginHistoryAll.value.length <= loginHistoryPageSize) return loginHistoryAll.value
+  const start = (loginHistoryPage.value - 1) * loginHistoryPageSize
+  return loginHistoryAll.value.slice(start, start + loginHistoryPageSize)
+})
 
 async function loadLoginHistory(page = 1) {
   loginHistoryLoading.value = true
@@ -373,9 +380,13 @@ async function loadLoginHistory(page = 1) {
     const result = showOrgWideHistory.value
       ? await fetchOrganizationLoginHistory(page, loginHistoryPageSize, loginHistorySearch.value)
       : await fetchLoginHistory(isBranchSession, page, loginHistoryPageSize, loginHistorySearch.value)
-    loginHistory.value = result.rows
-    loginHistoryPage.value = result.page
-    loginHistoryTotalPages.value = result.totalPages
+    loginHistoryAll.value = result.rows
+    loginHistoryPage.value = result.page || page
+    loginHistoryTotalCount.value = result.totalCount ?? result.rows.length
+    loginHistoryTotalPages.value = Math.max(
+      result.totalPages || 1,
+      Math.ceil((result.totalCount ?? result.rows.length) / loginHistoryPageSize) || 1,
+    )
   } catch (err) {
     const msg = extractErrorMessage(err)
     loginHistoryError.value = msg
@@ -834,9 +845,9 @@ const activeSection = ref<SectionTab>(sectionTabs[0]?.key ?? 'twofa')
               </tbody>
             </table>
           </div>
-          <div v-if="loginHistoryTotalPages > 1" class="flex items-center justify-between mt-4 pt-3 border-t border-border">
+          <div v-if="loginHistory.length" class="flex items-center justify-between mt-4 pt-3 border-t border-border">
             <AppButton size="sm" variant="ghost" :disabled="loginHistoryPage <= 1 || loginHistoryLoading" @click="loadLoginHistory(loginHistoryPage - 1)">Previous</AppButton>
-            <span class="text-xs text-text-muted">Page {{ loginHistoryPage }} of {{ loginHistoryTotalPages }}</span>
+            <span class="text-xs text-text-muted">Page {{ loginHistoryPage }} of {{ loginHistoryTotalPages }}<template v-if="loginHistoryTotalCount"> · {{ loginHistoryTotalCount }} sign-in{{ loginHistoryTotalCount === 1 ? '' : 's' }}</template></span>
             <AppButton size="sm" variant="ghost" :disabled="loginHistoryPage >= loginHistoryTotalPages || loginHistoryLoading" @click="loadLoginHistory(loginHistoryPage + 1)">Next</AppButton>
           </div>
         </div>

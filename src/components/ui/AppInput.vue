@@ -14,7 +14,6 @@ const props = defineProps<{
   required?: boolean
   tooltip?: string
   list?: string
-  /** show a show/hide toggle for password fields */
   revealable?: boolean
 }>()
 
