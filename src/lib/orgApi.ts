@@ -3257,6 +3257,7 @@ export interface OrgInvoice {
   due_date: string
   paid_at?: string | null
   payment_link_id?: string | null
+  payment_link_code?: string | null
   is_etims_synced?: boolean
   notes?: string | null
   items: OrgInvoiceItem[]

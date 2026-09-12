@@ -59,7 +59,7 @@ const isOverdue = computed(() => {
   return new Date(inv.value.due_date).getTime() < Date.now()
 })
 
-const shareUrl = computed(() => inv.value ? `https://pay.rigepay.co.ke/i/${inv.value.shareable_code}` : '')
+const shareUrl = computed(() => inv.value?.payment_link_code ? `https://pay.rigepay.co.ke/${inv.value.payment_link_code}` : '')
 
 const copied = ref('')
 function copy(text: string, key: string) {
@@ -192,12 +192,13 @@ function msgStatusClass(s: string) {
           </dl>
           <div class="mt-3 pt-3 border-t border-border">
             <p class="text-[11px] font-semibold uppercase tracking-wider text-text-muted mb-1">Pay link</p>
-            <div class="flex items-center gap-2">
+            <div v-if="shareUrl" class="flex items-center gap-2">
               <a :href="shareUrl" target="_blank" rel="noopener" class="text-xs font-semibold text-primary underline break-all">{{ shareUrl }}</a>
               <button class="text-text-muted hover:text-primary shrink-0" @click="copy(shareUrl, 'link')">
                 <CheckIcon v-if="copied === 'link'" class="w-3.5 h-3.5 text-success" /><CopyIcon v-else class="w-3.5 h-3.5" />
               </button>
             </div>
+            <p v-else class="text-xs text-text-muted">No pay link available for this invoice.</p>
           </div>
         </AppCard>
       </div>
